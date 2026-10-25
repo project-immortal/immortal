@@ -1,0 +1,34 @@
+# Rust & Build Targets
+/target/
+**/*.rs.bk
+
+# Cleanroom Isolation: Dirty Room Airlock (ADR-028)
+# Disassembly, binary traces, raw packet captures, and REA dynamic dumps
+# MUST NEVER be committed to the cleanroom source tree.
+/.rea/
+/dirty_room/
+/disassembly/
+/captures/
+*.pcap
+*.pcapng
+
+# Local Extracted Game Assets (BYOD - Bring Your Own Data Standard)
+# Zero proprietary assets may be committed. All assets are extracted locally.
+/assets/extracted/
+/assets/raw/
+*.upk
+*.tfc
+*.bank
+*.fsb
+*.dds
+
+# IDE & OS Artifacts
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Agyis Ephemeral Artifacts
+.agents/artifacts/*.tmp
+scratch/

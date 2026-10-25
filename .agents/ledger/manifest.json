@@ -1,0 +1,18 @@
+{
+  "status": "verified",
+  "evidence_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "obligations": [
+    {
+      "id": "OBL-G1-001",
+      "status": "satisfied"
+    },
+    {
+      "id": "OBL-G1-002",
+      "status": "satisfied"
+    },
+    {
+      "id": "OBL-G2-001",
+      "status": "satisfied"
+    }
+  ]
+}

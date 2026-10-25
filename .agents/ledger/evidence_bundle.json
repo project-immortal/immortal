@@ -1,0 +1,9 @@
+[
+  {
+    "evidence_id": "EVID-UPK-HEADER-001",
+    "subject": "ChaosGame/CookedPCConsole UPK Header Magic",
+    "provider": "rea_binary_probe",
+    "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_path": "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole"
+  }
+]
