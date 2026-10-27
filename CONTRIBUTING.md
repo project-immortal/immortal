@@ -27,7 +27,7 @@ Before submitting a Pull Request or issue containing protocol specifications, yo
 
 Project Immortal requires that all commits be certified under the **Developer Certificate of Origin (DCO)**, Version 1.1:
 
-```
+```text
 Developer Certificate of Origin
 Version 1.1
 

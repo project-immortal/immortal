@@ -1,5 +1,6 @@
 # Rust & Build Targets
 /target/
+/docs/book/
 **/*.rs.bk
 
 # Cleanroom Isolation: Dirty Room Airlock (ADR-028)

@@ -2,7 +2,7 @@
 
 The Project Immortal workspace is structured as a modular Rust workspace:
 
-```
+```text
 crates/
 ├── immortal-core/       # [Apache-2.0 / MIT] Primitives, game IDs, champion enums
 ├── immortal-extract/    # [Apache-2.0 / MIT] Cooked UPK package parser, LZO decompressor, TFC resolver

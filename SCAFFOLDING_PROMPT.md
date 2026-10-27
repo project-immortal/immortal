@@ -28,7 +28,7 @@ Your mission is to establish and advance **Project Immortal**, a cleanroom serve
 
 ## 2. Macro Goals (G1–G6)
 
-```
+```text
 [G1: Asset Extraction] ──▶ [G2: MVP Auth & Range] ──▶ [G3: E2E Multiplayer]
           │                                                    │
           ▼                                                    ▼

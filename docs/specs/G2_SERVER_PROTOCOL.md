@@ -9,7 +9,7 @@
 
 Paladins multiplayer networking operates across two distinct protocol layers:
 
-```
+```text
 [ Paladins Client ]
        │
        ├─ (1) Auth & Lobby Gateway Handshake (TCP / HTTP / JSON / XML)

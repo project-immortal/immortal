@@ -55,7 +55,7 @@ To foster widespread archival tool adoption while preventing proprietary rogue s
 
 ## 🗺️ Macro Roadmap (G1–G6)
 
-```
+```text
 [G1: Asset Extraction] ──▶ [G2: MVP Auth & Range] ──▶ [G3: E2E Multiplayer]
           │                                                    │
           ▼                                                    ▼
