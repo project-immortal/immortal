@@ -29,8 +29,10 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_server_smoketest() {
-        assert!(true);
+        assert_eq!(DEFAULT_GAME_PORT, 7777);
     }
 }
