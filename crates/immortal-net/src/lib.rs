@@ -5,7 +5,21 @@
 
 //! # Immortal Net
 //! Cleanroom Unreal Engine 3 bit-packed bunch protocol parser, control channel state
-//! machine, and auth gateway protocol definitions.
+//! machine, and MCTS auth gateway protocol definitions.
+
+pub mod error;
+pub mod framing;
+pub mod gateway;
+pub mod marshal;
+
+pub use error::NetError;
+pub use framing::{CPackFrame, MagicToken, HEADER_LEN, MAX_PAYLOAD_LEN};
+pub use gateway::{AuthGateway, AuthGatewayConfig, AuthGatewayHandle};
+pub use marshal::{
+    CMarshalMessage, FieldValue, LoginRequest, LoginResponse, MarshalField, MatchTicket,
+    FUNCTION_ID_ON_LOGIN_RESPONSE, FUNCTION_ID_SEND_LOGIN, TOKEN_ACCOUNT_ID, TOKEN_MATCH_TICKET,
+    TOKEN_SESSION_TOKEN, TOKEN_STATUS,
+};
 
 pub const DEFAULT_GAME_PORT: u16 = 7777;
 pub const DEFAULT_AUTH_PORT: u16 = 9000;

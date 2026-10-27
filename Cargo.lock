@@ -96,6 +96,7 @@ name = "immortal-net"
 version = "0.1.0"
 dependencies = [
  "byteorder",
+ "flate2",
  "immortal-core",
  "serde",
  "serde_json",

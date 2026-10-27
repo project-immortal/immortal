@@ -13,3 +13,4 @@ tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+flate2 = "1.1.10"
