@@ -1,0 +1,46 @@
+name: 🐛 Bug Report
+description: File a bug or unexpected behavior in Project Immortal crates
+title: "[BUG]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug! Please ensure you do NOT share proprietary game assets or confidential crash dumps containing vendor code.
+  - type: dropdown
+    id: crate
+    attributes:
+      label: Affected Component
+      description: Which crate or component is exhibiting the issue?
+      options:
+        - immortal-extract (UPK / TFC / Asset extraction)
+        - immortal-net (UE3 bunch framing & networking)
+        - immortal-server (Auth gateway & UDP server daemon)
+        - immortal-core (Game types & champion primitives)
+        - docs / specifications
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can maintainers reproduce the issue?
+      placeholder: |
+        1. Run `cargo run -p immortal-server`
+        2. Send packet ...
+        3. Observe crash ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Terminal Output
+      description: Paste relevant `RUST_LOG=trace` or terminal output.
+      render: shell

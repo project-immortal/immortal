@@ -1,0 +1,117 @@
+name: CI Verification
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dco-check:
+    name: DCO Sign-off Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify Signed-off-by Trailer
+        run: |
+          echo "Checking commits for DCO sign-off..."
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            COMMITS=$(git log --no-merges --format="%H" origin/${{ github.base_ref }}..HEAD)
+            for commit in $COMMITS; do
+              msg=$(git log -1 --format="%B" $commit)
+              if ! echo "$msg" | grep -qiE "Signed-off-by: .+ <.+@.+>"; then
+                echo "❌ Commit $commit is missing mandatory DCO 'Signed-off-by' trailer!"
+                echo "Commit message:"
+                echo "$msg"
+                exit 1
+              fi
+            done
+            echo "✔ All PR commits have valid DCO sign-offs."
+          else
+            echo "Direct push to main branch; skipping commit range DCO check."
+          fi
+
+  rust-checks:
+    name: Rust Matrix & Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check Formatting (cargo fmt)
+        run: cargo fmt --all -- --check
+
+      - name: Lint Code (cargo clippy)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run Test Suite (cargo test)
+        run: cargo test --workspace --verbose
+
+  cleanroom-audit:
+    name: Cleanroom & Obligation Ledger Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Audit Cleanroom Ledger & Specs
+        run: |
+          python3 - << 'EOF'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(".")
+          specs_dir = root / "docs" / "specs"
+          ledger_dir = root / ".agents" / "ledger"
+
+          specs = list(specs_dir.glob("*.md"))
+          if len(specs) < 3:
+              print(f"❌ Expected at least 3 cleanroom specs in {specs_dir}, found {len(specs)}")
+              sys.exit(1)
+          print(f"✔ Found {len(specs)} cleanroom specifications in docs/specs/")
+
+          manifest_file = ledger_dir / "manifest.json"
+          obligations_file = ledger_dir / "obligations.json"
+
+          if not manifest_file.exists() or not obligations_file.exists():
+              print("❌ Missing cleanroom ledger files!")
+              sys.exit(1)
+
+          with open(manifest_file, "r") as f:
+              manifest = json.load(f)
+          with open(obligations_file, "r") as f:
+              obligations = json.load(f)
+
+          if manifest.get("status") != "verified":
+              print(f"❌ Manifest status is not verified: {manifest.get('status')}")
+              sys.exit(1)
+
+          unsatisfied = [o["id"] for o in obligations if o.get("status") != "satisfied"]
+          if unsatisfied:
+              print(f"❌ Unsatisfied obligations: {unsatisfied}")
+              sys.exit(1)
+
+          print(f"✔ Cleanroom audit passed: {len(obligations)} obligations satisfied.")
+          EOF

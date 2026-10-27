@@ -1,0 +1,19 @@
+name: ✨ Feature Request
+description: Suggest an idea or enhancement for Project Immortal
+title: "[FEAT]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Preservation Goal
+      description: What challenge or game preservation goal does this feature solve?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like to see implemented.
+    validations:
+      required: true

@@ -3,7 +3,7 @@ name = "immortal-extract"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license.workspace = true
+license = "Apache-2.0 OR MIT"
 
 [dependencies]
 immortal-core = { path = "../immortal-core" }

@@ -1,0 +1,31 @@
+name: 📜 Cleanroom Spec / RFC Proposal
+description: Propose a new cleanroom protocol specification or file format RFC
+title: "[RFC]: "
+labels: ["rfc", "specification", "cleanroom"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to propose a cleanroom specification or obligation addition to `docs/specs/`.
+        **DO NOT paste decompiled code or proprietary symbol dumps.**
+  - type: textarea
+    id: summary
+    attributes:
+      label: Specification Summary
+      description: What protocol, packet structure, or file format does this specify?
+    validations:
+      required: true
+  - type: textarea
+    id: cleanroom_basis
+    attributes:
+      label: Cleanroom Evidence Basis
+      description: How was this behavior observed? (e.g. Wireshark trace, Wine relay debug logs, public UE3 RFCs, black-box fuzzing)
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_spec
+    attributes:
+      label: Proposed Specification Outline
+      description: Outline the struct fields, byte offsets, and state machine transitions.
+    validations:
+      required: true

@@ -18,7 +18,10 @@ async fn main() -> Result<()> {
     info!("🔥 Starting {} Daemon", PROJECT_NAME);
     info!("💬 Motto: \"{}\"", PROJECT_MOTTO);
     info!("🎯 Target Paladins Game Version: {}", TARGET_GAME_VERSION);
-    info!("🌐 Auth Gateway listening on 127.0.0.1:{}", DEFAULT_AUTH_PORT);
+    info!(
+        "🌐 Auth Gateway listening on 127.0.0.1:{}",
+        DEFAULT_AUTH_PORT
+    );
     info!("🎮 Game Server listening on 0.0.0.0:{}", DEFAULT_GAME_PORT);
 
     Ok(())
