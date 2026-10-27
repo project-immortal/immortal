@@ -9,7 +9,11 @@
 
 pub mod chunk;
 pub mod error;
+pub mod export;
 pub mod fstring;
+pub mod import;
+pub mod index;
+pub mod name;
 pub mod package;
 pub mod summary;
 
@@ -19,7 +23,11 @@ pub use chunk::{
     COMPRESS_LZMA, COMPRESS_LZO, COMPRESS_ZLIB,
 };
 pub use error::ExtractError;
+pub use export::{ExportTable, ObjectExport};
 pub use fstring::{read_fstring, write_fstring};
+pub use import::{ImportTable, ObjectImport};
+pub use index::PackageIndex;
+pub use name::{FName, NameEntry, NameTable};
 pub use package::UpkPackage;
 pub use summary::{GenerationInfo, PackageSummary, PKG_COMPRESSED, PKG_COOKED};
 
