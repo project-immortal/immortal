@@ -19,5 +19,19 @@
     "claim": "Multiplayer UDP connection follows UE3 bit-packed bunch framing over Channel 0 (Control) and Channel 2+ (Actor)",
     "evidence_criteria": "Packet traces and UNetConnection protocol specification",
     "status": "satisfied"
+  },
+  {
+    "id": "OBL-G2-002",
+    "subject": "mcts_tcp_framing",
+    "claim": "MCTS TCP Gateway framing uses 16-bit magic tokens 0xCBB0 (Zlib compressed) and 0xCBBC (uncompressed) with 16-bit payload length",
+    "evidence_criteria": "REA / Ghidra decompilation of CPackCoder::Decode (0x18002c570, evidence ev_e5b26e8ebfe414ea3b3e755432cd178aa7ea4f1ed4db59342a86383e8c7293fe)",
+    "status": "satisfied"
+  },
+  {
+    "id": "OBL-G2-003",
+    "subject": "client_cli_overrides",
+    "claim": "Paladins ShippingPC-ChaosGame.exe supports native CLI redirection flags (-host=, -tcp=, -servicediscoveryhost=, -dumpallmar) for local backend testing",
+    "evidence_criteria": "String inspection and binary analysis of ShippingPC-ChaosGame.exe at offset 51257616-51258128",
+    "status": "satisfied"
   }
 ]
