@@ -239,7 +239,9 @@ pub fn decompress_chunk<R: Read + Seek>(
         let mut block_comp_buf = vec![0u8; block.compressed_size as usize];
         reader.read_exact(&mut block_comp_buf)?;
 
-        let block_decomp = if is_lzo {
+        let block_decomp = if block.compressed_size >= block.uncompressed_size {
+            block_comp_buf
+        } else if is_lzo {
             decompress_lzo(&block_comp_buf, block.uncompressed_size as usize)?
         } else {
             decompress_zlib(&block_comp_buf, block.uncompressed_size as usize)?

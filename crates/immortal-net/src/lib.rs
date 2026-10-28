@@ -22,7 +22,9 @@ pub use bunch::{
 };
 pub use error::NetError;
 pub use framing::{CPackFrame, MagicToken, HEADER_LEN, MAX_PAYLOAD_LEN};
-pub use gateway::{AuthGateway, AuthGatewayConfig, AuthGatewayHandle};
+pub use gateway::{
+    AuthGateway, AuthGatewayConfig, AuthGatewayHandle, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION,
+};
 pub use marshal::{
     create_default_inventory, CMarshalMessage, ChampionRosterEntry, DeckEntry, DeviceEntry,
     FieldValue, InventoryResponse, LoginRequest, LoginResponse, MarshalField, MatchTicket,

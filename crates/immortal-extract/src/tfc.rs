@@ -273,7 +273,9 @@ pub fn decompress_bulk_payload(
             let block_bytes = &payload[cursor..block_end];
             cursor = block_end;
 
-            let decompressed_block = if use_zlib {
+            let decompressed_block = if block.compressed_size >= block.uncompressed_size {
+                block_bytes.to_vec()
+            } else if use_zlib {
                 decompress_zlib(block_bytes, block.uncompressed_size as usize)?
             } else {
                 match decompress_lzo(block_bytes, block.uncompressed_size as usize) {

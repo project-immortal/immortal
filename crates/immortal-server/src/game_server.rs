@@ -396,7 +396,7 @@ impl GameServer {
                     let open_ch2_bunch = session.replication.open_channel_2();
                     out.push(open_ch2_bunch);
 
-                    // 2. Spawn and replicate Fernando pawn (TgPawn_Knight, 1026) at (0.0, 0.0, 100.0)
+                    // 2. Spawn and replicate Fernando pawn (TgPawn_Fernando, 1026) at (0.0, 0.0, 100.0)
                     let spawn_bunch = session.replication.spawn_fernando();
                     out.push(spawn_bunch);
 
@@ -509,7 +509,7 @@ mod tests {
         // 1. NMT_NetSpeed (0x03) (ch 0 seq 0)
         // 2. NMT_Welcome (0x01) with ShootingRange map (ch 0 seq 1)
         // 3. Channel 2 Open (PlayerController) (ch 2 seq 0)
-        // 4. Channel 2 Spawn Fernando (TgPawn_Knight, 1026) at (0.0, 0.0, 100.0) (ch 2 seq 1)
+        // 4. Channel 2 Spawn Fernando (TgPawn_Fernando, 1026) at (0.0, 0.0, 100.0) (ch 2 seq 1)
         // 5. Baseline transform delta (ch 2 seq 2)
         assert!(
             handshake_replies.len() >= 4,
@@ -563,7 +563,7 @@ mod tests {
                 assert_eq!(champion_id, immortal_core::ChampionId::Fernando);
                 assert_eq!(weapon_device_id, 10774);
                 assert_eq!(team, 0);
-                assert_eq!(class_name, "TgPawn_Knight");
+                assert_eq!(class_name, "TgPawn_Fernando");
                 assert_eq!(location.x, 0.0);
                 assert_eq!(location.y, 0.0);
                 assert_eq!(location.z, 100.0);
@@ -669,7 +669,7 @@ mod tests {
                 assert_eq!(champion_id, immortal_core::ChampionId::Fernando);
                 assert_eq!(weapon_device_id, 10774);
                 assert_eq!(team, 0);
-                assert_eq!(class_name, "TgPawn_Knight");
+                assert_eq!(class_name, "TgPawn_Fernando");
                 assert_eq!(location.x, 0.0);
                 assert_eq!(location.y, 0.0);
                 assert_eq!(location.z, 100.0);

@@ -145,7 +145,7 @@ async fn test_game_server_loopback_integration() {
             assert_eq!(champion_id, ChampionId::Fernando);
             assert_eq!(weapon_device_id, DEVICE_FERNANDO_FLAME_LANCE);
             assert_eq!(team, FERNANDO_DEFAULT_TEAM);
-            assert_eq!(class_name, "TgPawn_Knight");
+            assert_eq!(class_name, "TgPawn_Fernando");
             assert_eq!(location.x, 0.0);
             assert_eq!(location.y, 0.0);
             assert_eq!(location.z, 100.0);
@@ -286,7 +286,7 @@ async fn test_game_server_pcom_driver_loopback_integration() {
             assert_eq!(champion_id, ChampionId::Fernando);
             assert_eq!(weapon_device_id, DEVICE_FERNANDO_FLAME_LANCE);
             assert_eq!(team, FERNANDO_DEFAULT_TEAM);
-            assert_eq!(class_name, "TgPawn_Knight");
+            assert_eq!(class_name, "TgPawn_Fernando");
             assert_eq!(location.x, 0.0);
             assert_eq!(location.y, 0.0);
             assert_eq!(location.z, 100.0);

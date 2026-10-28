@@ -214,11 +214,19 @@ impl CMarshalMessage {
         let mut header_prefix = [0u8; HEADER_PREFIX_LEN];
         header_prefix.copy_from_slice(&data[..HEADER_PREFIX_LEN]);
 
-        let mut cursor = Cursor::new(&data[HEADER_PREFIX_LEN..]);
+        let remaining = &data[HEADER_PREFIX_LEN..];
+        let mut cursor = Cursor::new(remaining);
         let function_id = cursor.read_u32::<LittleEndian>()?;
         let row_count = cursor.read_u32::<LittleEndian>()? as usize;
 
-        let mut fields = Vec::with_capacity(row_count);
+        if row_count > remaining.len() / 3 {
+            return Err(NetError::Marshal(format!(
+                "Invalid row_count {} for payload length {}",
+                row_count, remaining.len()
+            )));
+        }
+
+        let mut fields = Vec::with_capacity(row_count.min(1024));
         for _ in 0..row_count {
             let token_id = cursor.read_u16::<LittleEndian>()?;
             let type_id = cursor.read_u8()?;
@@ -229,6 +237,13 @@ impl CMarshalMessage {
                 }
                 TYPE_WCHAR_STRING => {
                     let char_count = cursor.read_u32::<LittleEndian>()? as usize;
+                    let remaining_bytes = (cursor.get_ref().len() as u64).saturating_sub(cursor.position()) as usize;
+                    if char_count * 2 > remaining_bytes || char_count > 65535 {
+                        return Err(NetError::Marshal(format!(
+                            "Invalid char_count {} (remaining bytes {})",
+                            char_count, remaining_bytes
+                        )));
+                    }
                     let mut utf16_units = Vec::with_capacity(char_count);
                     for _ in 0..char_count {
                         utf16_units.push(cursor.read_u16::<LittleEndian>()?);
@@ -239,6 +254,13 @@ impl CMarshalMessage {
                 }
                 TYPE_ROWSET_BLOB => {
                     let blob_len = cursor.read_u32::<LittleEndian>()? as usize;
+                    let remaining_bytes = (cursor.get_ref().len() as u64).saturating_sub(cursor.position()) as usize;
+                    if blob_len > remaining_bytes || blob_len > 1_000_000 {
+                        return Err(NetError::Marshal(format!(
+                            "Invalid blob_len {} (remaining bytes {})",
+                            blob_len, remaining_bytes
+                        )));
+                    }
                     let mut blob = vec![0u8; blob_len];
                     cursor.read_exact(&mut blob)?;
                     FieldValue::Blob(blob)

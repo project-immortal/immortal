@@ -16,8 +16,9 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::broadcast;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
+/// Configuration options for the Tokio TCP Auth Gateway server.
 #[derive(Debug, Clone)]
 pub struct AuthGatewayConfig {
     pub bind_addr: SocketAddr,
@@ -32,9 +33,9 @@ pub struct AuthGatewayConfig {
 impl Default for AuthGatewayConfig {
     fn default() -> Self {
         Self {
-            bind_addr: SocketAddr::from(([127, 0, 0, 1], 9000)),
+            bind_addr: SocketAddr::from(([127, 0, 0, 1], crate::DEFAULT_AUTH_PORT)),
             game_server_host: "127.0.0.1".to_string(),
-            game_server_port: 7777,
+            game_server_port: crate::DEFAULT_GAME_PORT,
             account_id: 8302401,
             session_token: "IMMORTAL-DEV-SESSION-TICKET".to_string(),
             match_ticket_str: "IMMORTAL-MATCH-TICKET-7777".to_string(),
@@ -43,6 +44,7 @@ impl Default for AuthGatewayConfig {
     }
 }
 
+/// Running handle for the Tokio TCP Auth Gateway server, exposing shutdown and address inspection.
 pub struct AuthGatewayHandle {
     shutdown_tx: broadcast::Sender<()>,
     local_addr: SocketAddr,
@@ -50,10 +52,12 @@ pub struct AuthGatewayHandle {
 }
 
 impl AuthGatewayHandle {
+    /// Returns the local socket address this gateway is listening on.
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
     }
 
+    /// Sends a shutdown signal to the accept loop and awaits graceful termination.
     pub async fn shutdown(self) -> Result<(), NetError> {
         let _ = self.shutdown_tx.send(());
         match self.join_handle.await {
@@ -63,12 +67,14 @@ impl AuthGatewayHandle {
     }
 }
 
+/// Tokio-based TCP Auth Gateway server that authenticates client connections and routes players to game servers.
 pub struct AuthGateway {
     listener: TcpListener,
     config: Arc<AuthGatewayConfig>,
 }
 
 impl AuthGateway {
+    /// Binds the AuthGateway TCP listener to the specified socket address using default configuration settings.
     pub async fn bind(addr: SocketAddr) -> Result<Self, NetError> {
         let config = AuthGatewayConfig {
             bind_addr: addr,
@@ -77,6 +83,7 @@ impl AuthGateway {
         Self::bind_with_config(config).await
     }
 
+    /// Binds the AuthGateway TCP listener using a custom [`AuthGatewayConfig`].
     pub async fn bind_with_config(config: AuthGatewayConfig) -> Result<Self, NetError> {
         let listener = TcpListener::bind(config.bind_addr).await?;
         Ok(Self {
@@ -85,10 +92,12 @@ impl AuthGateway {
         })
     }
 
+    /// Returns the local socket address of the underlying TCP listener.
     pub fn local_addr(&self) -> Result<SocketAddr, NetError> {
         self.listener.local_addr().map_err(NetError::Io)
     }
 
+    /// Spawns the AuthGateway accept loop on a background Tokio task and returns an [`AuthGatewayHandle`].
     pub fn spawn(self) -> Result<AuthGatewayHandle, NetError> {
         let local_addr = self.local_addr()?;
         let (shutdown_tx, shutdown_rx) = broadcast::channel(1);
@@ -100,6 +109,7 @@ impl AuthGateway {
         })
     }
 
+    /// Runs the AuthGateway accept loop until a shutdown signal is received.
     pub async fn run(self, mut shutdown: broadcast::Receiver<()>) -> Result<(), NetError> {
         let config = self.config;
         loop {
@@ -110,7 +120,7 @@ impl AuthGateway {
                             let cfg = Arc::clone(&config);
                             tokio::spawn(async move {
                                 if let Err(e) = handle_connection(stream, peer_addr, cfg).await {
-                                    debug!("Client connection {} finished or error: {:?}", peer_addr, e);
+                                    warn!("Client connection {} finished or error: {:?}", peer_addr, e);
                                 }
                             });
                         }
@@ -129,6 +139,10 @@ impl AuthGateway {
     }
 }
 
+pub const CHUNK1_HANDSHAKE: &[u8] = include_bytes!("chunk1_handshake.bin");
+pub const CHUNK2_ACK: &[u8] = include_bytes!("chunk2_ack.bin");
+pub const CHUNK3_SESSION: &[u8] = include_bytes!("chunk3_session.bin");
+
 async fn handle_connection(
     mut stream: TcpStream,
     peer_addr: SocketAddr,
@@ -146,48 +160,106 @@ async fn handle_connection(
             Err(e) => return Err(NetError::Io(e)),
         }
 
-        let magic_raw = u16::from_le_bytes([header[0], header[1]]);
-        let magic = MagicToken::from_u16(magic_raw)?;
-        let payload_len = u16::from_le_bytes([header[2], header[3]]) as usize;
+        let field0 = u16::from_le_bytes([header[0], header[1]]);
+        let field1 = u16::from_le_bytes([header[2], header[3]]);
 
-        if payload_len > MAX_PAYLOAD_LEN {
-            return Err(NetError::PayloadTooLarge {
-                length: payload_len,
-                max: MAX_PAYLOAD_LEN,
-            });
-        }
+        if field0 == 405 && field1 == 0 {
+            // Live MCTS Step 1: Client Auth Request (405 bytes, flags 0x0000)
+            let mut payload = vec![0u8; 405];
+            stream.read_exact(&mut payload).await?;
 
-        let mut payload = vec![0u8; payload_len];
-        stream.read_exact(&mut payload).await?;
+            let mut pkt = Vec::with_capacity(4 + CHUNK1_HANDSHAKE.len());
+            pkt.extend_from_slice(&(CHUNK1_HANDSHAKE.len() as u16).to_le_bytes());
+            pkt.extend_from_slice(&0x0100u16.to_le_bytes());
+            pkt.extend_from_slice(CHUNK1_HANDSHAKE);
+            stream.write_all(&pkt).await?;
+            stream.flush().await?;
+            debug!("Sent Live MCTS Handshake Chunk 1 to {}", peer_addr);
+        } else if field0 == 1117 && field1 == 0x0100 {
+            // Live MCTS Step 2: Client Crypto Ticket (1117 bytes, flags 0x0100)
+            let mut payload = vec![0u8; 1117];
+            stream.read_exact(&mut payload).await?;
 
-        let req_frame = CPackFrame { magic, payload };
-        let uncompressed_req = req_frame.uncompressed_payload()?;
+            // Send Chunk 2 ACK (21 bytes) with wire header [21 as u16, 0x0100]
+            let mut ack_pkt = Vec::with_capacity(4 + CHUNK2_ACK.len());
+            ack_pkt.extend_from_slice(&(CHUNK2_ACK.len() as u16).to_le_bytes());
+            ack_pkt.extend_from_slice(&0x0100u16.to_le_bytes());
+            ack_pkt.extend_from_slice(CHUNK2_ACK);
+            stream.write_all(&ack_pkt).await?;
 
-        // Attempt parsing login request if possible
-        let _ = LoginRequest::from_bytes(&uncompressed_req);
+            // Send Chunk 3 Session (75 bytes, which already contains the 3 framed subpackets)
+            stream.write_all(CHUNK3_SESSION).await?;
 
-        // Construct OnLoginResponse
-        let match_ticket = MatchTicket::new(
-            &config.game_server_host,
-            config.game_server_port,
-            &config.match_ticket_str,
-        );
-
-        let response = LoginResponse::new(config.account_id, &config.session_token, match_ticket);
-
-        let response_bytes = response.to_bytes()?;
-
-        let should_compress = config.compress_response || magic == MagicToken::Compressed;
-        let response_packet = if should_compress {
-            CPackFrame::encode_compressed(&response_bytes)?
+            // Also send the LoginResponse containing Fernando (1026), Cassie (1024), Viktor (1025), Flame Lance (10774), and Starter Deck (16379), along with MatchTicket routing to 127.0.0.1:7777
+            let match_ticket = MatchTicket::new(
+                &config.game_server_host,
+                config.game_server_port,
+                &config.match_ticket_str,
+            );
+            let response =
+                LoginResponse::new(config.account_id, &config.session_token, match_ticket);
+            let response_bytes = response.to_bytes()?;
+            let should_compress = config.compress_response;
+            let response_packet = if should_compress {
+                CPackFrame::encode_compressed(&response_bytes)?
+            } else {
+                CPackFrame::encode_uncompressed(&response_bytes)?
+            };
+            stream.write_all(&response_packet).await?;
+            stream.flush().await?;
+            debug!(
+                "Sent Live MCTS Chunk 2 ACK, Chunk 3 Session, and LoginResponse to {}",
+                peer_addr
+            );
         } else {
-            CPackFrame::encode_uncompressed(&response_bytes)?
-        };
+            // Synthetic / standard CPackFrame flow
+            let magic = MagicToken::from_u16(field0)?;
+            let payload_len = field1 as usize;
 
-        stream.write_all(&response_packet).await?;
-        stream.flush().await?;
-        debug!("Sent OnLoginResponse to {}", peer_addr);
+            if payload_len > MAX_PAYLOAD_LEN {
+                return Err(NetError::PayloadTooLarge {
+                    length: payload_len,
+                    max: MAX_PAYLOAD_LEN,
+                });
+            }
+
+            let mut payload = vec![0u8; payload_len];
+            stream.read_exact(&mut payload).await?;
+
+            let req_frame = CPackFrame { magic, payload };
+            let uncompressed_req = req_frame.uncompressed_payload()?;
+
+            let login_req = LoginRequest::from_bytes(&uncompressed_req)?;
+            debug!(
+                "Validated SendLogin RPC from {}: version={}, platform_token={}",
+                peer_addr, login_req.client_version, login_req.platform_token
+            );
+
+            // Construct OnLoginResponse
+            let match_ticket = MatchTicket::new(
+                &config.game_server_host,
+                config.game_server_port,
+                &config.match_ticket_str,
+            );
+
+            let response =
+                LoginResponse::new(config.account_id, &config.session_token, match_ticket);
+
+            let response_bytes = response.to_bytes()?;
+
+            let should_compress = config.compress_response || magic == MagicToken::Compressed;
+            let response_packet = if should_compress {
+                CPackFrame::encode_compressed(&response_bytes)?
+            } else {
+                CPackFrame::encode_uncompressed(&response_bytes)?
+            };
+
+            stream.write_all(&response_packet).await?;
+            stream.flush().await?;
+            debug!("Sent OnLoginResponse to {}", peer_addr);
+        }
     }
 
     Ok(())
 }
+

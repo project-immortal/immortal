@@ -5,7 +5,7 @@
 
 //! # Actor Replication & Fernando Pawn Spawning
 //! Cleanroom implementation of Unreal Engine 3 Actor Channel 2 replication,
-//! Fernando (`TgPawn_Knight`, `ChampionId::Fernando = 1026`) pawn lifecycle,
+//! Fernando (`TgPawn_Fernando`, `ChampionId::Fernando = 1026`) pawn lifecycle,
 //! and spatial position/rotation delta streaming in the Shooting Range.
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read, Write};
 
 pub const FERNANDO_CHAMPION_ID: u32 = 1026;
-pub const FERNANDO_PAWN_CLASS: &str = "TgPawn_Knight";
+pub const FERNANDO_PAWN_CLASS: &str = "TgPawn_Fernando";
 pub const FERNANDO_SPAWN_X: f32 = 0.0;
 pub const FERNANDO_SPAWN_Y: f32 = 0.0;
 pub const FERNANDO_SPAWN_Z: f32 = 100.0;
@@ -200,7 +200,7 @@ impl ReplicationSession {
         bunch
     }
 
-    /// Spawns and replicates Fernando pawn (`TgPawn_Knight`, `ChampionId::Fernando = 1026`)
+    /// Spawns and replicates Fernando pawn (`TgPawn_Fernando`, `ChampionId::Fernando = 1026`)
     /// with Weapon Device ID 10774 (`DEVICE_FERNANDO_FLAME_LANCE`) and Team 0
     /// at spawn coordinates `(0.0, 0.0, 100.0)`.
     pub fn spawn_fernando(&mut self) -> Bunch {
@@ -369,7 +369,7 @@ mod tests {
     #[test]
     fn test_fernando_spawn_constants() {
         assert_eq!(FERNANDO_CHAMPION_ID, 1026);
-        assert_eq!(FERNANDO_PAWN_CLASS, "TgPawn_Knight");
+        assert_eq!(FERNANDO_PAWN_CLASS, "TgPawn_Fernando");
         assert_eq!(FERNANDO_SPAWN_X, 0.0);
         assert_eq!(FERNANDO_SPAWN_Y, 0.0);
         assert_eq!(FERNANDO_SPAWN_Z, 100.0);
@@ -426,7 +426,7 @@ mod tests {
                 assert_eq!(champion_id, ChampionId::Fernando);
                 assert_eq!(weapon_device_id, 10774);
                 assert_eq!(team, 0);
-                assert_eq!(class_name, "TgPawn_Knight");
+                assert_eq!(class_name, "TgPawn_Fernando");
                 assert_eq!(location.x, 0.0);
                 assert_eq!(location.y, 0.0);
                 assert_eq!(location.z, 100.0);
