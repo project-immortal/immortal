@@ -191,8 +191,8 @@ impl GameServer {
 
     /// Handles an incoming datagram and returns any outgoing response datagrams.
     pub async fn handle_datagram(&self, data: &[u8], src: SocketAddr) -> Result<Vec<Vec<u8>>> {
-        // 1. Check for UE3 PComNetConn wire format (6 zero bytes prefix)
-        if data.len() >= 8 && data[0..6] == [0, 0, 0, 0, 0, 0] {
+        // 1. Check for UE3 PComNetConn wire format (offset 1..6 zero padding)
+        if data.len() >= 8 && data[1..6] == [0, 0, 0, 0, 0] {
             let client_seq = data[6];
             let flags = data[7];
 
@@ -434,12 +434,12 @@ fn rand_session_id() -> u32 {
 }
 
 /// Constructs a UE3 PComNetConn keepalive ACK datagram.
-fn wrap_pcom_ack(client_seq: u8, server_seq: u8) -> Vec<u8> {
+pub fn wrap_pcom_ack(client_seq: u8, server_seq: u8) -> Vec<u8> {
     vec![client_seq, 0x00, 0x00, 0x00, 0x00, 0x00, server_seq, 0x40]
 }
 
 /// Wraps payload into a UE3 PComNetConn datagram with trailing 1 bit.
-fn wrap_pcom_packet(client_seq: u8, server_seq: u8, payload: &[u8]) -> Vec<u8> {
+pub fn wrap_pcom_packet(client_seq: u8, server_seq: u8, payload: &[u8]) -> Vec<u8> {
     let mut pkt = Vec::with_capacity(8 + payload.len() + 1);
     pkt.push(client_seq);
     pkt.push(0x00);
@@ -536,6 +536,7 @@ mod tests {
         match welcome_msg {
             ControlMessage::Welcome { level_url, .. } => {
                 assert_eq!(level_url, DEFAULT_SHOOTING_RANGE_MAP);
+                assert!(level_url.contains("Team=0"));
             }
             other => panic!("Expected welcome message, found {:?}", other),
         }
@@ -552,17 +553,142 @@ mod tests {
         match payload {
             crate::replication::ReplicationPayload::SpawnActor {
                 champion_id,
+                weapon_device_id,
+                team,
                 class_name,
                 location,
+                health,
                 ..
             } => {
                 assert_eq!(champion_id, immortal_core::ChampionId::Fernando);
+                assert_eq!(weapon_device_id, 10774);
+                assert_eq!(team, 0);
                 assert_eq!(class_name, "TgPawn_Knight");
                 assert_eq!(location.x, 0.0);
                 assert_eq!(location.y, 0.0);
                 assert_eq!(location.z, 100.0);
+                assert_eq!(health, 4600.0);
             }
             other => panic!("Expected SpawnActor payload, found {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn test_pcom_net_conn_handshake_and_keepalive_flow() {
+        let config = GameServerConfig {
+            bind_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
+            ..Default::default()
+        };
+        let server = GameServer::bind_with_config(config).await.unwrap();
+        let client_addr: SocketAddr = "127.0.0.1:54321".parse().unwrap();
+
+        // 1. Keepalive ACK (flag 0x40): client_seq = 0, server_seq = 1
+        let keepalive = wrap_pcom_ack(0, 0);
+        let replies = server
+            .handle_datagram(&keepalive, client_addr)
+            .await
+            .expect("Handle keepalive");
+        assert_eq!(replies.len(), 1);
+        let ack1 = &replies[0];
+        assert_eq!(ack1[0], 0); // acked client_seq
+        assert_eq!(ack1[6], 1); // server_sequence = 1
+        assert_eq!(ack1[7], 0x40); // flag = ACK
+
+        // 2. Keepalive ACK: client_seq = 1, server_seq = 2
+        let keepalive2 = vec![0, 0, 0, 0, 0, 0, 1, 0x40];
+        let replies2 = server
+            .handle_datagram(&keepalive2, client_addr)
+            .await
+            .expect("Handle second keepalive");
+        assert_eq!(replies2.len(), 1);
+        let ack2 = &replies2[0];
+        assert_eq!(ack2[0], 1); // acked client_seq
+        assert_eq!(ack2[6], 2); // server_sequence = 2
+        assert_eq!(ack2[7], 0x40);
+
+        // 3. Handshake packet with client_seq = 0, flag 0x80
+        // Expect: ACK(seq=3), Welcome(seq=4), NetSpeed(seq=5), OpenCh2(seq=6), SpawnFernando(seq=7)
+        let handshake_pkt = vec![0, 0, 0, 0, 0, 0, 0, 0x80];
+        let replies3 = server
+            .handle_datagram(&handshake_pkt, client_addr)
+            .await
+            .expect("Handle PCom handshake");
+        assert_eq!(replies3.len(), 5);
+
+        // Packet 0: ACK
+        assert_eq!(replies3[0][0], 0);
+        assert_eq!(replies3[0][6], 3);
+        assert_eq!(replies3[0][7], 0x40);
+
+        // Packet 1: NMT_Welcome (flag 0x80)
+        assert_eq!(replies3[1][0], 0);
+        assert_eq!(replies3[1][6], 4);
+        assert_eq!(replies3[1][7], 0x80);
+        let welcome_bunch =
+            Bunch::decode(&replies3[1][8..replies3[1].len() - 1]).expect("Decode welcome bunch");
+        assert_eq!(welcome_bunch.header.ch_index, CONTROL_CHANNEL_INDEX);
+        let welcome_msg = ControlMessage::decode(&welcome_bunch.data).unwrap();
+        match welcome_msg {
+            ControlMessage::Welcome { level_url, .. } => {
+                assert!(level_url.contains("Team=0"));
+                assert_eq!(level_url, DEFAULT_SHOOTING_RANGE_MAP);
+            }
+            other => panic!("Expected Welcome message, found {:?}", other),
+        }
+
+        // Packet 2: NMT_NetSpeed (flag 0x80)
+        assert_eq!(replies3[2][6], 5);
+        assert_eq!(replies3[2][7], 0x80);
+
+        // Packet 3: Open Channel 2 (flag 0x80)
+        assert_eq!(replies3[3][6], 6);
+        assert_eq!(replies3[3][7], 0x80);
+        let ch2_bunch =
+            Bunch::decode(&replies3[3][8..replies3[3].len() - 1]).expect("Decode ch2 bunch");
+        assert_eq!(ch2_bunch.header.ch_index, ACTOR_CHANNEL_INDEX);
+        assert!(ch2_bunch.header.flags.b_open);
+
+        // Packet 4: Spawn Fernando (flag 0x80)
+        assert_eq!(replies3[4][6], 7);
+        assert_eq!(replies3[4][7], 0x80);
+        let spawn_bunch =
+            Bunch::decode(&replies3[4][8..replies3[4].len() - 1]).expect("Decode spawn bunch");
+        assert_eq!(spawn_bunch.header.ch_index, ACTOR_CHANNEL_INDEX);
+        let payload = crate::replication::ReplicationPayload::decode(&spawn_bunch.data)
+            .expect("Decode spawn");
+        match payload {
+            crate::replication::ReplicationPayload::SpawnActor {
+                champion_id,
+                weapon_device_id,
+                team,
+                class_name,
+                location,
+                health,
+                ..
+            } => {
+                assert_eq!(champion_id, immortal_core::ChampionId::Fernando);
+                assert_eq!(weapon_device_id, 10774);
+                assert_eq!(team, 0);
+                assert_eq!(class_name, "TgPawn_Knight");
+                assert_eq!(location.x, 0.0);
+                assert_eq!(location.y, 0.0);
+                assert_eq!(location.z, 100.0);
+                assert_eq!(health, 4600.0);
+            }
+            other => panic!("Expected SpawnActor payload, found {:?}", other),
+        }
+
+        // 4. Movement input from client (client_seq = 1, flag 0x80)
+        // Expect: ACK(seq=8), Delta(seq=9)
+        let move_pkt = vec![0, 0, 0, 0, 0, 0, 1, 0x80];
+        let replies4 = server
+            .handle_datagram(&move_pkt, client_addr)
+            .await
+            .expect("Handle PCom movement");
+        assert_eq!(replies4.len(), 2);
+        assert_eq!(replies4[0][6], 8);
+        assert_eq!(replies4[0][7], 0x40);
+        assert_eq!(replies4[1][6], 9);
+        assert_eq!(replies4[1][7], 0x80);
     }
 }

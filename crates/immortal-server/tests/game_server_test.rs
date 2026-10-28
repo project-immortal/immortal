@@ -12,7 +12,10 @@ use immortal_net::{
     Bunch, ControlMessage, HelloRecvReply, HelloSend, PingRecv, PingSend, ACTOR_CHANNEL_INDEX,
     CONTROL_CHANNEL_INDEX, CPACK_OP_BUNCH, DEFAULT_HMAC_KEY,
 };
-use immortal_server::{GameServer, GameServerConfig, ReplicationPayload};
+use immortal_server::{
+    wrap_pcom_ack, wrap_pcom_packet, GameServer, GameServerConfig, ReplicationPayload,
+    DEVICE_FERNANDO_FLAME_LANCE, FERNANDO_DEFAULT_TEAM,
+};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::UdpSocket;
@@ -114,6 +117,7 @@ async fn test_game_server_loopback_integration() {
     match welcome {
         ControlMessage::Welcome { level_url, .. } => {
             assert_eq!(level_url, immortal_net::DEFAULT_SHOOTING_RANGE_MAP);
+            assert!(level_url.contains("Team=0"));
         }
         other => panic!("Expected Welcome message, found {:?}", other),
     }
@@ -131,15 +135,21 @@ async fn test_game_server_loopback_integration() {
     match spawn_payload {
         ReplicationPayload::SpawnActor {
             champion_id,
+            weapon_device_id,
+            team,
             class_name,
             location,
+            health,
             ..
         } => {
             assert_eq!(champion_id, ChampionId::Fernando);
+            assert_eq!(weapon_device_id, DEVICE_FERNANDO_FLAME_LANCE);
+            assert_eq!(team, FERNANDO_DEFAULT_TEAM);
             assert_eq!(class_name, "TgPawn_Knight");
             assert_eq!(location.x, 0.0);
             assert_eq!(location.y, 0.0);
             assert_eq!(location.z, 100.0);
+            assert_eq!(health, 4600.0);
         }
         other => panic!("Expected SpawnActor, found {:?}", other),
     }
@@ -160,6 +170,155 @@ async fn test_game_server_loopback_integration() {
     assert_eq!(delta_bunch.header.ch_index, ACTOR_CHANNEL_INDEX);
 
     // 7. Graceful server shutdown
+    server_handle
+        .shutdown()
+        .await
+        .expect("Graceful shutdown must complete successfully");
+}
+
+#[tokio::test]
+async fn test_game_server_pcom_driver_loopback_integration() {
+    // 1. Start server on dynamic loopback port
+    let config = GameServerConfig {
+        bind_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
+        ..Default::default()
+    };
+    let server_handle = GameServer::start(config).expect("Failed to start GameServer");
+    let server_addr = server_handle.local_addr();
+
+    // 2. Client loopback socket
+    let client_socket = UdpSocket::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind client UdpSocket");
+    client_socket
+        .connect(server_addr)
+        .await
+        .expect("Failed to connect client to GameServer");
+
+    let mut buf = [0u8; 2048];
+
+    // 3. Send PCom keepalive ACK (flag 0x40): client_seq = 0
+    let keepalive_pkt = wrap_pcom_ack(0, 0);
+    client_socket
+        .send(&keepalive_pkt)
+        .await
+        .expect("Failed to send keepalive");
+
+    let _n = timeout(Duration::from_millis(500), client_socket.recv(&mut buf))
+        .await
+        .expect("Timeout waiting for keepalive ACK")
+        .expect("Recv error");
+    assert_eq!(buf[0], 0); // acked client_seq
+    assert_eq!(buf[6], 1); // server_seq = 1
+    assert_eq!(buf[7], 0x40); // ACK flag
+
+    // 4. Send PCom handshake packet (client_seq = 0, flag 0x80)
+    let handshake_pkt = vec![0, 0, 0, 0, 0, 0, 0, 0x80];
+    client_socket
+        .send(&handshake_pkt)
+        .await
+        .expect("Failed to send handshake packet");
+
+    // Expect 5 response packets:
+    // Packet 0: ACK (server_seq = 2)
+    // Packet 1: NMT_Welcome with Team=0 (server_seq = 3)
+    // Packet 2: NMT_NetSpeed (server_seq = 4)
+    // Packet 3: Channel 2 Open (server_seq = 5)
+    // Packet 4: Spawn Fernando (server_seq = 6)
+    let mut pcom_packets = Vec::new();
+    for _ in 0..5 {
+        match timeout(Duration::from_millis(300), client_socket.recv(&mut buf)).await {
+            Ok(Ok(n)) => {
+                pcom_packets.push(buf[..n].to_vec());
+            }
+            _ => break,
+        }
+    }
+
+    assert_eq!(
+        pcom_packets.len(),
+        5,
+        "Expected 5 PCom response packets, got {}",
+        pcom_packets.len()
+    );
+
+    // Sequence increments verification
+    assert_eq!(pcom_packets[0][6], 2);
+    assert_eq!(pcom_packets[0][7], 0x40);
+
+    assert_eq!(pcom_packets[1][6], 3);
+    assert_eq!(pcom_packets[1][7], 0x80);
+    let welcome_bunch = Bunch::decode(&pcom_packets[1][8..pcom_packets[1].len() - 1])
+        .expect("Decode welcome bunch");
+    assert_eq!(welcome_bunch.header.ch_index, CONTROL_CHANNEL_INDEX);
+    let welcome_msg = ControlMessage::decode(&welcome_bunch.data).expect("Decode welcome message");
+    match welcome_msg {
+        ControlMessage::Welcome { level_url, .. } => {
+            assert!(level_url.contains("Team=0"));
+            assert_eq!(level_url, immortal_net::DEFAULT_SHOOTING_RANGE_MAP);
+        }
+        other => panic!("Expected Welcome message, found {:?}", other),
+    }
+
+    assert_eq!(pcom_packets[2][6], 4);
+    assert_eq!(pcom_packets[2][7], 0x80);
+
+    assert_eq!(pcom_packets[3][6], 5);
+    assert_eq!(pcom_packets[3][7], 0x80);
+
+    assert_eq!(pcom_packets[4][6], 6);
+    assert_eq!(pcom_packets[4][7], 0x80);
+    let spawn_bunch =
+        Bunch::decode(&pcom_packets[4][8..pcom_packets[4].len() - 1]).expect("Decode spawn bunch");
+    assert_eq!(spawn_bunch.header.ch_index, ACTOR_CHANNEL_INDEX);
+    let spawn_payload =
+        ReplicationPayload::decode(&spawn_bunch.data).expect("Decode spawn payload");
+    match spawn_payload {
+        ReplicationPayload::SpawnActor {
+            champion_id,
+            weapon_device_id,
+            team,
+            class_name,
+            location,
+            health,
+            ..
+        } => {
+            assert_eq!(champion_id, ChampionId::Fernando);
+            assert_eq!(weapon_device_id, DEVICE_FERNANDO_FLAME_LANCE);
+            assert_eq!(team, FERNANDO_DEFAULT_TEAM);
+            assert_eq!(class_name, "TgPawn_Knight");
+            assert_eq!(location.x, 0.0);
+            assert_eq!(location.y, 0.0);
+            assert_eq!(location.z, 100.0);
+            assert_eq!(health, 4600.0);
+        }
+        other => panic!("Expected SpawnActor, found {:?}", other),
+    }
+
+    // 5. Send movement input packet (client_seq = 1, flag 0x80)
+    let move_pkt = wrap_pcom_packet(1, 1, &[0x03, 0x0A, 0x00, 0x00, 0x00]);
+    client_socket
+        .send(&move_pkt)
+        .await
+        .expect("Failed to send movement packet");
+
+    // Expect ACK (server_seq = 7) and Transform Delta (server_seq = 8)
+    let mut move_responses = Vec::new();
+    for _ in 0..2 {
+        match timeout(Duration::from_millis(300), client_socket.recv(&mut buf)).await {
+            Ok(Ok(n)) => {
+                move_responses.push(buf[..n].to_vec());
+            }
+            _ => break,
+        }
+    }
+    assert_eq!(move_responses.len(), 2);
+    assert_eq!(move_responses[0][6], 7);
+    assert_eq!(move_responses[0][7], 0x40);
+    assert_eq!(move_responses[1][6], 8);
+    assert_eq!(move_responses[1][7], 0x80);
+
+    // 6. Graceful server shutdown
     server_handle
         .shutdown()
         .await
