@@ -75,15 +75,38 @@ impl PckArchive {
         let header_size = reader.read_u32::<LittleEndian>()?;
         let version = reader.read_u32::<LittleEndian>()?;
 
-        // Language table
-        let lang_table_size = reader.read_u32::<LittleEndian>()?;
-        let mut lang_bytes_read = 0;
-        let mut languages = Vec::new();
-        while lang_bytes_read < lang_table_size {
-            let offset = reader.read_u32::<LittleEndian>()?;
-            let id = reader.read_u32::<LittleEndian>()?;
-            languages.push((offset, id));
-            lang_bytes_read += 8;
+        // Detect if archive uses standard Wwise multi-table header (lang, bank, stream, ext sizes)
+        // Check if sum of table sizes + 28 bytes equals header_size + 8
+        let pos_before_tables = reader.stream_position()?;
+        let first_val = reader.read_u32::<LittleEndian>()?;
+
+        let is_wwise_multi_table = if let (Ok(bank_sz), Ok(stream_sz), Ok(ext_sz)) = (
+            reader.read_u32::<LittleEndian>(),
+            reader.read_u32::<LittleEndian>(),
+            reader.read_u32::<LittleEndian>(),
+        ) {
+            let total = 28u64 + (first_val as u64) + (bank_sz as u64) + (stream_sz as u64) + (ext_sz as u64);
+            total == (header_size as u64 + 8)
+        } else {
+            false
+        };
+
+        if is_wwise_multi_table {
+            // first_val is lang_table_size. Skip language table.
+            if first_val > 0 {
+                let mut lang_buf = vec![0u8; first_val as usize];
+                reader.read_exact(&mut lang_buf)?;
+            }
+        } else {
+            // Legacy / synthetic format: restore position after version
+            reader.seek(SeekFrom::Start(pos_before_tables))?;
+            let lang_table_size = reader.read_u32::<LittleEndian>()?;
+            let mut lang_bytes_read = 0;
+            while lang_bytes_read < lang_table_size {
+                let _offset = reader.read_u32::<LittleEndian>()?;
+                let _id = reader.read_u32::<LittleEndian>()?;
+                lang_bytes_read += 8;
+            }
         }
 
         // SoundBanks table
