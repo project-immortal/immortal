@@ -194,7 +194,12 @@ impl GameServer {
         let mut sessions = self.sessions.write().await;
         let session = sessions.entry(src).or_insert_with(|| {
             let session_id = rand_session_id();
-            ClientSession::new(src, session_id, &self.config.level_url, self.config.net_speed)
+            ClientSession::new(
+                src,
+                session_id,
+                &self.config.level_url,
+                self.config.net_speed,
+            )
         });
         session.last_seen = Instant::now();
 
@@ -226,49 +231,41 @@ impl GameServer {
                 // Client usually doesn't send these to server
             }
 
-            CPackUdpPacket::Bunch(bunch_raw) => {
-                match Bunch::decode(&bunch_raw) {
-                    Ok(bunch) => {
-                        let bunch_responses = self.handle_bunch(bunch, session)?;
-                        for b in bunch_responses {
-                            responses.push(b.encode_cpack_udp());
-                        }
+            CPackUdpPacket::Bunch(bunch_raw) => match Bunch::decode(&bunch_raw) {
+                Ok(bunch) => {
+                    let bunch_responses = self.handle_bunch(bunch, session)?;
+                    for b in bunch_responses {
+                        responses.push(b.encode_cpack_udp());
                     }
-                    Err(bunch_err) => {
-                        match ControlMessage::decode(&bunch_raw) {
-                            Ok(ctrl_msg) => {
-                                warn!(
+                }
+                Err(bunch_err) => match ControlMessage::decode(&bunch_raw) {
+                    Ok(ctrl_msg) => {
+                        warn!(
                                     "Received raw unencapsulated ControlMessage from {} (bunch decode error: {})",
                                     src, bunch_err
                                 );
-                                let replies = session.handshake.handle_control_message(&ctrl_msg)?;
-                                for rep in replies {
-                                    let b = Bunch::control(session.ctrl_sequence, rep.encode());
-                                    session.ctrl_sequence += 1;
-                                    responses.push(b.encode_cpack_udp());
-                                }
-                            }
-                            Err(ctrl_err) => {
-                                warn!(
+                        let replies = session.handshake.handle_control_message(&ctrl_msg)?;
+                        for rep in replies {
+                            let b = Bunch::control(session.ctrl_sequence, rep.encode());
+                            session.ctrl_sequence += 1;
+                            responses.push(b.encode_cpack_udp());
+                        }
+                    }
+                    Err(ctrl_err) => {
+                        warn!(
                                     "Failed to decode bunch payload from {}: bunch decode error ({}), control decode error ({})",
                                     src, bunch_err, ctrl_err
                                 );
-                            }
-                        }
                     }
-                }
-            }
+                },
+            },
         }
 
         Ok(responses)
     }
 
     /// Handles a parsed bunch and generates any response bunches.
-    fn handle_bunch(
-        &self,
-        bunch: Bunch,
-        session: &mut ClientSession,
-    ) -> Result<Vec<Bunch>> {
+    fn handle_bunch(&self, bunch: Bunch, session: &mut ClientSession) -> Result<Vec<Bunch>> {
         let mut out = Vec::new();
 
         match bunch.header.ch_index {
@@ -317,7 +314,10 @@ impl GameServer {
                 out.push(delta);
             }
             _ => {
-                debug!("Ingested bunch on unknown channel: {}", bunch.header.ch_index);
+                debug!(
+                    "Ingested bunch on unknown channel: {}",
+                    bunch.header.ch_index
+                );
             }
         }
 

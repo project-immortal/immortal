@@ -10,7 +10,9 @@
 pub mod game_server;
 pub mod replication;
 
-pub use game_server::{ClientSession, GameServer, GameServerConfig, GameServerHandle, SessionPhase};
+pub use game_server::{
+    ClientSession, GameServer, GameServerConfig, GameServerHandle, SessionPhase,
+};
 pub use replication::{
     PawnActor, PlayerControllerActor, ReplicationPayload, ReplicationSession, Rotator, Vector3,
     FERNANDO_BASE_HEALTH, FERNANDO_CHAMPION_ID, FERNANDO_PAWN_CLASS, FERNANDO_SPAWN_X,

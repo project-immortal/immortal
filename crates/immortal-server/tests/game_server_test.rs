@@ -9,8 +9,8 @@
 
 use immortal_core::ChampionId;
 use immortal_net::{
-    Bunch, ControlMessage, HelloRecvReply, HelloSend, PingRecv, PingSend,
-    ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX, CPACK_OP_BUNCH, DEFAULT_HMAC_KEY,
+    Bunch, ControlMessage, HelloRecvReply, HelloSend, PingRecv, PingSend, ACTOR_CHANNEL_INDEX,
+    CONTROL_CHANNEL_INDEX, CPACK_OP_BUNCH, DEFAULT_HMAC_KEY,
 };
 use immortal_server::{GameServer, GameServerConfig, ReplicationPayload};
 use std::net::SocketAddr;
@@ -86,8 +86,12 @@ async fn test_game_server_loopback_integration() {
         match timeout(Duration::from_millis(200), client_socket.recv(&mut buf)).await {
             Ok(Ok(n)) => {
                 let packet_bytes = &buf[..n];
-                assert_eq!(packet_bytes[0], CPACK_OP_BUNCH, "Bunch datagram must have 0x04 prefix");
-                let decoded = Bunch::decode_cpack_udp(packet_bytes).expect("Failed to decode bunch");
+                assert_eq!(
+                    packet_bytes[0], CPACK_OP_BUNCH,
+                    "Bunch datagram must have 0x04 prefix"
+                );
+                let decoded =
+                    Bunch::decode_cpack_udp(packet_bytes).expect("Failed to decode bunch");
                 received_bunches.push(decoded);
             }
             _ => break,
@@ -122,7 +126,8 @@ async fn test_game_server_loopback_integration() {
     // Fernando Pawn spawn on Channel 2 with sequence 1
     assert_eq!(received_bunches[3].header.ch_index, ACTOR_CHANNEL_INDEX);
     assert_eq!(received_bunches[3].header.ch_sequence, 1);
-    let spawn_payload = ReplicationPayload::decode(&received_bunches[3].data).expect("Decode spawn");
+    let spawn_payload =
+        ReplicationPayload::decode(&received_bunches[3].data).expect("Decode spawn");
     match spawn_payload {
         ReplicationPayload::SpawnActor {
             champion_id,

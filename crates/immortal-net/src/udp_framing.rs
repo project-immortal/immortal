@@ -75,8 +75,8 @@ fn gamma1(x: u32) -> u32 {
 #[allow(clippy::chunks_exact_to_as_chunks)]
 pub fn sha256(data: &[u8]) -> [u8; 32] {
     let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
     ];
 
     let bit_len = (data.len() as u64) * 8;
@@ -238,7 +238,12 @@ impl HelloSend {
     }
 
     /// Builds a valid HelloSend datagram with the specified key, payload, and optional padding.
-    pub fn build(key: &[u8], connection_id: u32, payload_524: Option<&[u8]>, pad_to: usize) -> Vec<u8> {
+    pub fn build(
+        key: &[u8],
+        connection_id: u32,
+        payload_524: Option<&[u8]>,
+        pad_to: usize,
+    ) -> Vec<u8> {
         let target_len = pad_to.max(HELLO_FULL_LEN);
         let mut buf = vec![0u8; target_len];
 
@@ -251,11 +256,15 @@ impl HelloSend {
         // Populate 524 bytes payload
         if let Some(src) = payload_524 {
             let copy_len = src.len().min(HELLO_PAYLOAD_LEN);
-            buf[HELLO_PAYLOAD_OFFSET..HELLO_PAYLOAD_OFFSET + copy_len].copy_from_slice(&src[..copy_len]);
+            buf[HELLO_PAYLOAD_OFFSET..HELLO_PAYLOAD_OFFSET + copy_len]
+                .copy_from_slice(&src[..copy_len]);
         }
 
         // Compute HMAC over 524 bytes from +0x5a
-        let hmac = hmac_sha256(key, &buf[HELLO_PAYLOAD_OFFSET..HELLO_PAYLOAD_OFFSET + HELLO_PAYLOAD_LEN]);
+        let hmac = hmac_sha256(
+            key,
+            &buf[HELLO_PAYLOAD_OFFSET..HELLO_PAYLOAD_OFFSET + HELLO_PAYLOAD_LEN],
+        );
 
         // Place 32-byte HMAC at +0x26a
         buf[HELLO_HMAC_OFFSET..HELLO_HMAC_OFFSET + 32].copy_from_slice(&hmac);
@@ -519,7 +528,10 @@ mod tests {
         let short_data = vec![0u8; 569];
         assert!(matches!(
             HelloSend::parse(&short_data),
-            Err(NetError::PacketTooSmall { expected: 570, actual: 569 })
+            Err(NetError::PacketTooSmall {
+                expected: 570,
+                actual: 569
+            })
         ));
     }
 
@@ -544,7 +556,10 @@ mod tests {
 
         let parsed = HelloSend::parse(&packet_bytes).expect("Failed to parse valid HelloSend");
         assert_eq!(parsed.connection_id, 12345);
-        assert!(parsed.validate_hmac(key), "HMAC verification must succeed with correct key");
+        assert!(
+            parsed.validate_hmac(key),
+            "HMAC verification must succeed with correct key"
+        );
 
         // Verification must fail with wrong key
         assert!(!parsed.validate_hmac(b"wrong_secret_key"));

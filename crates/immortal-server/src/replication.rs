@@ -184,8 +184,10 @@ impl ReplicationSession {
         self.channel_opened = true;
         let mut data = Vec::new();
         data.push(REP_OP_OPEN_CHANNEL);
-        data.write_u32::<LittleEndian>(self.controller.actor_id).unwrap();
-        data.write_u32::<LittleEndian>(self.controller.channel_index).unwrap();
+        data.write_u32::<LittleEndian>(self.controller.actor_id)
+            .unwrap();
+        data.write_u32::<LittleEndian>(self.controller.channel_index)
+            .unwrap();
 
         let bunch = Bunch::actor(self.actor_sequence, true, data);
         self.actor_sequence += 1;
@@ -199,16 +201,19 @@ impl ReplicationSession {
         let mut data = Vec::new();
         data.push(REP_OP_SPAWN_ACTOR);
         data.write_u32::<LittleEndian>(self.pawn.actor_id).unwrap();
-        data.write_u32::<LittleEndian>(self.pawn.champion_id as u32).unwrap();
+        data.write_u32::<LittleEndian>(self.pawn.champion_id as u32)
+            .unwrap();
 
         let class_bytes = self.pawn.class_name.as_bytes();
-        data.write_u16::<LittleEndian>(class_bytes.len() as u16).unwrap();
+        data.write_u16::<LittleEndian>(class_bytes.len() as u16)
+            .unwrap();
         data.extend_from_slice(class_bytes);
 
         self.pawn.location.write_bytes(&mut data).unwrap();
         self.pawn.rotation.write_bytes(&mut data).unwrap();
         data.write_f32::<LittleEndian>(self.pawn.health).unwrap();
-        data.write_f32::<LittleEndian>(self.pawn.max_health).unwrap();
+        data.write_f32::<LittleEndian>(self.pawn.max_health)
+            .unwrap();
 
         let bunch = Bunch::actor(self.actor_sequence, false, data);
         self.actor_sequence += 1;

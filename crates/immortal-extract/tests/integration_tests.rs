@@ -506,11 +506,13 @@ fn test_integration_synthetic_tfc_and_dds_pipeline() {
 
     // Write Mip 0: DXT1 compressed with LZO
     let dxt1_pixels = vec![0x55u8; 1024]; // 64x64 DXT1
-    let (offset_mip0, size_mip0) = write_tfc_chunk(&mut tfc_file, &dxt1_pixels, Some(COMPRESS_LZO)).unwrap();
+    let (offset_mip0, size_mip0) =
+        write_tfc_chunk(&mut tfc_file, &dxt1_pixels, Some(COMPRESS_LZO)).unwrap();
 
     // Write Mip 1: DXT5 compressed with ZLIB
     let dxt5_pixels = vec![0xAAu8; 2048]; // 64x64 DXT5
-    let (offset_mip1, size_mip1) = write_tfc_chunk(&mut tfc_file, &dxt5_pixels, Some(COMPRESS_ZLIB)).unwrap();
+    let (offset_mip1, size_mip1) =
+        write_tfc_chunk(&mut tfc_file, &dxt5_pixels, Some(COMPRESS_ZLIB)).unwrap();
 
     // Write Mip 2: BC7 uncompressed
     let bc7_pixels = vec![0x77u8; 4096]; // 128x64 BC7
@@ -535,7 +537,9 @@ fn test_integration_synthetic_tfc_and_dds_pipeline() {
         size_y: 64,
         inline_data: None,
     };
-    let extracted_mip0 = resolver.extract_mip_from_tfc("CharNormals0", &mip0).unwrap();
+    let extracted_mip0 = resolver
+        .extract_mip_from_tfc("CharNormals0", &mip0)
+        .unwrap();
     assert_eq!(extracted_mip0, dxt1_pixels);
     let dds0 = export_dds(64, 64, TextureFormat::Dxt1, &extracted_mip0);
     assert_eq!(&dds0[0..4], b"DDS ");
@@ -553,7 +557,9 @@ fn test_integration_synthetic_tfc_and_dds_pipeline() {
         size_y: 64,
         inline_data: None,
     };
-    let extracted_mip1 = resolver.extract_mip_from_tfc("CharNormals0", &mip1).unwrap();
+    let extracted_mip1 = resolver
+        .extract_mip_from_tfc("CharNormals0", &mip1)
+        .unwrap();
     assert_eq!(extracted_mip1, dxt5_pixels);
     let dds1 = export_dds(64, 64, TextureFormat::Dxt5, &extracted_mip1);
     assert_eq!(&dds1[0..4], b"DDS ");
@@ -571,7 +577,9 @@ fn test_integration_synthetic_tfc_and_dds_pipeline() {
         size_y: 64,
         inline_data: None,
     };
-    let extracted_mip2 = resolver.extract_mip_from_tfc("CharNormals0", &mip2).unwrap();
+    let extracted_mip2 = resolver
+        .extract_mip_from_tfc("CharNormals0", &mip2)
+        .unwrap();
     assert_eq!(extracted_mip2, bc7_pixels);
     let dds2 = export_dds(128, 64, TextureFormat::Bc7, &extracted_mip2);
     assert_eq!(&dds2[0..4], b"DDS ");
@@ -607,15 +615,21 @@ fn test_integration_synthetic_akpk_soundbank_and_wav_pipeline() {
     assert_eq!(archive.streams.len(), 2);
 
     // Verify BKHD bank extraction
-    let bkhd_entry = archive.get_soundbank(133742).expect("Soundbank 133742 not found");
+    let bkhd_entry = archive
+        .get_soundbank(133742)
+        .expect("Soundbank 133742 not found");
     let extracted_bank = archive.extract_entry(&mut pck_stream, bkhd_entry).unwrap();
     let bkhd_header = parse_bkhd(&extracted_bank).unwrap();
     assert_eq!(bkhd_header.soundbank_id, 133742);
     assert_eq!(bkhd_header.generator_version, 120);
 
     // Verify Stream 1 extraction & conversion to WAV
-    let stream1_entry = archive.find_entry("9001.wem").expect("Stream 9001 not found");
-    let extracted_stream1 = archive.extract_entry(&mut pck_stream, stream1_entry).unwrap();
+    let stream1_entry = archive
+        .find_entry("9001.wem")
+        .expect("Stream 9001 not found");
+    let extracted_stream1 = archive
+        .extract_entry(&mut pck_stream, stream1_entry)
+        .unwrap();
     let wav1 = convert_wem_to_wav(&extracted_stream1, Some(WavSpec::pcm(48000, 1, 16))).unwrap();
     let (spec1, samples1) = parse_wav(&wav1).unwrap();
     assert_eq!(spec1.sample_rate, 48000);
@@ -624,7 +638,9 @@ fn test_integration_synthetic_akpk_soundbank_and_wav_pipeline() {
 
     // Verify Stream 2 extraction & conversion
     let stream2_entry = archive.find_entry("9002").expect("Stream 9002 not found");
-    let extracted_stream2 = archive.extract_entry(&mut pck_stream, stream2_entry).unwrap();
+    let extracted_stream2 = archive
+        .extract_entry(&mut pck_stream, stream2_entry)
+        .unwrap();
     let wav2 = convert_wem_to_wav(&extracted_stream2, None).unwrap();
     let (spec2, samples2) = parse_wav(&wav2).unwrap();
     assert_eq!(spec2.sample_rate, 44100);
@@ -714,8 +730,10 @@ fn test_integration_synthetic_skeletal_mesh_to_gltf_pipeline() {
 
     assert!(gltf_path.exists());
     assert!(bin_path.exists());
-    assert_eq!(std::fs::metadata(&bin_path).unwrap().len(), export.bin_data.len() as u64);
+    assert_eq!(
+        std::fs::metadata(&bin_path).unwrap().len(),
+        export.bin_data.len() as u64
+    );
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
-

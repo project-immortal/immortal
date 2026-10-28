@@ -155,8 +155,10 @@ impl Bunch {
         buf.write_u32::<LittleEndian>(self.header.ch_index).unwrap();
         buf.write_u8(self.header.ch_type as u8).unwrap();
         buf.write_u8(self.header.flags.to_byte()).unwrap();
-        buf.write_u32::<LittleEndian>(self.header.ch_sequence).unwrap();
-        buf.write_u32::<LittleEndian>(self.data.len() as u32).unwrap();
+        buf.write_u32::<LittleEndian>(self.header.ch_sequence)
+            .unwrap();
+        buf.write_u32::<LittleEndian>(self.data.len() as u32)
+            .unwrap();
         buf.extend_from_slice(&self.data);
         buf
     }
@@ -235,17 +237,11 @@ pub enum ControlMessage {
         game_class: String,
     },
     /// NMT_Upgrade (0x02): Server informs client of upgrade requirement.
-    Upgrade {
-        engine_version: u32,
-    },
+    Upgrade { engine_version: u32 },
     /// NMT_NetSpeed (0x03): Sent by server/client to negotiate transfer rate.
-    NetSpeed {
-        rate: u32,
-    },
+    NetSpeed { rate: u32 },
     /// NMT_Failure (0x04): Error or disconnect reason.
-    Failure {
-        reason: String,
-    },
+    Failure { reason: String },
 }
 
 impl ControlMessage {
@@ -447,9 +443,7 @@ impl ControlChannelHandshake {
     pub fn new(level_url: Option<&str>, net_speed: Option<u32>) -> Self {
         Self {
             phase: HandshakePhase::AwaitingHello,
-            level_url: level_url
-                .unwrap_or(DEFAULT_SHOOTING_RANGE_MAP)
-                .to_string(),
+            level_url: level_url.unwrap_or(DEFAULT_SHOOTING_RANGE_MAP).to_string(),
             net_speed: net_speed.unwrap_or(DEFAULT_NET_SPEED),
             client_engine_version: 0,
             client_licensee_version: 0,
@@ -600,7 +594,8 @@ mod tests {
     #[test]
     fn test_read_fstring_oversized_positive_rejection() {
         let mut data = Vec::new();
-        data.write_i32::<LittleEndian>((MAX_FSTRING_LEN as i32) + 1).unwrap();
+        data.write_i32::<LittleEndian>((MAX_FSTRING_LEN as i32) + 1)
+            .unwrap();
         let mut cursor = Cursor::new(data);
         let res = read_fstring(&mut cursor);
         assert!(matches!(res, Err(NetError::PayloadTooLarge { .. })));
@@ -609,7 +604,8 @@ mod tests {
     #[test]
     fn test_read_fstring_oversized_negative_rejection() {
         let mut data = Vec::new();
-        data.write_i32::<LittleEndian>(-((MAX_FSTRING_LEN as i32) + 1)).unwrap();
+        data.write_i32::<LittleEndian>(-((MAX_FSTRING_LEN as i32) + 1))
+            .unwrap();
         let mut cursor = Cursor::new(data);
         let res = read_fstring(&mut cursor);
         assert!(matches!(res, Err(NetError::PayloadTooLarge { .. })));

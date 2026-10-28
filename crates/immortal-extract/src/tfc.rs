@@ -56,7 +56,7 @@ pub const DDPF_RGB: u32 = 0x00000040;
 /// FourCC codes for texture formats.
 pub const FOURCC_DXT1: u32 = 0x31545844; // "DXT1"
 pub const FOURCC_DXT5: u32 = 0x35545844; // "DXT5"
-pub const FOURCC_BC7: u32 = 0x00374342;  // "BC7\0"
+pub const FOURCC_BC7: u32 = 0x00374342; // "BC7\0"
 
 /// Supported texture formats for DDS export.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,7 +120,9 @@ impl FByteBulkData {
 
     /// Returns true if bulk data is compressed with LZO or ZLIB.
     pub fn is_compressed(&self) -> bool {
-        (self.bulk_data_flags & (BULKDATA_COMPRESSED_LZO | BULKDATA_COMPRESSED_ZLIB | BULKDATA_COMPRESSED_LZMA)) != 0
+        (self.bulk_data_flags
+            & (BULKDATA_COMPRESSED_LZO | BULKDATA_COMPRESSED_ZLIB | BULKDATA_COMPRESSED_LZMA))
+            != 0
     }
 }
 
@@ -152,7 +154,8 @@ impl FTexture2DMipMap {
             reader.read_exact(&mut buf)?;
 
             // If compressed chunk header present, decompress
-            let decompressed = decompress_bulk_payload(&buf, bulk_data.element_count, bulk_data.bulk_data_flags)?;
+            let decompressed =
+                decompress_bulk_payload(&buf, bulk_data.element_count, bulk_data.bulk_data_flags)?;
             inline_data = Some(decompressed);
 
             // Restore stream position if jumped
@@ -224,15 +227,29 @@ pub fn decompress_bulk_payload(
         let block_table_size = (num_blocks as usize) * 8;
         if payload.len() < 16 + block_table_size {
             return Err(ExtractError::CorruptChunk {
-                reason: format!("Payload truncated before block table (need {}, got {})", 16 + block_table_size, payload.len()),
+                reason: format!(
+                    "Payload truncated before block table (need {}, got {})",
+                    16 + block_table_size,
+                    payload.len()
+                ),
             });
         }
 
         let mut blocks = Vec::with_capacity(num_blocks as usize);
         let mut cursor = 16;
         for _ in 0..num_blocks {
-            let b_comp = u32::from_le_bytes([payload[cursor], payload[cursor + 1], payload[cursor + 2], payload[cursor + 3]]);
-            let b_uncomp = u32::from_le_bytes([payload[cursor + 4], payload[cursor + 5], payload[cursor + 6], payload[cursor + 7]]);
+            let b_comp = u32::from_le_bytes([
+                payload[cursor],
+                payload[cursor + 1],
+                payload[cursor + 2],
+                payload[cursor + 3],
+            ]);
+            let b_uncomp = u32::from_le_bytes([
+                payload[cursor + 4],
+                payload[cursor + 5],
+                payload[cursor + 6],
+                payload[cursor + 7],
+            ]);
             blocks.push(FCompressedChunkBlock {
                 compressed_size: b_comp,
                 uncompressed_size: b_uncomp,
@@ -304,7 +321,8 @@ impl TfcResolver {
         };
 
         // Candidate 1: Standard CookedPCConsole relative to game root
-        let candidate1 = self.base_path
+        let candidate1 = self
+            .base_path
             .join("ChaosGame")
             .join("CookedPCConsole")
             .join(&clean_name);
@@ -313,9 +331,7 @@ impl TfcResolver {
         }
 
         // Candidate 2: Directly under CookedPCConsole
-        let candidate2 = self.base_path
-            .join("CookedPCConsole")
-            .join(&clean_name);
+        let candidate2 = self.base_path.join("CookedPCConsole").join(&clean_name);
         if candidate2.exists() {
             return candidate2;
         }
@@ -533,12 +549,7 @@ pub fn build_dds_header(
 }
 
 /// Exports raw mip data into a valid `.dds` binary buffer.
-pub fn export_dds(
-    width: u32,
-    height: u32,
-    format: TextureFormat,
-    mip_data: &[u8],
-) -> Vec<u8> {
+pub fn export_dds(width: u32, height: u32, format: TextureFormat, mip_data: &[u8]) -> Vec<u8> {
     let header = build_dds_header(width, height, format, 1);
     let mut output = Vec::with_capacity(128 + mip_data.len());
     output.extend_from_slice(&header);
@@ -668,7 +679,8 @@ mod tests {
     #[test]
     fn test_dds_header_dxt5_and_bc7() {
         let dxt5_hdr = build_dds_header(512, 512, TextureFormat::Dxt5, 1);
-        let four_cc_dxt5 = u32::from_le_bytes([dxt5_hdr[84], dxt5_hdr[85], dxt5_hdr[86], dxt5_hdr[87]]);
+        let four_cc_dxt5 =
+            u32::from_le_bytes([dxt5_hdr[84], dxt5_hdr[85], dxt5_hdr[86], dxt5_hdr[87]]);
         assert_eq!(four_cc_dxt5, FOURCC_DXT5);
 
         let bc7_hdr = build_dds_header(1024, 1024, TextureFormat::Bc7, 1);
@@ -688,7 +700,8 @@ mod tests {
     fn test_tfc_chunk_roundtrip_uncompressed() {
         let original_data = vec![0x42u8; 4096];
         let mut tfc_stream = Cursor::new(Vec::new());
-        let (offset, size_on_disk) = write_tfc_chunk(&mut tfc_stream, &original_data, None).unwrap();
+        let (offset, size_on_disk) =
+            write_tfc_chunk(&mut tfc_stream, &original_data, None).unwrap();
         assert_eq!(offset, 0);
         assert_eq!(size_on_disk, 4096);
 
@@ -705,7 +718,9 @@ mod tests {
         };
 
         let resolver = TfcResolver::new(".");
-        let extracted = resolver.extract_mip_from_reader(&mut tfc_stream, &mip).unwrap();
+        let extracted = resolver
+            .extract_mip_from_reader(&mut tfc_stream, &mip)
+            .unwrap();
         assert_eq!(extracted, original_data);
     }
 
@@ -713,7 +728,8 @@ mod tests {
     fn test_tfc_chunk_roundtrip_lzo_compressed() {
         let original_data = vec![0xABu8; 65536];
         let mut tfc_stream = Cursor::new(Vec::new());
-        let (offset, size_on_disk) = write_tfc_chunk(&mut tfc_stream, &original_data, Some(COMPRESS_LZO)).unwrap();
+        let (offset, size_on_disk) =
+            write_tfc_chunk(&mut tfc_stream, &original_data, Some(COMPRESS_LZO)).unwrap();
 
         let mip = FTexture2DMipMap {
             bulk_data: FByteBulkData {
@@ -728,15 +744,19 @@ mod tests {
         };
 
         let resolver = TfcResolver::new(".");
-        let extracted = resolver.extract_mip_from_reader(&mut tfc_stream, &mip).unwrap();
+        let extracted = resolver
+            .extract_mip_from_reader(&mut tfc_stream, &mip)
+            .unwrap();
         assert_eq!(extracted, original_data);
     }
 
     #[test]
     fn test_tfc_chunk_roundtrip_zlib_compressed() {
-        let original_data = b"Cleanroom Paladins Texture Cache test with ZLIB compression".repeat(100);
+        let original_data =
+            b"Cleanroom Paladins Texture Cache test with ZLIB compression".repeat(100);
         let mut tfc_stream = Cursor::new(Vec::new());
-        let (offset, size_on_disk) = write_tfc_chunk(&mut tfc_stream, &original_data, Some(COMPRESS_ZLIB)).unwrap();
+        let (offset, size_on_disk) =
+            write_tfc_chunk(&mut tfc_stream, &original_data, Some(COMPRESS_ZLIB)).unwrap();
 
         let mip = FTexture2DMipMap {
             bulk_data: FByteBulkData {
@@ -751,7 +771,9 @@ mod tests {
         };
 
         let resolver = TfcResolver::new(".");
-        let extracted = resolver.extract_mip_from_reader(&mut tfc_stream, &mip).unwrap();
+        let extracted = resolver
+            .extract_mip_from_reader(&mut tfc_stream, &mip)
+            .unwrap();
         assert_eq!(extracted, original_data);
     }
 
@@ -796,7 +818,9 @@ mod tests {
 
         let resolver = TfcResolver::new(".");
         let mut stream = Cursor::new(vec![0u8; 100]);
-        let err = resolver.extract_mip_from_reader(&mut stream, &mip).unwrap_err();
+        let err = resolver
+            .extract_mip_from_reader(&mut stream, &mip)
+            .unwrap_err();
         match err {
             ExtractError::InvalidBulkData { reason } => {
                 assert!(reason.contains("Negative bulk data offset"));
@@ -813,7 +837,7 @@ mod tests {
         payload.extend_from_slice(&131072u32.to_le_bytes()); // block_size
         payload.extend_from_slice(&500u32.to_le_bytes()); // compressed_size
         payload.extend_from_slice(&1000u32.to_le_bytes()); // uncompressed_size
-        // Block descriptor: 500 compressed, 1000 uncompressed
+                                                           // Block descriptor: 500 compressed, 1000 uncompressed
         payload.extend_from_slice(&500u32.to_le_bytes());
         payload.extend_from_slice(&1000u32.to_le_bytes());
         // Truncated block payload: only 10 bytes instead of 500

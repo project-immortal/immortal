@@ -642,7 +642,10 @@ pub fn export_skeletal_mesh_to_gltf(
             // Build children mapping
             let mut children_map: Vec<Vec<u32>> = vec![Vec::new(); skel.bones.len()];
             for (idx, bone) in skel.bones.iter().enumerate() {
-                if bone.parent_index >= 0 && (bone.parent_index as usize) < skel.bones.len() && bone.parent_index as usize != idx {
+                if bone.parent_index >= 0
+                    && (bone.parent_index as usize) < skel.bones.len()
+                    && bone.parent_index as usize != idx
+                {
                     children_map[bone.parent_index as usize].push((bone_node_start + idx) as u32);
                 }
             }
@@ -732,9 +735,10 @@ pub fn export_skeletal_mesh_to_gltf(
         gltf_root["skins"] = json!(skins);
     }
 
-    let gltf_json = serde_json::to_string_pretty(&gltf_root).map_err(|e| ExtractError::GltfExport {
-        reason: format!("JSON serialization failed: {e}"),
-    })?;
+    let gltf_json =
+        serde_json::to_string_pretty(&gltf_root).map_err(|e| ExtractError::GltfExport {
+            reason: format!("JSON serialization failed: {e}"),
+        })?;
 
     Ok(GltfExport {
         gltf_json,
@@ -863,12 +867,14 @@ mod tests {
             },
         ]);
 
-        let export = export_skeletal_mesh_to_gltf(&model, Some(&skeleton), "test_model.bin").unwrap();
+        let export =
+            export_skeletal_mesh_to_gltf(&model, Some(&skeleton), "test_model.bin").unwrap();
         assert!(!export.bin_data.is_empty());
         assert_eq!(export.bin_filename, "test_model.bin");
 
         // Parse JSON to verify glTF 2.0 validity
-        let json_val: serde_json::Value = serde_json::from_str(&export.gltf_json).expect("Invalid glTF JSON");
+        let json_val: serde_json::Value =
+            serde_json::from_str(&export.gltf_json).expect("Invalid glTF JSON");
         assert_eq!(json_val["asset"]["version"], "2.0");
         assert_eq!(json_val["buffers"][0]["uri"], "test_model.bin");
         assert_eq!(json_val["meshes"].as_array().unwrap().len(), 1);

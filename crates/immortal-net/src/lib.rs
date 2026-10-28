@@ -17,8 +17,8 @@ pub mod udp_framing;
 pub use bunch::{
     Bunch, BunchFlags, BunchHeader, ControlChannelHandshake, ControlMessage, HandshakePhase,
     Ue3ChannelType, ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX, DEFAULT_NET_SPEED,
-    DEFAULT_SHOOTING_RANGE_MAP, NMT_CHALLENGE, NMT_FAILURE, NMT_HELLO, NMT_NET_SPEED,
-    NMT_UPGRADE, NMT_WELCOME,
+    DEFAULT_SHOOTING_RANGE_MAP, NMT_CHALLENGE, NMT_FAILURE, NMT_HELLO, NMT_NET_SPEED, NMT_UPGRADE,
+    NMT_WELCOME,
 };
 pub use error::NetError;
 pub use framing::{CPackFrame, MagicToken, HEADER_LEN, MAX_PAYLOAD_LEN};

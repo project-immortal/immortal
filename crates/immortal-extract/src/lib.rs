@@ -43,8 +43,8 @@ pub use package::UpkPackage;
 pub use summary::{GenerationInfo, PackageSummary, PKG_COMPRESSED, PKG_COOKED};
 pub use tfc::{
     build_dds_header, export_dds, export_dds_with_mips, write_tfc_chunk, FByteBulkData,
-    FTexture2DMipMap, TextureFormat, TfcResolver, BULKDATA_COMPRESSED_LZO, BULKDATA_COMPRESSED_ZLIB,
-    BULKDATA_STORE_IN_SEPARATE_FILE,
+    FTexture2DMipMap, TextureFormat, TfcResolver, BULKDATA_COMPRESSED_LZO,
+    BULKDATA_COMPRESSED_ZLIB, BULKDATA_STORE_IN_SEPARATE_FILE,
 };
 
 /// Unreal Engine 3 UPK magic identifier (`0x9E2A83C1`).

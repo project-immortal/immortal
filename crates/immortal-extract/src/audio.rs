@@ -288,7 +288,10 @@ pub struct SoundBankHeader {
 pub fn parse_bkhd(data: &[u8]) -> Result<SoundBankHeader, ExtractError> {
     if data.len() < 16 {
         return Err(ExtractError::InvalidAudio {
-            reason: format!("SoundBank data too short for BKHD header (got {} bytes)", data.len()),
+            reason: format!(
+                "SoundBank data too short for BKHD header (got {} bytes)",
+                data.len()
+            ),
         });
     }
 
@@ -443,8 +446,18 @@ pub fn parse_wav(data: &[u8]) -> Result<(WavSpec, &[u8]), ExtractError> {
     let mut found_data = None;
 
     while cursor + 8 <= data.len() {
-        let chunk_id = u32::from_le_bytes([data[cursor], data[cursor + 1], data[cursor + 2], data[cursor + 3]]);
-        let chunk_size = u32::from_le_bytes([data[cursor + 4], data[cursor + 5], data[cursor + 6], data[cursor + 7]]) as usize;
+        let chunk_id = u32::from_le_bytes([
+            data[cursor],
+            data[cursor + 1],
+            data[cursor + 2],
+            data[cursor + 3],
+        ]);
+        let chunk_size = u32::from_le_bytes([
+            data[cursor + 4],
+            data[cursor + 5],
+            data[cursor + 6],
+            data[cursor + 7],
+        ]) as usize;
         cursor += 8;
 
         if chunk_id == FMT_MAGIC && chunk_size >= 16 {
@@ -453,8 +466,18 @@ pub fn parse_wav(data: &[u8]) -> Result<(WavSpec, &[u8]), ExtractError> {
             }
             let audio_format = u16::from_le_bytes([data[cursor], data[cursor + 1]]);
             let num_channels = u16::from_le_bytes([data[cursor + 2], data[cursor + 3]]);
-            let sample_rate = u32::from_le_bytes([data[cursor + 4], data[cursor + 5], data[cursor + 6], data[cursor + 7]]);
-            let byte_rate = u32::from_le_bytes([data[cursor + 8], data[cursor + 9], data[cursor + 10], data[cursor + 11]]);
+            let sample_rate = u32::from_le_bytes([
+                data[cursor + 4],
+                data[cursor + 5],
+                data[cursor + 6],
+                data[cursor + 7],
+            ]);
+            let byte_rate = u32::from_le_bytes([
+                data[cursor + 8],
+                data[cursor + 9],
+                data[cursor + 10],
+                data[cursor + 11],
+            ]);
             let block_align = u16::from_le_bytes([data[cursor + 12], data[cursor + 13]]);
             let bits_per_sample = u16::from_le_bytes([data[cursor + 14], data[cursor + 15]]);
 
@@ -492,7 +515,10 @@ pub fn parse_wav(data: &[u8]) -> Result<(WavSpec, &[u8]), ExtractError> {
 /// Converts a `.wem` stream buffer into a valid standard `.wav` file buffer.
 /// If the stream already has a RIFF container, it extracts and re-wraps to ensure compatibility.
 /// If raw stream, wraps with default 48kHz 16-bit stereo PCM (or provided spec).
-pub fn convert_wem_to_wav(wem_data: &[u8], fallback_spec: Option<WavSpec>) -> Result<Vec<u8>, ExtractError> {
+pub fn convert_wem_to_wav(
+    wem_data: &[u8],
+    fallback_spec: Option<WavSpec>,
+) -> Result<Vec<u8>, ExtractError> {
     if wem_data.len() >= 12 && &wem_data[0..4] == b"RIFF" && &wem_data[8..12] == b"WAVE" {
         // Parse RIFF structure
         let (spec, samples) = parse_wav(wem_data)?;
@@ -558,7 +584,9 @@ mod tests {
         let extracted_bank = archive.extract_entry(&mut pck_stream, bank_entry).unwrap();
         assert_eq!(extracted_bank, bank1_data);
 
-        let extracted_stream = archive.extract_entry(&mut pck_stream, stream_entry).unwrap();
+        let extracted_stream = archive
+            .extract_entry(&mut pck_stream, stream_entry)
+            .unwrap();
         assert_eq!(extracted_stream, stream1_data);
 
         // Test convert_wem_to_wav

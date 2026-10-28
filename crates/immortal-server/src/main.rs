@@ -28,10 +28,7 @@ async fn main() -> Result<()> {
     };
     let auth_gateway = AuthGateway::bind_with_config(auth_config).await?;
     let auth_handle = auth_gateway.spawn()?;
-    info!(
-        "🌐 Auth Gateway listening on {}",
-        auth_handle.local_addr()
-    );
+    info!("🌐 Auth Gateway listening on {}", auth_handle.local_addr());
 
     // 2. Initialize UDP Game Server (port 7777)
     let game_config = GameServerConfig {
@@ -39,7 +36,10 @@ async fn main() -> Result<()> {
         ..Default::default()
     };
     let game_handle = GameServer::start(game_config)?;
-    info!("🎮 Game Server listening on UDP {}", game_handle.local_addr());
+    info!(
+        "🎮 Game Server listening on UDP {}",
+        game_handle.local_addr()
+    );
 
     info!("🚀 Cleanroom server services successfully started. Press Ctrl+C to terminate.");
 
