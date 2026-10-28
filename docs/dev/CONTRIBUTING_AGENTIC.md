@@ -34,7 +34,7 @@ Project Immortal is an independent, interoperable game preservation effort engin
 
 To guarantee legal invulnerability and maintain the integrity of the AFC defense, Project Immortal strictly enforces an **Airlock Architecture**:
 
-```
+```text
 +---------------------------------------------------------------------------------+
 |                                 DIRTY ROOM                                      |
 |  - Tools: REA CLI (6.8.0), Ghidra, Wireshark, eBPF Tracers                     |

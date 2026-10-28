@@ -15,7 +15,7 @@ Every champion integration involves asset discovery, package decompression, bulk
 
 All champion assets in *Paladins: Champions of the Realm* reside in cooked Unreal Engine 3 package archives located within your local client installation:
 
-```
+```text
 $PALADINS_INSTALL_PATH/ChaosGame/CookedPCConsole/
 ```
 
@@ -34,7 +34,7 @@ Each champion has a dedicated asset package following the naming convention `<CH
 
 Each champion package begins with the standard Unreal Engine package summary:
 
-```
+```text
 +-------------------------------------------------------------------+
 | Unreal Package Summary (FPackageFileSummary)                      |
 |  - Tag: 0x9E2A83C1 (Unreal Signature)                             |
@@ -64,7 +64,7 @@ Each champion package begins with the standard Unreal Engine package summary:
 
 Champion character textures (diffuse, normal, specular, mask maps) are rarely stored directly inside the UPK file itself. Instead, Unreal Engine cooks mipmaps into shared **Texture File Cache** files:
 
-```
+```text
 ChaosGame/CookedPCConsole/CharNormals0.tfc
 ChaosGame/CookedPCConsole/Char_Textures.tfc
 ChaosGame/CookedPCConsole/Textures.tfc
@@ -83,7 +83,7 @@ When inspecting a `UTexture2D` object in the package:
 
 Sound assets for champion voice lines, weapon fire effects, and ultimate abilities are packaged as Audiokinetic Wwise soundbanks (`.pck`, `.wem`) and FMOD soundbanks (`.bank`):
 
-```
+```text
 ChaosGame/CookedPCConsole/Wwise_SoundBank_Default.pck
 ChaosGame/CookedPCConsole/<CHAMPION>_VOICE.pck
 ```
@@ -101,7 +101,7 @@ Once a new champion's constants and parameters are verified, register them into 
 
 ### Step 1: Update `ChampionId` Enum
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u32)]
 pub enum ChampionId {
@@ -147,7 +147,7 @@ Each champion utilizes specific Unreal Engine actor classes for movement simulat
 
 Add unit test verification in `crates/immortal-core/src/lib.rs`:
 
-```rust
+```rust,ignore
 #[test]
 fn test_new_champion_resolution() {
     let champ = ChampionId::from_id(1024);
@@ -167,7 +167,7 @@ cargo test -p immortal-core
 
 When emulating matches in `immortal-server` and `immortal-net`, each champion actor replicates state to clients over Channel 2+:
 
-```
+```text
 +------------------------------------------------------------------------+
 | UNetConnection Channel 2 (Actor Channel)                               |
 |  - Actor: TgPawn_<CHAMPION> (Spawned with NetGUID)                     |
