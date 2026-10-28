@@ -24,9 +24,12 @@ pub use error::NetError;
 pub use framing::{CPackFrame, MagicToken, HEADER_LEN, MAX_PAYLOAD_LEN};
 pub use gateway::{AuthGateway, AuthGatewayConfig, AuthGatewayHandle};
 pub use marshal::{
-    CMarshalMessage, FieldValue, LoginRequest, LoginResponse, MarshalField, MatchTicket,
-    FUNCTION_ID_ON_LOGIN_RESPONSE, FUNCTION_ID_SEND_LOGIN, TOKEN_ACCOUNT_ID, TOKEN_MATCH_TICKET,
-    TOKEN_SESSION_TOKEN, TOKEN_STATUS,
+    CMarshalMessage, ChampionRoster, DeckLoadoutEntry, DeckLoadouts, FieldValue, LoginRequest,
+    LoginResponse, MarshalField, MatchTicket, WeaponDeviceEntry, WeaponDevices, CHAMPION_CASSIE,
+    CHAMPION_FERNANDO, CHAMPION_VIKTOR, DECK_FERNANDO_STARTER, DEVICE_FERNANDO_FLAME_LANCE,
+    FUNCTION_ID_ON_LOGIN_RESPONSE, FUNCTION_ID_SEND_LOGIN, TOKEN_ACCOUNT_ID, TOKEN_CHAMPION_ROSTER,
+    TOKEN_DECK_LOADOUTS, TOKEN_MATCH_TICKET, TOKEN_SESSION_TOKEN, TOKEN_STATUS,
+    TOKEN_WEAPON_DEVICES,
 };
 pub use udp_framing::{
     current_time_millis, hmac_sha256, parse_cpack_udp, sha256, CPackUdpPacket, HelloRecvReply,

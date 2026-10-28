@@ -20,7 +20,17 @@ pub const MIN_MARSHAL_LEN: usize = 0x3C; // 60 bytes
 pub const TOKEN_STATUS: u16 = 0x1A; // 26
 pub const TOKEN_SESSION_TOKEN: u16 = 7;
 pub const TOKEN_ACCOUNT_ID: u16 = 10;
+pub const TOKEN_CHAMPION_ROSTER: u16 = 100;
+pub const TOKEN_WEAPON_DEVICES: u16 = 102;
+pub const TOKEN_DECK_LOADOUTS: u16 = 105;
 pub const TOKEN_MATCH_TICKET: u16 = 500;
+
+// Champion & Device Constants per MCTS Inventory Specification
+pub const CHAMPION_FERNANDO: u32 = 1026;
+pub const CHAMPION_CASSIE: u32 = 1024;
+pub const CHAMPION_VIKTOR: u32 = 1025;
+pub const DEVICE_FERNANDO_FLAME_LANCE: u32 = 10774;
+pub const DECK_FERNANDO_STARTER: u32 = 16379;
 
 // Type Identifiers
 pub const TYPE_INTEGER: u8 = 0x05;
@@ -347,6 +357,140 @@ impl LoginRequest {
     }
 }
 
+/// Champion Roster rowset (Token 100)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChampionRoster {
+    pub champions: Vec<u32>,
+}
+
+impl ChampionRoster {
+    pub fn new(champions: Vec<u32>) -> Self {
+        Self { champions }
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(4 + self.champions.len() * 4);
+        let _ = buf.write_u32::<LittleEndian>(self.champions.len() as u32);
+        for id in &self.champions {
+            let _ = buf.write_u32::<LittleEndian>(*id);
+        }
+        buf
+    }
+
+    pub fn from_bytes(mut data: &[u8]) -> Result<Self, NetError> {
+        if data.len() < 4 {
+            return Err(NetError::Marshal("ChampionRoster too short".into()));
+        }
+        let count = data.read_u32::<LittleEndian>()? as usize;
+        let mut champions = Vec::with_capacity(count);
+        for _ in 0..count {
+            if data.len() < 4 {
+                return Err(NetError::Marshal("ChampionRoster truncated".into()));
+            }
+            champions.push(data.read_u32::<LittleEndian>()?);
+        }
+        Ok(Self { champions })
+    }
+}
+
+/// Weapon device entry linking weapon to champion
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WeaponDeviceEntry {
+    pub device_id: u32,
+    pub champion_id: u32,
+}
+
+/// Weapon Devices rowset (Token 102)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WeaponDevices {
+    pub entries: Vec<WeaponDeviceEntry>,
+}
+
+impl WeaponDevices {
+    pub fn new(entries: Vec<WeaponDeviceEntry>) -> Self {
+        Self { entries }
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(4 + self.entries.len() * 8);
+        let _ = buf.write_u32::<LittleEndian>(self.entries.len() as u32);
+        for entry in &self.entries {
+            let _ = buf.write_u32::<LittleEndian>(entry.device_id);
+            let _ = buf.write_u32::<LittleEndian>(entry.champion_id);
+        }
+        buf
+    }
+
+    pub fn from_bytes(mut data: &[u8]) -> Result<Self, NetError> {
+        if data.len() < 4 {
+            return Err(NetError::Marshal("WeaponDevices too short".into()));
+        }
+        let count = data.read_u32::<LittleEndian>()? as usize;
+        let mut entries = Vec::with_capacity(count);
+        for _ in 0..count {
+            if data.len() < 8 {
+                return Err(NetError::Marshal("WeaponDevices truncated".into()));
+            }
+            let device_id = data.read_u32::<LittleEndian>()?;
+            let champion_id = data.read_u32::<LittleEndian>()?;
+            entries.push(WeaponDeviceEntry {
+                device_id,
+                champion_id,
+            });
+        }
+        Ok(Self { entries })
+    }
+}
+
+/// Deck loadout entry linking starter deck to champion
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeckLoadoutEntry {
+    pub deck_id: u32,
+    pub champion_id: u32,
+}
+
+/// Deck Loadouts rowset (Token 105)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeckLoadouts {
+    pub entries: Vec<DeckLoadoutEntry>,
+}
+
+impl DeckLoadouts {
+    pub fn new(entries: Vec<DeckLoadoutEntry>) -> Self {
+        Self { entries }
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(4 + self.entries.len() * 8);
+        let _ = buf.write_u32::<LittleEndian>(self.entries.len() as u32);
+        for entry in &self.entries {
+            let _ = buf.write_u32::<LittleEndian>(entry.deck_id);
+            let _ = buf.write_u32::<LittleEndian>(entry.champion_id);
+        }
+        buf
+    }
+
+    pub fn from_bytes(mut data: &[u8]) -> Result<Self, NetError> {
+        if data.len() < 4 {
+            return Err(NetError::Marshal("DeckLoadouts too short".into()));
+        }
+        let count = data.read_u32::<LittleEndian>()? as usize;
+        let mut entries = Vec::with_capacity(count);
+        for _ in 0..count {
+            if data.len() < 8 {
+                return Err(NetError::Marshal("DeckLoadouts truncated".into()));
+            }
+            let deck_id = data.read_u32::<LittleEndian>()?;
+            let champion_id = data.read_u32::<LittleEndian>()?;
+            entries.push(DeckLoadoutEntry {
+                deck_id,
+                champion_id,
+            });
+        }
+        Ok(Self { entries })
+    }
+}
+
 /// Cleanroom Login Response packet (`OnLoginResponse`)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoginResponse {
@@ -354,6 +498,9 @@ pub struct LoginResponse {
     pub account_id: i32,
     pub session_token: String,
     pub match_ticket: MatchTicket,
+    pub champion_roster: Option<ChampionRoster>,
+    pub weapon_devices: Option<WeaponDevices>,
+    pub deck_loadouts: Option<DeckLoadouts>,
 }
 
 impl LoginResponse {
@@ -367,7 +514,22 @@ impl LoginResponse {
             account_id,
             session_token: session_token.into(),
             match_ticket,
+            champion_roster: None,
+            weapon_devices: None,
+            deck_loadouts: None,
         }
+    }
+
+    pub fn with_inventory(
+        mut self,
+        champion_roster: ChampionRoster,
+        weapon_devices: WeaponDevices,
+        deck_loadouts: DeckLoadouts,
+    ) -> Self {
+        self.champion_roster = Some(champion_roster);
+        self.weapon_devices = Some(weapon_devices);
+        self.deck_loadouts = Some(deck_loadouts);
+        self
     }
 
     pub fn to_marshal_message(&self) -> CMarshalMessage {
@@ -376,6 +538,15 @@ impl LoginResponse {
         msg.add_integer(TOKEN_ACCOUNT_ID, self.account_id);
         msg.add_string(TOKEN_SESSION_TOKEN, &self.session_token);
         msg.add_blob(TOKEN_MATCH_TICKET, self.match_ticket.to_bytes());
+        if let Some(roster) = &self.champion_roster {
+            msg.add_blob(TOKEN_CHAMPION_ROSTER, roster.to_bytes());
+        }
+        if let Some(weapons) = &self.weapon_devices {
+            msg.add_blob(TOKEN_WEAPON_DEVICES, weapons.to_bytes());
+        }
+        if let Some(decks) = &self.deck_loadouts {
+            msg.add_blob(TOKEN_DECK_LOADOUTS, decks.to_bytes());
+        }
         msg
     }
 
@@ -395,11 +566,27 @@ impl LoginResponse {
         })?;
         let match_ticket = MatchTicket::from_bytes(ticket_blob)?;
 
+        let champion_roster = match msg.get_blob(TOKEN_CHAMPION_ROSTER) {
+            Some(b) => Some(ChampionRoster::from_bytes(b)?),
+            None => None,
+        };
+        let weapon_devices = match msg.get_blob(TOKEN_WEAPON_DEVICES) {
+            Some(b) => Some(WeaponDevices::from_bytes(b)?),
+            None => None,
+        };
+        let deck_loadouts = match msg.get_blob(TOKEN_DECK_LOADOUTS) {
+            Some(b) => Some(DeckLoadouts::from_bytes(b)?),
+            None => None,
+        };
+
         Ok(Self {
             status,
             account_id,
             session_token,
             match_ticket,
+            champion_roster,
+            weapon_devices,
+            deck_loadouts,
         })
     }
 
@@ -454,7 +641,18 @@ mod tests {
     #[test]
     fn test_login_response_roundtrip() {
         let ticket = MatchTicket::new("127.0.0.1", 7777, "MOCK-ROUTING-TICKET");
-        let response = LoginResponse::new(10001, "IMMORTAL-DEV-SESSION-TICKET", ticket);
+        let roster = ChampionRoster::new(vec![CHAMPION_FERNANDO, CHAMPION_CASSIE, CHAMPION_VIKTOR]);
+        let weapons = WeaponDevices::new(vec![WeaponDeviceEntry {
+            device_id: DEVICE_FERNANDO_FLAME_LANCE,
+            champion_id: CHAMPION_FERNANDO,
+        }]);
+        let decks = DeckLoadouts::new(vec![DeckLoadoutEntry {
+            deck_id: DECK_FERNANDO_STARTER,
+            champion_id: CHAMPION_FERNANDO,
+        }]);
+
+        let response = LoginResponse::new(8302401, "IMMORTAL-DEV-SESSION-TICKET", ticket)
+            .with_inventory(roster, weapons, decks);
 
         let encoded = response.to_bytes().unwrap();
         let decoded = LoginResponse::from_bytes(&encoded).unwrap();
@@ -463,6 +661,9 @@ mod tests {
         assert_eq!(response.account_id, decoded.account_id);
         assert_eq!(response.session_token, decoded.session_token);
         assert_eq!(response.match_ticket, decoded.match_ticket);
+        assert_eq!(response.champion_roster, decoded.champion_roster);
+        assert_eq!(response.weapon_devices, decoded.weapon_devices);
+        assert_eq!(response.deck_loadouts, decoded.deck_loadouts);
     }
 
     #[test]

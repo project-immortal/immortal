@@ -7,7 +7,9 @@
 //! End-to-end integration tests for MCTS TCP Auth Gateway and CPackCoder wire framing.
 
 use immortal_net::{
-    AuthGateway, AuthGatewayConfig, CPackFrame, LoginRequest, LoginResponse, MagicToken, HEADER_LEN,
+    AuthGateway, AuthGatewayConfig, CPackFrame, LoginRequest, LoginResponse, MagicToken,
+    CHAMPION_CASSIE, CHAMPION_FERNANDO, CHAMPION_VIKTOR, DECK_FERNANDO_STARTER,
+    DEVICE_FERNANDO_FLAME_LANCE, HEADER_LEN,
 };
 use std::net::SocketAddr;
 use std::time::Instant;
@@ -68,10 +70,33 @@ async fn test_auth_gateway_login_uncompressed() {
         LoginResponse::from_bytes(&uncompressed_bytes).expect("Failed to parse LoginResponse");
 
     assert_eq!(login_resp.status, 0);
-    assert_eq!(login_resp.account_id, 10001);
+    assert_eq!(login_resp.account_id, 8302401);
     assert_eq!(login_resp.session_token, "IMMORTAL-DEV-SESSION-TICKET");
     assert_eq!(login_resp.match_ticket.server_host, "127.0.0.1");
     assert_eq!(login_resp.match_ticket.server_port, 7777);
+
+    // Verify inventory rowsets (tokens 100, 102, 105)
+    let roster = login_resp
+        .champion_roster
+        .expect("Expected ChampionRoster (token 100)");
+    assert_eq!(
+        roster.champions,
+        vec![CHAMPION_FERNANDO, CHAMPION_CASSIE, CHAMPION_VIKTOR]
+    );
+
+    let weapons = login_resp
+        .weapon_devices
+        .expect("Expected WeaponDevices (token 102)");
+    assert_eq!(weapons.entries.len(), 1);
+    assert_eq!(weapons.entries[0].device_id, DEVICE_FERNANDO_FLAME_LANCE);
+    assert_eq!(weapons.entries[0].champion_id, CHAMPION_FERNANDO);
+
+    let decks = login_resp
+        .deck_loadouts
+        .expect("Expected DeckLoadouts (token 105)");
+    assert_eq!(decks.entries.len(), 1);
+    assert_eq!(decks.entries[0].deck_id, DECK_FERNANDO_STARTER);
+    assert_eq!(decks.entries[0].champion_id, CHAMPION_FERNANDO);
 
     // Graceful shutdown
     handle
@@ -144,10 +169,33 @@ async fn test_auth_gateway_login_compressed() {
         LoginResponse::from_bytes(&uncompressed_bytes).expect("Failed to parse LoginResponse");
 
     assert_eq!(login_resp.status, 0);
-    assert_eq!(login_resp.account_id, 10001);
+    assert_eq!(login_resp.account_id, 8302401);
     assert_eq!(login_resp.session_token, "IMMORTAL-DEV-SESSION-TICKET");
     assert_eq!(login_resp.match_ticket.server_host, "127.0.0.1");
     assert_eq!(login_resp.match_ticket.server_port, 7777);
+
+    // Verify inventory rowsets (tokens 100, 102, 105)
+    let roster = login_resp
+        .champion_roster
+        .expect("Expected ChampionRoster (token 100)");
+    assert_eq!(
+        roster.champions,
+        vec![CHAMPION_FERNANDO, CHAMPION_CASSIE, CHAMPION_VIKTOR]
+    );
+
+    let weapons = login_resp
+        .weapon_devices
+        .expect("Expected WeaponDevices (token 102)");
+    assert_eq!(weapons.entries.len(), 1);
+    assert_eq!(weapons.entries[0].device_id, DEVICE_FERNANDO_FLAME_LANCE);
+    assert_eq!(weapons.entries[0].champion_id, CHAMPION_FERNANDO);
+
+    let decks = login_resp
+        .deck_loadouts
+        .expect("Expected DeckLoadouts (token 105)");
+    assert_eq!(decks.entries.len(), 1);
+    assert_eq!(decks.entries[0].deck_id, DECK_FERNANDO_STARTER);
+    assert_eq!(decks.entries[0].champion_id, CHAMPION_FERNANDO);
 
     handle
         .shutdown()

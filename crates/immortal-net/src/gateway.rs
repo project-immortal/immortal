@@ -10,7 +10,11 @@
 
 use crate::error::NetError;
 use crate::framing::{CPackFrame, MagicToken, HEADER_LEN, MAX_PAYLOAD_LEN};
-use crate::marshal::{LoginRequest, LoginResponse, MatchTicket};
+use crate::marshal::{
+    ChampionRoster, DeckLoadoutEntry, DeckLoadouts, LoginRequest, LoginResponse, MatchTicket,
+    WeaponDeviceEntry, WeaponDevices, CHAMPION_CASSIE, CHAMPION_FERNANDO, CHAMPION_VIKTOR,
+    DECK_FERNANDO_STARTER, DEVICE_FERNANDO_FLAME_LANCE,
+};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -35,7 +39,7 @@ impl Default for AuthGatewayConfig {
             bind_addr: SocketAddr::from(([127, 0, 0, 1], 9000)),
             game_server_host: "127.0.0.1".to_string(),
             game_server_port: 7777,
-            account_id: 10001,
+            account_id: 8302401,
             session_token: "IMMORTAL-DEV-SESSION-TICKET".to_string(),
             match_ticket_str: "IMMORTAL-MATCH-TICKET-7777".to_string(),
             compress_response: false,
@@ -173,11 +177,23 @@ async fn handle_connection(
             &config.match_ticket_str,
         );
 
-        let response = LoginResponse::new(config.account_id, &config.session_token, match_ticket);
+        let roster = ChampionRoster::new(vec![CHAMPION_FERNANDO, CHAMPION_CASSIE, CHAMPION_VIKTOR]);
+        let weapons = WeaponDevices::new(vec![WeaponDeviceEntry {
+            device_id: DEVICE_FERNANDO_FLAME_LANCE,
+            champion_id: CHAMPION_FERNANDO,
+        }]);
+        let decks = DeckLoadouts::new(vec![DeckLoadoutEntry {
+            deck_id: DECK_FERNANDO_STARTER,
+            champion_id: CHAMPION_FERNANDO,
+        }]);
+
+        let response = LoginResponse::new(config.account_id, &config.session_token, match_ticket)
+            .with_inventory(roster, weapons, decks);
 
         let response_bytes = response.to_bytes()?;
 
-        let response_packet = if config.compress_response {
+        let should_compress = config.compress_response || magic == MagicToken::Compressed;
+        let response_packet = if should_compress {
             CPackFrame::encode_compressed(&response_bytes)?
         } else {
             CPackFrame::encode_uncompressed(&response_bytes)?
