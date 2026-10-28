@@ -35,7 +35,7 @@ impl Default for AuthGatewayConfig {
             bind_addr: SocketAddr::from(([127, 0, 0, 1], 9000)),
             game_server_host: "127.0.0.1".to_string(),
             game_server_port: 7777,
-            account_id: 10001,
+            account_id: 8302401,
             session_token: "IMMORTAL-DEV-SESSION-TICKET".to_string(),
             match_ticket_str: "IMMORTAL-MATCH-TICKET-7777".to_string(),
             compress_response: false,
@@ -177,7 +177,8 @@ async fn handle_connection(
 
         let response_bytes = response.to_bytes()?;
 
-        let response_packet = if config.compress_response {
+        let should_compress = config.compress_response || magic == MagicToken::Compressed;
+        let response_packet = if should_compress {
             CPackFrame::encode_compressed(&response_bytes)?
         } else {
             CPackFrame::encode_uncompressed(&response_bytes)?
