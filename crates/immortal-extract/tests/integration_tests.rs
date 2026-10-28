@@ -10,13 +10,15 @@ use std::path::Path;
 
 use immortal_extract::{
     convert_coord_ue3_to_gltf, convert_wem_to_wav, create_bkhd, export_dds,
-    export_skeletal_mesh_to_gltf, export_to_wav, parse_bkhd, parse_wav, write_compressed_chunk,
-    write_tfc_chunk, ExportTable, FByteBulkData, FCompressedChunk, FMeshBone, FName,
-    FSkeletalMeshLODModel, FTexture2DMipMap, GPUSkinVertex, GenerationInfo, ImportTable, NameEntry,
-    NameTable, ObjectExport, ObjectImport, PackageIndex, PackageSummary, PckArchive, RefSkeleton,
-    TextureFormat, TfcResolver, UpkPackage, WavSpec, BULKDATA_COMPRESSED_LZO,
-    BULKDATA_COMPRESSED_ZLIB, BULKDATA_STORE_IN_SEPARATE_FILE, COMPRESS_LZO, COMPRESS_ZLIB,
-    PKG_COMPRESSED, PKG_COOKED, UPK_MAGIC,
+    export_skeletal_mesh_to_gltf, export_to_wav, export_weapon_skeletal_mesh,
+    export_weapon_static_mesh, extract_weapon_texture, get_weapon_mapping, inspect_weapon_package,
+    parse_bkhd, parse_wav, write_compressed_chunk, write_tfc_chunk, ExportTable, FByteBulkData,
+    FCompressedChunk, FMeshBone, FName, FSkeletalMeshLODModel, FTexture2DMipMap, GPUSkinVertex,
+    GenerationInfo, ImportTable, NameEntry, NameTable, ObjectExport, ObjectImport, PackageIndex,
+    PackageSummary, PckArchive, RefSkeleton, TextureFormat, TfcResolver, UpkPackage, WavSpec,
+    WeaponExtractionPipeline, BULKDATA_COMPRESSED_LZO, BULKDATA_COMPRESSED_ZLIB,
+    BULKDATA_STORE_IN_SEPARATE_FILE, CHAMPION_FERNANDO, COMPRESS_LZO, COMPRESS_ZLIB,
+    DEVICE_FERNANDO_FLAME_LANCE, PKG_COMPRESSED, PKG_COOKED, UPK_MAGIC,
 };
 
 /// Helper to build a hermetic synthetic UPK package in memory.
@@ -736,4 +738,332 @@ fn test_integration_synthetic_skeletal_mesh_to_gltf_pipeline() {
     );
 
     let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_integration_synthetic_weapon_package_and_gltf_pipeline() {
+    // 1. Verify cleanroom weapon mapping for Flame Lance
+    let mapping = get_weapon_mapping(DEVICE_FERNANDO_FLAME_LANCE)
+        .expect("Mapping for DEVICE_FERNANDO_FLAME_LANCE must exist");
+    assert_eq!(mapping.device_id, 10774);
+    assert_eq!(mapping.champion_id, CHAMPION_FERNANDO);
+    assert_eq!(mapping.device_name, "Flame Lance");
+    assert_eq!(mapping.champion_name, "Fernando");
+
+    // 2. Build synthetic weapon UPK with Name, Import, and Export tables
+    let name_table = NameTable::new(vec![
+        NameEntry::new("None", 0),
+        NameEntry::new("Core", 0),
+        NameEntry::new("Class", 0),
+        NameEntry::new("SkeletalMesh", 0),
+        NameEntry::new("StaticMesh", 0),
+        NameEntry::new("Texture2D", 0),
+        NameEntry::new("skl_wep_fernando_skin11a_1p", 0),
+        NameEntry::new("skl_wep_fernando_skin11a_3p", 0),
+        NameEntry::new("sm_fernando_skin11a_aresshield_center", 0),
+        NameEntry::new("t_pc_fernando_arms_skin00a_dif", 0),
+    ]);
+
+    let import_table = ImportTable::new(vec![
+        ObjectImport {
+            class_package: FName::new(1, 0),
+            class_name: FName::new(2, 0),
+            outer_index: PackageIndex::NULL,
+            object_name: FName::new(3, 0), // SkeletalMesh
+        },
+        ObjectImport {
+            class_package: FName::new(1, 0),
+            class_name: FName::new(2, 0),
+            outer_index: PackageIndex::NULL,
+            object_name: FName::new(4, 0), // StaticMesh
+        },
+        ObjectImport {
+            class_package: FName::new(1, 0),
+            class_name: FName::new(2, 0),
+            outer_index: PackageIndex::NULL,
+            object_name: FName::new(5, 0), // Texture2D
+        },
+    ]);
+
+    let export_table = ExportTable::new(vec![
+        ObjectExport {
+            class_index: PackageIndex::from_import_index(0), // SkeletalMesh
+            super_index: PackageIndex::NULL,
+            outer_index: PackageIndex::NULL,
+            object_name: FName::new(6, 0), // skl_wep_fernando_skin11a_1p
+            archetype: PackageIndex::NULL,
+            object_flags: 0x00070010,
+            serial_size: 442925,
+            serial_offset: 1000,
+            export_flags: 0,
+            generation_net_object_count: 0,
+            guid: [0x10; 16],
+            package_flags: 0,
+        },
+        ObjectExport {
+            class_index: PackageIndex::from_import_index(0), // SkeletalMesh
+            super_index: PackageIndex::NULL,
+            outer_index: PackageIndex::NULL,
+            object_name: FName::new(7, 0), // skl_wep_fernando_skin11a_3p
+            archetype: PackageIndex::NULL,
+            object_flags: 0x00070010,
+            serial_size: 890820,
+            serial_offset: 500000,
+            export_flags: 0,
+            generation_net_object_count: 0,
+            guid: [0x20; 16],
+            package_flags: 0,
+        },
+        ObjectExport {
+            class_index: PackageIndex::from_import_index(1), // StaticMesh
+            super_index: PackageIndex::NULL,
+            outer_index: PackageIndex::NULL,
+            object_name: FName::new(8, 0), // sm_fernando_skin11a_aresshield_center
+            archetype: PackageIndex::NULL,
+            object_flags: 0x00070010,
+            serial_size: 9809,
+            serial_offset: 1400000,
+            export_flags: 0,
+            generation_net_object_count: 0,
+            guid: [0x30; 16],
+            package_flags: 0,
+        },
+        ObjectExport {
+            class_index: PackageIndex::from_import_index(2), // Texture2D
+            super_index: PackageIndex::NULL,
+            outer_index: PackageIndex::NULL,
+            object_name: FName::new(9, 0), // t_pc_fernando_arms_skin00a_dif
+            archetype: PackageIndex::NULL,
+            object_flags: 0x00070010,
+            serial_size: 3420,
+            serial_offset: 1500000,
+            export_flags: 0,
+            generation_net_object_count: 0,
+            guid: [0x40; 16],
+            package_flags: 0,
+        },
+    ]);
+
+    let mut tables_buf = Vec::new();
+    let name_offset = 0u32;
+    name_table.write(&mut tables_buf).unwrap();
+
+    let import_offset = tables_buf.len() as u32;
+    import_table.write(&mut tables_buf).unwrap();
+
+    let export_offset = tables_buf.len() as u32;
+    export_table.write(&mut tables_buf).unwrap();
+
+    let total_table_bytes = tables_buf.len() as u32;
+
+    let summary = PackageSummary {
+        tag: UPK_MAGIC,
+        file_version: 893,
+        licensee_version: 0,
+        total_header_size: 1024 + total_table_bytes,
+        folder_name: "ChaosGame/CookedPCConsole".to_string(),
+        package_flags: PKG_COOKED,
+        name_count: name_table.len() as u32,
+        name_offset: 1024 + name_offset,
+        export_count: export_table.len() as u32,
+        export_offset: 1024 + export_offset,
+        import_count: import_table.len() as u32,
+        import_offset: 1024 + import_offset,
+        depends_offset: 0,
+        import_export_guids_offset: 0,
+        import_guids_count: 0,
+        export_guids_count: 0,
+        thumbnail_table_offset: 0,
+        guid: [0x77; 16],
+        generations: vec![GenerationInfo {
+            export_count: export_table.len() as i32,
+            name_count: name_table.len() as i32,
+            net_object_count: 0,
+        }],
+        engine_version: 10897,
+        cooker_version: 393358,
+        compression_flags: 0,
+        compressed_chunks: Vec::new(),
+    };
+
+    let mut pkg_buf = Vec::new();
+    summary.write(&mut pkg_buf).unwrap();
+    if pkg_buf.len() < 1024 {
+        pkg_buf.resize(1024, 0);
+    }
+    pkg_buf.extend_from_slice(&tables_buf);
+
+    let mut pkg = UpkPackage::open(Cursor::new(pkg_buf)).expect("Open synthetic weapon UPK failed");
+    let inventory = inspect_weapon_package(&mut pkg, DEVICE_FERNANDO_FLAME_LANCE)
+        .expect("Inspect weapon package failed");
+
+    assert_eq!(inventory.device_id, 10774);
+    assert_eq!(inventory.champion_id, 1026);
+    assert_eq!(inventory.skeletal_meshes.len(), 2);
+    assert_eq!(inventory.static_meshes.len(), 1);
+    assert_eq!(inventory.textures.len(), 1);
+
+    let mesh_1p = inventory
+        .find_skeletal_mesh("1p")
+        .expect("Must find 1p mesh");
+    assert_eq!(mesh_1p.object_name, "skl_wep_fernando_skin11a_1p");
+
+    let shield_sm = inventory
+        .find_static_mesh("shield")
+        .expect("Must find shield static mesh");
+    assert_eq!(
+        shield_sm.object_name,
+        "sm_fernando_skin11a_aresshield_center"
+    );
+
+    // 3. Export to glTF 2.0
+    let vertices = vec![
+        GPUSkinVertex {
+            position: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            tangent: [1.0, 0.0, 0.0, 1.0],
+            tex_coord_0: [0.0, 0.0],
+            joints_0: [0, 0, 0, 0],
+            weights_0: [1.0, 0.0, 0.0, 0.0],
+        },
+        GPUSkinVertex {
+            position: [10.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            tangent: [1.0, 0.0, 0.0, 1.0],
+            tex_coord_0: [1.0, 0.0],
+            joints_0: [0, 0, 0, 0],
+            weights_0: [1.0, 0.0, 0.0, 0.0],
+        },
+        GPUSkinVertex {
+            position: [0.0, 10.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            tangent: [1.0, 0.0, 0.0, 1.0],
+            tex_coord_0: [0.0, 1.0],
+            joints_0: [0, 0, 0, 0],
+            weights_0: [1.0, 0.0, 0.0, 0.0],
+        },
+    ];
+    let indices = vec![0, 1, 2];
+
+    let static_export = export_weapon_static_mesh(&vertices, &indices, "flame_lance.bin")
+        .expect("Export static weapon mesh failed");
+    let json_val: serde_json::Value =
+        serde_json::from_str(&static_export.gltf_json).expect("Invalid glTF JSON");
+    assert_eq!(json_val["asset"]["version"], "2.0");
+    assert_eq!(json_val["buffers"][0]["uri"], "flame_lance.bin");
+
+    let skeleton = RefSkeleton::new(vec![FMeshBone {
+        name: "Lance_Root".to_string(),
+        parent_index: -1,
+        position: [0.0, 0.0, 0.0],
+        orientation: [0.0, 0.0, 0.0, 1.0],
+        num_children: 0,
+        flags: 0,
+    }]);
+    let lod_model = FSkeletalMeshLODModel { vertices, indices };
+    let skel_export =
+        export_weapon_skeletal_mesh(&lod_model, Some(&skeleton), "flame_lance_skel.bin")
+            .expect("Export skeletal weapon mesh failed");
+    assert!(!skel_export.bin_data.is_empty());
+
+    // 4. Test WeaponExtractionPipeline & Weapon Texture Extraction
+    let temp_dir =
+        std::env::temp_dir().join(format!("immortal_weapon_test_{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+    let tfc_file_path = temp_dir.join("CharNormals0.tfc");
+    let mut tfc_file = std::fs::File::create(&tfc_file_path).unwrap();
+    let raw_mip_bytes = vec![0x33u8; 512];
+    let (offset_mip, size_mip) = write_tfc_chunk(&mut tfc_file, &raw_mip_bytes, None).unwrap();
+    drop(tfc_file);
+
+    let pipeline = WeaponExtractionPipeline::new(&temp_dir);
+    assert_eq!(pipeline.cooked_dir(), temp_dir.as_path());
+    let mip = FTexture2DMipMap {
+        bulk_data: FByteBulkData {
+            bulk_data_flags: BULKDATA_STORE_IN_SEPARATE_FILE,
+            element_count: 512,
+            size_on_disk: size_mip,
+            offset_in_file: offset_mip as i64,
+        },
+        size_x: 32,
+        size_y: 32,
+        inline_data: None,
+    };
+    let dds_data = extract_weapon_texture(
+        pipeline.tfc_resolver(),
+        "CharNormals0",
+        &mip,
+        TextureFormat::Dxt1,
+    )
+    .unwrap();
+    assert_eq!(&dds_data[0..4], b"DDS ");
+    assert_eq!(dds_data.len(), 128 + 512);
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_probe_paladins_real_weapon_package_if_present() {
+    let weapon_path = Path::new(
+        "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole/DEVICE10774_ASSETS_SF.upk",
+    );
+
+    if !weapon_path.exists() {
+        println!("Skipping real weapon asset test: DEVICE10774_ASSETS_SF.upk not found on disk");
+        return;
+    }
+
+    println!(
+        "Testing against real Paladins weapon package: {}",
+        weapon_path.display()
+    );
+    let mut pkg =
+        UpkPackage::open_file(weapon_path).expect("Failed to open real Paladins weapon package");
+
+    assert_eq!(pkg.summary().tag, UPK_MAGIC);
+    assert_eq!(pkg.summary().file_version, 893);
+    assert!(pkg.summary().is_cooked());
+    assert!(pkg.summary().is_compressed());
+
+    let inventory = inspect_weapon_package(&mut pkg, DEVICE_FERNANDO_FLAME_LANCE)
+        .expect("Failed to inspect weapon package assets");
+
+    assert_eq!(inventory.device_id, 10774);
+    assert_eq!(inventory.champion_id, 1026);
+
+    // Verify presence of Flame Lance skeletal meshes
+    let mesh_1p = inventory.find_skeletal_mesh("1p");
+    assert!(
+        mesh_1p.is_some(),
+        "SkeletalMesh 1p must exist in Flame Lance package"
+    );
+    assert_eq!(mesh_1p.unwrap().object_name, "skl_wep_fernando_skin11a_1p");
+
+    let mesh_3p = inventory.find_skeletal_mesh("3p");
+    assert!(
+        mesh_3p.is_some(),
+        "SkeletalMesh 3p must exist in Flame Lance package"
+    );
+    assert_eq!(mesh_3p.unwrap().object_name, "skl_wep_fernando_skin11a_3p");
+
+    // Verify static meshes (e.g. shield pieces)
+    assert!(
+        !inventory.static_meshes.is_empty(),
+        "Must contain static meshes"
+    );
+    let shield_part = inventory.find_static_mesh("shield");
+    assert!(shield_part.is_some(), "Must contain shield static meshes");
+
+    // Verify texture exports
+    assert!(
+        !inventory.textures.is_empty(),
+        "Must contain texture exports"
+    );
+
+    println!(
+        "Successfully verified real Paladins Flame Lance weapon package ({} skeletal meshes, {} static meshes, {} textures)",
+        inventory.skeletal_meshes.len(),
+        inventory.static_meshes.len(),
+        inventory.textures.len()
+    );
 }

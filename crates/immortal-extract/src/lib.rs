@@ -19,6 +19,7 @@ pub mod name;
 pub mod package;
 pub mod summary;
 pub mod tfc;
+pub mod weapon;
 
 pub use audio::{
     convert_wem_to_wav, create_bkhd, export_to_wav, parse_bkhd, parse_wav, PckArchive, PckEntry,
@@ -45,6 +46,12 @@ pub use tfc::{
     build_dds_header, export_dds, export_dds_with_mips, write_tfc_chunk, FByteBulkData,
     FTexture2DMipMap, TextureFormat, TfcResolver, BULKDATA_COMPRESSED_LZO,
     BULKDATA_COMPRESSED_ZLIB, BULKDATA_STORE_IN_SEPARATE_FILE,
+};
+pub use weapon::{
+    export_weapon_skeletal_mesh, export_weapon_static_mesh, extract_weapon_texture,
+    get_weapon_mapping, get_weapon_mapping_for_champion, inspect_weapon_package,
+    WeaponAssetInventory, WeaponDeviceMapping, WeaponExtractionPipeline, WeaponMeshExport,
+    WeaponTextureExport, CHAMPION_FERNANDO, DEVICE_FERNANDO_FLAME_LANCE, KNOWN_WEAPON_MAPPINGS,
 };
 
 /// Unreal Engine 3 UPK magic identifier (`0x9E2A83C1`).
