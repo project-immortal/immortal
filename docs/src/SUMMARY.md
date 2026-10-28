@@ -17,3 +17,10 @@
 - [Contributing Standards](contributing.md)
 - [Code of Conduct](conduct.md)
 - [Security Policy](security.md)
+
+---
+
+# Developer Runbooks & Contribution
+- [Workstation Setup Runbook](dev/cockpit_setup.md)
+- [Agentic Cleanroom Contribution Guide](dev/contributing_agentic.md)
+- [Modular Champion Integration Guide](dev/champion_guide.md)
