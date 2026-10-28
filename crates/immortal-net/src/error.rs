@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: AGPL-3.0
 // Copyright (c) 2026 Arafat Zahan (@kuasha420)
 // Corporate Stewardship & Infrastructure: Purrfect Software Limited (PSL)
 // Governed by: ICARO-42/b Ordinance (Company-Supported Personal IP Framework)
@@ -42,4 +42,16 @@ pub enum NetError {
 
     #[error("UTF-16 decoding error: {0}")]
     Utf16(#[from] std::string::FromUtf16Error),
+
+    #[error("Datagram too small: expected at least {expected} bytes, got {actual}")]
+    PacketTooSmall { expected: usize, actual: usize },
+
+    #[error("HMAC verification failed")]
+    HmacVerificationFailed,
+
+    #[error("Invalid UDP packet format: {0}")]
+    InvalidUdpPacket(String),
+
+    #[error("Bunch protocol error: {0}")]
+    BunchError(String),
 }
