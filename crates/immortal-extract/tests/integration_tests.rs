@@ -9,9 +9,14 @@ use std::io::Cursor;
 use std::path::Path;
 
 use immortal_extract::{
-    write_compressed_chunk, ExportTable, FCompressedChunk, FName, GenerationInfo, ImportTable,
-    NameEntry, NameTable, ObjectExport, ObjectImport, PackageIndex, PackageSummary, UpkPackage,
-    COMPRESS_LZO, COMPRESS_ZLIB, PKG_COMPRESSED, PKG_COOKED, UPK_MAGIC,
+    convert_coord_ue3_to_gltf, convert_wem_to_wav, create_bkhd, export_dds,
+    export_skeletal_mesh_to_gltf, export_to_wav, parse_bkhd, parse_wav, write_compressed_chunk,
+    write_tfc_chunk, ExportTable, FByteBulkData, FCompressedChunk, FMeshBone, FName,
+    FSkeletalMeshLODModel, FTexture2DMipMap, GPUSkinVertex, GenerationInfo, ImportTable, NameEntry,
+    NameTable, ObjectExport, ObjectImport, PackageIndex, PackageSummary, PckArchive, RefSkeleton,
+    TextureFormat, TfcResolver, UpkPackage, WavSpec, BULKDATA_COMPRESSED_LZO,
+    BULKDATA_COMPRESSED_ZLIB, BULKDATA_STORE_IN_SEPARATE_FILE, COMPRESS_LZO, COMPRESS_ZLIB,
+    PKG_COMPRESSED, PKG_COOKED, UPK_MAGIC,
 };
 
 /// Helper to build a hermetic synthetic UPK package in memory.
@@ -489,3 +494,228 @@ fn test_probe_paladins_real_game_upk_if_present() {
         println!("Export 0: path='{full_path}', class='{class_name}'");
     }
 }
+
+#[test]
+fn test_integration_synthetic_tfc_and_dds_pipeline() {
+    let temp_dir = std::env::temp_dir().join(format!("immortal_test_tfc_{}", std::process::id()));
+    let cooked_dir = temp_dir.join("ChaosGame").join("CookedPCConsole");
+    std::fs::create_dir_all(&cooked_dir).expect("Failed to create cooked directory");
+
+    let tfc_file_path = cooked_dir.join("CharNormals0.tfc");
+    let mut tfc_file = std::fs::File::create(&tfc_file_path).expect("Failed to create TFC file");
+
+    // Write Mip 0: DXT1 compressed with LZO
+    let dxt1_pixels = vec![0x55u8; 1024]; // 64x64 DXT1
+    let (offset_mip0, size_mip0) = write_tfc_chunk(&mut tfc_file, &dxt1_pixels, Some(COMPRESS_LZO)).unwrap();
+
+    // Write Mip 1: DXT5 compressed with ZLIB
+    let dxt5_pixels = vec![0xAAu8; 2048]; // 64x64 DXT5
+    let (offset_mip1, size_mip1) = write_tfc_chunk(&mut tfc_file, &dxt5_pixels, Some(COMPRESS_ZLIB)).unwrap();
+
+    // Write Mip 2: BC7 uncompressed
+    let bc7_pixels = vec![0x77u8; 4096]; // 128x64 BC7
+    let (offset_mip2, size_mip2) = write_tfc_chunk(&mut tfc_file, &bc7_pixels, None).unwrap();
+
+    drop(tfc_file);
+
+    // Resolve via TfcResolver
+    let resolver = TfcResolver::new(&temp_dir);
+    let resolved_path = resolver.resolve_tfc_path("CharNormals0");
+    assert_eq!(resolved_path, tfc_file_path);
+
+    // Extract Mip 0 and export DDS
+    let mip0 = FTexture2DMipMap {
+        bulk_data: FByteBulkData {
+            bulk_data_flags: BULKDATA_STORE_IN_SEPARATE_FILE | BULKDATA_COMPRESSED_LZO,
+            element_count: dxt1_pixels.len() as u32,
+            size_on_disk: size_mip0,
+            offset_in_file: offset_mip0 as i64,
+        },
+        size_x: 64,
+        size_y: 64,
+        inline_data: None,
+    };
+    let extracted_mip0 = resolver.extract_mip_from_tfc("CharNormals0", &mip0).unwrap();
+    assert_eq!(extracted_mip0, dxt1_pixels);
+    let dds0 = export_dds(64, 64, TextureFormat::Dxt1, &extracted_mip0);
+    assert_eq!(&dds0[0..4], b"DDS ");
+    assert_eq!(dds0.len(), 128 + dxt1_pixels.len());
+
+    // Extract Mip 1 and export DDS
+    let mip1 = FTexture2DMipMap {
+        bulk_data: FByteBulkData {
+            bulk_data_flags: BULKDATA_STORE_IN_SEPARATE_FILE | BULKDATA_COMPRESSED_ZLIB,
+            element_count: dxt5_pixels.len() as u32,
+            size_on_disk: size_mip1,
+            offset_in_file: offset_mip1 as i64,
+        },
+        size_x: 64,
+        size_y: 64,
+        inline_data: None,
+    };
+    let extracted_mip1 = resolver.extract_mip_from_tfc("CharNormals0", &mip1).unwrap();
+    assert_eq!(extracted_mip1, dxt5_pixels);
+    let dds1 = export_dds(64, 64, TextureFormat::Dxt5, &extracted_mip1);
+    assert_eq!(&dds1[0..4], b"DDS ");
+    assert_eq!(dds1.len(), 128 + dxt5_pixels.len());
+
+    // Extract Mip 2 and export DDS
+    let mip2 = FTexture2DMipMap {
+        bulk_data: FByteBulkData {
+            bulk_data_flags: BULKDATA_STORE_IN_SEPARATE_FILE,
+            element_count: bc7_pixels.len() as u32,
+            size_on_disk: size_mip2,
+            offset_in_file: offset_mip2 as i64,
+        },
+        size_x: 128,
+        size_y: 64,
+        inline_data: None,
+    };
+    let extracted_mip2 = resolver.extract_mip_from_tfc("CharNormals0", &mip2).unwrap();
+    assert_eq!(extracted_mip2, bc7_pixels);
+    let dds2 = export_dds(128, 64, TextureFormat::Bc7, &extracted_mip2);
+    assert_eq!(&dds2[0..4], b"DDS ");
+    assert_eq!(dds2.len(), 128 + bc7_pixels.len());
+
+    // Clean up
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_integration_synthetic_akpk_soundbank_and_wav_pipeline() {
+    let mut pck_stream = Cursor::new(Vec::new());
+
+    // Soundbank BKHD
+    let bank_payload = create_bkhd(120, 133742, b"PaladinsWwiseBankData");
+
+    // Two WEM audio streams
+    let raw_pcm_stream = [0x34, 0x12].repeat(500); // 1000 bytes
+    let wav_stream = export_to_wav(&WavSpec::pcm(44100, 2, 16), &[0x77; 400]);
+
+    PckArchive::write(
+        &mut pck_stream,
+        1,
+        &[(133742, &bank_payload)],
+        &[(9001, &raw_pcm_stream), (9002, &wav_stream)],
+    )
+    .expect("Failed to write synthetic PCK");
+
+    pck_stream.set_position(0);
+    let archive = PckArchive::read(&mut pck_stream).expect("Failed to parse PCK archive");
+
+    assert_eq!(archive.soundbanks.len(), 1);
+    assert_eq!(archive.streams.len(), 2);
+
+    // Verify BKHD bank extraction
+    let bkhd_entry = archive.get_soundbank(133742).expect("Soundbank 133742 not found");
+    let extracted_bank = archive.extract_entry(&mut pck_stream, bkhd_entry).unwrap();
+    let bkhd_header = parse_bkhd(&extracted_bank).unwrap();
+    assert_eq!(bkhd_header.soundbank_id, 133742);
+    assert_eq!(bkhd_header.generator_version, 120);
+
+    // Verify Stream 1 extraction & conversion to WAV
+    let stream1_entry = archive.find_entry("9001.wem").expect("Stream 9001 not found");
+    let extracted_stream1 = archive.extract_entry(&mut pck_stream, stream1_entry).unwrap();
+    let wav1 = convert_wem_to_wav(&extracted_stream1, Some(WavSpec::pcm(48000, 1, 16))).unwrap();
+    let (spec1, samples1) = parse_wav(&wav1).unwrap();
+    assert_eq!(spec1.sample_rate, 48000);
+    assert_eq!(spec1.num_channels, 1);
+    assert_eq!(samples1, raw_pcm_stream.as_slice());
+
+    // Verify Stream 2 extraction & conversion
+    let stream2_entry = archive.find_entry("9002").expect("Stream 9002 not found");
+    let extracted_stream2 = archive.extract_entry(&mut pck_stream, stream2_entry).unwrap();
+    let wav2 = convert_wem_to_wav(&extracted_stream2, None).unwrap();
+    let (spec2, samples2) = parse_wav(&wav2).unwrap();
+    assert_eq!(spec2.sample_rate, 44100);
+    assert_eq!(spec2.num_channels, 2);
+    assert_eq!(samples2, &[0x77; 400]);
+}
+
+#[test]
+fn test_integration_synthetic_skeletal_mesh_to_gltf_pipeline() {
+    // 1. RefSkeleton with root and 2 child bones
+    let skeleton = RefSkeleton::new(vec![
+        FMeshBone {
+            name: "Root".to_string(),
+            parent_index: -1,
+            position: [0.0, 0.0, 0.0],
+            orientation: [0.0, 0.0, 0.0, 1.0],
+            num_children: 1,
+            flags: 0,
+        },
+        FMeshBone {
+            name: "Pelvis".to_string(),
+            parent_index: 0,
+            position: [0.0, 0.0, 50.0],
+            orientation: [0.0, 0.0, 0.0, 1.0],
+            num_children: 1,
+            flags: 0,
+        },
+        FMeshBone {
+            name: "Spine".to_string(),
+            parent_index: 1,
+            position: [0.0, 0.0, 40.0],
+            orientation: [0.0, 0.0, 0.0, 1.0],
+            num_children: 0,
+            flags: 0,
+        },
+    ]);
+
+    // 2. SkeletalMesh LOD model with GPUSkin vertices
+    let vertices = vec![
+        GPUSkinVertex {
+            position: [-10.0, 0.0, 50.0],
+            normal: [0.0, 1.0, 0.0],
+            tangent: [1.0, 0.0, 0.0, 1.0],
+            tex_coord_0: [0.0, 1.0],
+            joints_0: [1, 0, 0, 0],
+            weights_0: [1.0, 0.0, 0.0, 0.0],
+        },
+        GPUSkinVertex {
+            position: [10.0, 0.0, 50.0],
+            normal: [0.0, 1.0, 0.0],
+            tangent: [1.0, 0.0, 0.0, 1.0],
+            tex_coord_0: [1.0, 1.0],
+            joints_0: [1, 0, 0, 0],
+            weights_0: [1.0, 0.0, 0.0, 0.0],
+        },
+        GPUSkinVertex {
+            position: [0.0, 0.0, 90.0],
+            normal: [0.0, 1.0, 0.0],
+            tangent: [1.0, 0.0, 0.0, 1.0],
+            tex_coord_0: [0.5, 0.0],
+            joints_0: [2, 1, 0, 0],
+            weights_0: [0.75, 0.25, 0.0, 0.0],
+        },
+    ];
+    let indices = vec![0, 1, 2];
+    let lod_model = FSkeletalMeshLODModel { vertices, indices };
+
+    // 3. Export to glTF 2.0
+    let export = export_skeletal_mesh_to_gltf(&lod_model, Some(&skeleton), "character.bin")
+        .expect("Failed to export glTF");
+
+    // Validate glTF JSON structure
+    let root: serde_json::Value = serde_json::from_str(&export.gltf_json).unwrap();
+    assert_eq!(root["asset"]["version"], "2.0");
+    assert_eq!(root["buffers"][0]["uri"], "character.bin");
+    assert_eq!(root["nodes"].as_array().unwrap().len(), 4); // 1 mesh + 3 bones
+    assert_eq!(root["skins"].as_array().unwrap().len(), 1);
+
+    // Validate coordinate conversions: UE3 [x, y, z] -> glTF [x, z, -y]
+    let converted_pos0 = convert_coord_ue3_to_gltf([-10.0, 0.0, 50.0]);
+    assert_eq!(converted_pos0, [-10.0, 50.0, 0.0]);
+
+    // 4. Save to temporary directory
+    let temp_dir = std::env::temp_dir().join(format!("immortal_gltf_test_{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+    let (gltf_path, bin_path) = export.save_to_dir(&temp_dir, "character").unwrap();
+
+    assert!(gltf_path.exists());
+    assert!(bin_path.exists());
+    assert_eq!(std::fs::metadata(&bin_path).unwrap().len(), export.bin_data.len() as u64);
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+

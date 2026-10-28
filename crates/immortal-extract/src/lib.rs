@@ -7,16 +7,23 @@
 //! Cleanroom Unreal Engine 3 CookedPCConsole Package (`.upk`), Texture File Cache (`.tfc`),
 //! and audio asset extractor adhering to the BYOD ("Bring Your Own Data") standard.
 
+pub mod audio;
 pub mod chunk;
 pub mod error;
 pub mod export;
 pub mod fstring;
 pub mod import;
 pub mod index;
+pub mod mesh;
 pub mod name;
 pub mod package;
 pub mod summary;
+pub mod tfc;
 
+pub use audio::{
+    convert_wem_to_wav, create_bkhd, export_to_wav, parse_bkhd, parse_wav, PckArchive, PckEntry,
+    SoundBankHeader, WavSpec, AKPK_MAGIC, BKHD_MAGIC,
+};
 pub use chunk::{
     compress_lzo, compress_zlib, decompress_chunk, decompress_lzo, decompress_zlib,
     write_compressed_chunk, FCompressedChunk, FCompressedChunkBlock, FCompressedChunkHeader,
@@ -27,9 +34,18 @@ pub use export::{ExportTable, ObjectExport};
 pub use fstring::{read_fstring, write_fstring};
 pub use import::{ImportTable, ObjectImport};
 pub use index::PackageIndex;
+pub use mesh::{
+    convert_coord_ue3_to_gltf, convert_quat_ue3_to_gltf, export_skeletal_mesh_to_gltf, FMeshBone,
+    FSkeletalMeshLODModel, GPUSkinVertex, GltfExport, RefSkeleton,
+};
 pub use name::{FName, NameEntry, NameTable};
 pub use package::UpkPackage;
 pub use summary::{GenerationInfo, PackageSummary, PKG_COMPRESSED, PKG_COOKED};
+pub use tfc::{
+    build_dds_header, export_dds, export_dds_with_mips, write_tfc_chunk, FByteBulkData,
+    FTexture2DMipMap, TextureFormat, TfcResolver, BULKDATA_COMPRESSED_LZO, BULKDATA_COMPRESSED_ZLIB,
+    BULKDATA_STORE_IN_SEPARATE_FILE,
+};
 
 /// Unreal Engine 3 UPK magic identifier (`0x9E2A83C1`).
 pub const UPK_MAGIC: u32 = 0x9E2A83C1;

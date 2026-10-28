@@ -32,4 +32,19 @@ pub enum ExtractError {
 
     #[error("Buffer overflow: required {required} bytes, available {available}")]
     BufferOverflow { required: usize, available: usize },
+
+    #[error("Invalid bulk data: {reason}")]
+    InvalidBulkData { reason: String },
+
+    #[error("TFC file not found: {tfc_name} (path: {path})")]
+    TfcNotFound { tfc_name: String, path: String },
+
+    #[error("Invalid audio archive/format: {reason}")]
+    InvalidAudio { reason: String },
+
+    #[error("Invalid mesh/skeleton data: {reason}")]
+    InvalidMesh { reason: String },
+
+    #[error("glTF export error: {reason}")]
+    GltfExport { reason: String },
 }
