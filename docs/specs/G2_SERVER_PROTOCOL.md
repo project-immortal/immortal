@@ -101,24 +101,56 @@ Fields are identified by 16-bit token IDs:
 
 ---
 
-## 5. Layer 3: UDP Session & Handshake Protocol (`CPackUdp`)
+## 5. Layer 3: UDP Session & Wire Envelope (`CPackUdp`)
 
-Once authenticated, the client connects to the emulated match server on UDP port `7777`:
+Once authenticated via TCP port 9000, the client connects to the match server on UDP port `7777`.
 
-### 5.1 CPackUdp Driver Initial Exchange
-1. `HelloSend`:
-   - Client sends initial datagram to `127.0.0.1:7777`.
-2. `HelloRecvReply`:
-   - Server acknowledges connection request and assigns client connection session.
-3. `PingSend` / `PingRecv`:
-   - MTU discovery exchange with standard MTU `1414` bytes.
+### 5.1 CPackUdp Datagram Envelope (Evidence `ev_017e402e...`, `ev_1c0913d8...`)
 
-### 5.2 UE3 Channel 0 Control Handshake
-After UDP session framing is established, the client initiates the standard Unreal Engine 3 `Control Channel` (Channel 0):
-- `NMT_Hello` (`0x00`): Client presents engine version, licensee version, and map URL.
-- `NMT_NetSpeed` (`0x03`): Client requests transfer data rate (e.g. `24000` / `48000`).
-- `NMT_Welcome` (`0x01`): Server replies with Level URL:
-  ```text
-  ShootingRange?game=ChaosGame.ChaosGameInfo
-  ```
-- Server opens Actor Channel 2 for `PlayerController`, spawns Fernando pawn (`ChampionId::Fernando = 1026`), and replicates initial player transform.
+```text
++-----------------------+--------------------------------------------------------+
+| Byte Offset           | Field Description                                      |
++-----------------------+--------------------------------------------------------+
+| 0x00 - 0x1D (28 B)    | UDP Transport & Internal Dispatch Metadata / Link Hdr  |
+| 0x1E - 0x1F (2 B)     | uint16 Packet Length (Little Endian)                   |
+| 0x20 - 0x21 (2 B)     | uint16 Key ID / Crypto Session Token                   |
+| 0x22 - 0x27 (6 B)     | Sequence / Timestamp / Connection Flag Padding         |
+| 0x28 - 0x2F (8 B)     | uint64 Peer ID / Remote Address Representation         |
+| 0x30 - 0x37 (8 B)     | Connection Session Pointer / Context Handle            |
+| 0x38 - 0x59 (34 B)    | Peer Address & TG Authentication Descriptor (CTgNetId) |
+| 0x5A - 0x5D (4 B)     | int32 Packet Function / Type ID (0 = Hello)            |
+| 0x5E - 0x65 (8 B)     | Handshake Session Parameters                           |
+| 0x66 - 0x265 (512 B)  | fcAllocCrypto Session Key Exchange Payload             |
+| 0x266 - 0x269 (4 B)   | int32 SHA-256 Digest Length (= 0x20 / 32 bytes)        |
+| 0x26A - 0x289 (32 B)  | SHA-256 HMAC / Digest (computed over 0x5A..0x265)      |
++-----------------------+--------------------------------------------------------+
+```
+
+### 5.2 Handshake Validation & State Transitions
+1. **Hello Gate (`DoHello`, 0x18004c3f0)**:
+   - Evaluates `*(ushort *)(packet + 0x1e) >= 0x23a` (570 bytes minimum length).
+   - Validates `*(int *)(packet + 0x5a) == 0` (`HelloSend`).
+   - Authenticates SHA-256 HMAC over 524 bytes (`0x20c`) from `packet + 0x5a` against digest at `packet + 0x26a`.
+   - Imports crypto session keys via `fcAllocCrypto()->ImportSession(*(ushort *)(packet + 0x20), packet + 0x66)`.
+2. **Acceptance & MTU (`Accept`, 0x18004a1c0)**:
+   - Registers peer endpoint, updates state `conn + 0x110 = 3` (Active/Connected).
+   - Negotiated path MTU is **1414** bytes. Packets exceeding MTU return error `0x1004` in `SendGame` (`0x18004d7f0`).
+3. **Keepalive (`PingSend` / `PingRecv`)**:
+   - Probes connection latency and MTU via echo datagrams.
+
+### 5.3 Layer 4: UE3 UNetConnection & Channel 0 Handshake
+Inside connected `CPackUdp` frames (`FunctionId = 4` / `SendGame`), Unreal Engine 3 bunches are unpacked and dispatched to `UNetConnection`:
+
+1. **`NMT_Hello` (`0x00`)**:
+   - Client sends initial engine handshake: `EngineVersion = 12791`, `LicenseeVersion = 0`.
+2. **`NMT_NetSpeed` (`0x03`)**:
+   - Client announces requested bandwidth (`24000` / `48000`).
+3. **`NMT_Welcome` (`0x01`)**:
+   - Server responds with level transition URL:
+     ```text
+     ShootingRange?game=ChaosGame.ChaosGameInfo
+     ```
+   - Client processes `NMT_Welcome` in `UControlChannel::ReceivedBunch`, loads map package `ShootingRange`, initializes `ChaosGame.ChaosGameInfo`, and opens Actor Channel 2.
+4. **Pawn Replication (`ChampionId::Fernando = 1026`)**:
+   - Server creates player controller on Actor Channel 2 and spawns Fernando pawn (`TgPawn_Knight`) at coordinate `(0, 0, 100)`.
+   - Replicates baseline actor transforms (Position, Rotation) enabling offline walkability in the Shooting Range.

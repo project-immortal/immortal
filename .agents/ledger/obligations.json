@@ -33,5 +33,19 @@
     "claim": "Paladins ShippingPC-ChaosGame.exe supports native CLI redirection flags (-host=, -tcp=, -servicediscoveryhost=, -dumpallmar) for local backend testing",
     "evidence_criteria": "String inspection and binary analysis of ShippingPC-ChaosGame.exe at offset 51257616-51258128",
     "status": "satisfied"
+  },
+  {
+    "id": "OBL-G2-004",
+    "subject": "cpack_udp_wire_framing",
+    "claim": "CPackUdp on port 7777 uses a 570-byte minimum datagram for HelloSend with Function ID 0 at offset +0x5a, SHA-256 HMAC over 524 bytes at +0x26a, and negotiated MTU 1414 bytes",
+    "evidence_criteria": "REA / Ghidra decompilation of CPackUdpDrv::DoHello (0x18004c3f0, evidence ev_017e402eacb02b101262b026e37b90a439af662833dcc9731d177b65b682126c) and CPackUdpConn::SendGame (0x18004d7f0, evidence ev_1c0913d8b91d3250ae6fd4cf05d10c79374115f36a654d8192a0cbc4c904a847)",
+    "status": "satisfied"
+  },
+  {
+    "id": "OBL-G2-005",
+    "subject": "ue3_shootingrange_handshake",
+    "claim": "Client connects to Level URL ShootingRange?game=ChaosGame.ChaosGameInfo over Channel 0 NMT_Welcome (0x01) and opens Actor Channel 2 for PlayerController",
+    "evidence_criteria": "Decompilation of ShippingPC-ChaosGame.exe UControlChannel::ReceivedBunch and string references at 0x18033a170-0x18033a310",
+    "status": "satisfied"
   }
 ]
