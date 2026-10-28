@@ -12,3 +12,6 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
+byteorder.workspace = true
+serde.workspace = true
+
