@@ -86,9 +86,18 @@ Fields are identified by 16-bit token IDs:
 | `0x1A` (26) | `Status` | Integer (`0x5`) | Result code (`0` = Success). |
 | `7` | `SessionToken` | WChar String (`0xC`) | Cryptographic session authorization string. |
 | `10` | `AccountId` | Integer (`0x5`) | Unique player account identifier. |
+| `100` | `ChampionRoster` | RowSet / Blob (`0xA`) | List of unlocked champions (`ChampionId`, `bOwned: bool`, e.g. Fernando `1026`). Populates `UIHudChampionSelect`. |
+| `102` | `WeaponDevices` | RowSet / Blob (`0xA`) | Weapon and ability device inventory (`Device 10774` Flame Lance). |
+| `105` | `DeckLoadouts` | RowSet / Blob (`0xA`) | Custom and default card loadouts (`Deck 16379` Fernando Starter Deck). |
 | `500` | `MatchTicket` | RowSet / Blob (`0xA`) | Dedicated server IP, port, and authentication ticket routing to `127.0.0.1:7777`. |
 
-### 4.3 Login Handshake Sequence
+### 4.3 MCTS Inventory Rowset Schema & Scaleform Dependencies
+Empirical ground truth from packet captures (`pcaps/paladins_live_session.pcap`, `pcaps/mcts_stream_6761.raw`) demonstrates that the Scaleform Flash UI (`UIHudChampionSelect`, `UIStoreDetail`) renders blank grids if inventory rowsets are omitted during the login sequence. MCTS delivers inventory tables comprising:
+- **Token 100 (`ChampionRoster`)**: Unlocked champion identifiers and ownership flags (`bOwned: bool`).
+- **Token 102 (`WeaponDevices`)**: Active weapon devices (including Device `10774` Fernando Flame Lance).
+- **Token 105 (`DeckLoadouts`)**: Available card loadouts and decks (including Deck `16379` Fernando Starter).
+
+### 4.4 Login Handshake Sequence
 1. **Client -> Server (`SendLogin`)**:
    - Client establishes TCP stream to `127.0.0.1:9000`.
    - Sends framing `0xCBBC` / `0xCBB0` containing Login Parameters (platform token, client version `8.1.5839.0`, language, EULA acceptance).
@@ -97,15 +106,43 @@ Fields are identified by 16-bit token IDs:
    - Sets Token `0x1A = 0` (Success).
    - Sets Token `10 = 10001` (Mock Account ID).
    - Sets Token `7 = "IMMORTAL-DEV-SESSION-TICKET"`.
+   - Populates Tokens `100`, `102`, and `105` with baseline Fernando unlocked inventory.
    - Sets Token `500 = MatchTicket` pointing to `127.0.0.1:7777`.
 
 ---
 
-## 5. Layer 3: UDP Session & Wire Envelope (`CPackUdp`)
+## 5. Layer 3: UDP Session & Wire Envelope (`CPackUdp` / `PComNetConn`)
 
 Once authenticated via TCP port 9000, the client connects to the match server on UDP port `7777`.
 
-### 5.1 CPackUdp Datagram Envelope (Evidence `ev_017e402e...`, `ev_1c0913d8...`)
+### 5.1 UE3 `PComNetConn` UDP Datagram Wire Format (Port 7777)
+
+Live packet capture analysis (`pcaps/paladins_live_session.pcap`) and cleanroom server implementation reveal the exact UE3 `PComNetConn` datagram wire format exchanged between client and dedicated server:
+
+```text
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                       Zero Prefix (Bytes 0-3)                 |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|       Zero Prefix (Bytes 4-5) |   Client Seq  | Control Flags |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|   Server Seq  | Control Flags |      UE3 Bunch Payload ...    |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|       ... UE3 Bunch Payload ...               | Term Bit 0x01 |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+```
+
+1. **Prefix Header**: 6 zero bytes `[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]`.
+2. **Client Sequence**: 1 byte (`u8`) client packet sequence number.
+3. **Control Flags**: 1 byte (`u8`):
+   - `0x40`: Keepalive / Heartbeat ACK datagram.
+   - `0x80` / `0xC0`: Payload bunch packet containing UE3 bunches.
+4. **Server Sequence Increment**: 1 byte (`u8`) server sequence number, monotonically incremented with each outgoing datagram.
+5. **Bunch Payload**: Serialized UE3 channel bunches (Channel 0 control messages, actor replication).
+6. **Trailing Bit-Reader Termination Marker**: Trailing byte `0x01` marking the bitstream termination for the engine's `FBitReader`.
+
+### 5.2 CPackUdp Datagram Envelope (Legacy / Crypto Dispatch)
 
 ```text
 +-----------------------+--------------------------------------------------------+
@@ -126,7 +163,7 @@ Once authenticated via TCP port 9000, the client connects to the match server on
 +-----------------------+--------------------------------------------------------+
 ```
 
-### 5.2 Handshake Validation & State Transitions
+### 5.3 Handshake Validation & State Transitions
 1. **Hello Gate (`DoHello`, 0x18004c3f0)**:
    - Evaluates `*(ushort *)(packet + 0x1e) >= 0x23a` (570 bytes minimum length).
    - Validates `*(int *)(packet + 0x5a) == 0` (`HelloSend`).
@@ -138,19 +175,30 @@ Once authenticated via TCP port 9000, the client connects to the match server on
 3. **Keepalive (`PingSend` / `PingRecv`)**:
    - Probes connection latency and MTU via echo datagrams.
 
-### 5.3 Layer 4: UE3 UNetConnection & Channel 0 Handshake
-Inside connected `CPackUdp` frames (`FunctionId = 4` / `SendGame`), Unreal Engine 3 bunches are unpacked and dispatched to `UNetConnection`:
+### 5.4 Layer 4: UE3 UNetConnection & Channel 0 Handshake
+Inside connected `PComNetConn` / `CPackUdp` frames, Unreal Engine 3 bunches are unpacked and dispatched to `UNetConnection`:
 
 1. **`NMT_Hello` (`0x00`)**:
    - Client sends initial engine handshake: `EngineVersion = 12791`, `LicenseeVersion = 0`.
 2. **`NMT_NetSpeed` (`0x03`)**:
    - Client announces requested bandwidth (`24000` / `48000`).
-3. **`NMT_Welcome` (`0x01`)**:
-   - Server responds with level transition URL:
+3. **`NMT_Welcome` (`0x01`) & Exact Shooting Range Level URL**:
+   - Server responds with the exact verified Shooting Range level URL:
      ```text
-     ShootingRange?game=ChaosGame.ChaosGameInfo
+     Shootingrange_P?game=TgGame.TgGame_Paladins_ShootingRange?GameState=OGS_NoSession?GameMode=0?Team=0
      ```
-   - Client processes `NMT_Welcome` in `UControlChannel::ReceivedBunch`, loads map package `ShootingRange`, initializes `ChaosGame.ChaosGameInfo`, and opens Actor Channel 2.
+   - Client processes `NMT_Welcome` in `UControlChannel::ReceivedBunch`, loads map package `Shootingrange_P`, initializes `TgGame.TgGame_Paladins_ShootingRange`, and opens Actor Channel 2.
+
+### 5.5 Team Invariant Semantics
+
+The `Team` query parameter in the level travel URL dictates pawn spawn behavior and collision volume processing:
+
+| Team ID | Designation | Spawn Behavior & Safety Semantics |
+| :---: | :--- | :--- |
+| `Team=0` | **Order** (Friendly Player Team) | **Safe Spawn**: Spawns pawn on the central player pavilion. No harmful trigger volumes. This is the mandatory value for player sessions. |
+| `Team=1` | **Chaos** (Enemy Bot Team) | **Bot Lanes**: Used for dummy bot targets in the practice shooting lanes. |
+| `Team=255` | **Spectator / Neutral** | **Hazard**: Spawns inside or immediately activates the spawn pavilion kill volume (`KillerPawn`), causing immediate pawn death upon spawn. |
+
 4. **Pawn Replication (`ChampionId::Fernando = 1026`)**:
-   - Server creates player controller on Actor Channel 2 and spawns Fernando pawn (`TgPawn_Knight`) at coordinate `(0, 0, 100)`.
+   - Server creates player controller on Actor Channel 2 and spawns Fernando pawn (`TgPawn_Knight`) at coordinate `(0, 0, 100)` with `Team=0`.
    - Replicates baseline actor transforms (Position, Rotation) enabling offline walkability in the Shooting Range.

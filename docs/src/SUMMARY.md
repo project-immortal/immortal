@@ -22,5 +22,6 @@
 
 # Developer Runbooks & Contribution
 - [Workstation Setup Runbook](dev/cockpit_setup.md)
+- [Shooting Range Developer Runbook](dev/shooting_range.md)
 - [Agentic Cleanroom Contribution Guide](dev/contributing_agentic.md)
 - [Modular Champion Integration Guide](dev/champion_guide.md)
