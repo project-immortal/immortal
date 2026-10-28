@@ -49,10 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         println!("  • File Version: {}", summary.file_version);
         println!("  • Cooker Version: {}", summary.cooker_version);
-        println!(
-            "  • Compressed Chunks: {}",
-            summary.compressed_chunks.len()
-        );
+        println!("  • Compressed Chunks: {}", summary.compressed_chunks.len());
         println!("  • Name Count: {}", summary.name_count);
         println!("  • Import Count: {}", summary.import_count);
         println!("  • Export Count: {}", summary.export_count);
@@ -72,7 +69,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Inspect Export 0
         let exp0 = export_table.get(0).unwrap();
-        let exp0_name = exp0.resolve_object_name(&name_table).unwrap_or_else(|| "unknown".to_string());
+        let exp0_name = exp0
+            .resolve_object_name(&name_table)
+            .unwrap_or_else(|| "unknown".to_string());
         let exp0_class = exp0
             .resolve_class_name(&name_table, &import_table, &export_table)
             .unwrap_or_else(|| "unknown".to_string());
@@ -134,10 +133,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let archive = PckArchive::read(&mut reader)?;
 
         println!("  • SoundBanks in PCK: {}", archive.soundbanks.len());
-        println!(
-            "  • Streamed Audio Files in PCK: {}",
-            archive.streams.len()
-        );
+        println!("  • Streamed Audio Files in PCK: {}", archive.streams.len());
 
         for (idx, bank) in archive.soundbanks.iter().take(3).enumerate() {
             println!(
@@ -153,10 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             let mut file_reader = File::open(&pck_path)?;
             let raw_audio = archive.extract_entry(&mut file_reader, stream_entry)?;
-            println!(
-                "  • Raw Audio Bytes Extracted: {} bytes",
-                raw_audio.len()
-            );
+            println!("  • Raw Audio Bytes Extracted: {} bytes", raw_audio.len());
 
             // Convert to standard WAV
             let wav_bytes = convert_wem_to_wav(&raw_audio, None)?;

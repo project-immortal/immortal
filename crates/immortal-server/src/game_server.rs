@@ -37,6 +37,7 @@ pub struct ClientSession {
     pub session_id: u32,
     pub phase: SessionPhase,
     pub ctrl_sequence: u32,
+    pub server_sequence: u8,
     pub handshake: ControlChannelHandshake,
     pub replication: ReplicationSession,
     pub last_seen: Instant,
@@ -49,6 +50,7 @@ impl ClientSession {
             session_id,
             phase: SessionPhase::Connected,
             ctrl_sequence: 0,
+            server_sequence: 1,
             handshake: ControlChannelHandshake::new(Some(level_url), Some(net_speed)),
             replication: ReplicationSession::new(),
             last_seen: Instant::now(),
@@ -152,6 +154,7 @@ impl GameServer {
                         match recv_res {
                             Ok((size, src)) => {
                                 let data = &buf[..size];
+                                info!("📥 UDP datagram ({} bytes) from {}: {:02x?}", size, src, data);
                                 match server.handle_datagram(data, src).await {
                                     Ok(replies) => {
                                         for reply in replies {
@@ -188,6 +191,106 @@ impl GameServer {
 
     /// Handles an incoming datagram and returns any outgoing response datagrams.
     pub async fn handle_datagram(&self, data: &[u8], src: SocketAddr) -> Result<Vec<Vec<u8>>> {
+        // 1. Check for UE3 PComNetConn wire format (6 zero bytes prefix)
+        if data.len() >= 8 && data[0..6] == [0, 0, 0, 0, 0, 0] {
+            let client_seq = data[6];
+            let flags = data[7];
+
+            let mut sessions = self.sessions.write().await;
+            let session = sessions.entry(src).or_insert_with(|| {
+                let session_id = rand_session_id();
+                ClientSession::new(
+                    src,
+                    session_id,
+                    &self.config.level_url,
+                    self.config.net_speed,
+                )
+            });
+            session.last_seen = Instant::now();
+
+            let s_seq = session.server_sequence;
+            session.server_sequence = session.server_sequence.wrapping_add(1);
+
+            // Keepalive / Heartbeat ACK (flag 0x40)
+            if flags == 0x40 {
+                let ack = wrap_pcom_ack(client_seq, s_seq);
+                return Ok(vec![ack]);
+            }
+
+            // Handshake / Payload packet (flag 0x80 or 0xc0)
+            if (flags & 0x80) != 0 || (flags & 0x40) != 0 {
+                info!(
+                    "🎮 Ingested PComNetConn bunch from {} (client seq: 0x{:02x}, flags: 0x{:02x})",
+                    src, client_seq, flags
+                );
+                let mut out = Vec::new();
+
+                // 1. Reply with ACK
+                out.push(wrap_pcom_ack(client_seq, s_seq));
+
+                if client_seq == 0 && !session.replication.pawn_spawned {
+                    // Send NMT_Welcome directing client to level URL
+                    let welcome_msg = ControlMessage::Welcome {
+                        level_url: self.config.level_url.clone(),
+                        game_class: immortal_net::DEFAULT_GAME_CLASS.to_string(),
+                    };
+                    let welcome_bunch = Bunch::control(session.ctrl_sequence, welcome_msg.encode());
+                    session.ctrl_sequence += 1;
+                    let s_seq_welcome = session.server_sequence;
+                    session.server_sequence = session.server_sequence.wrapping_add(1);
+                    out.push(wrap_pcom_packet(
+                        client_seq,
+                        s_seq_welcome,
+                        &welcome_bunch.encode(),
+                    ));
+
+                    // Send NMT_NetSpeed
+                    let netspeed_msg = ControlMessage::NetSpeed {
+                        rate: self.config.net_speed,
+                    };
+                    let netspeed_bunch =
+                        Bunch::control(session.ctrl_sequence, netspeed_msg.encode());
+                    session.ctrl_sequence += 1;
+                    let s_seq_net = session.server_sequence;
+                    session.server_sequence = session.server_sequence.wrapping_add(1);
+                    out.push(wrap_pcom_packet(
+                        client_seq,
+                        s_seq_net,
+                        &netspeed_bunch.encode(),
+                    ));
+
+                    // Open Actor Channel 2 & Spawn Fernando pawn
+                    info!(
+                        "🎉 Opening Actor Channel 2 and Spawning Fernando for {}!",
+                        src
+                    );
+                    let open_ch2 = session.replication.open_channel_2();
+                    let s_seq_ch2 = session.server_sequence;
+                    session.server_sequence = session.server_sequence.wrapping_add(1);
+                    out.push(wrap_pcom_packet(client_seq, s_seq_ch2, &open_ch2.encode()));
+
+                    let spawn_fernando = session.replication.spawn_fernando();
+                    let s_seq_spawn = session.server_sequence;
+                    session.server_sequence = session.server_sequence.wrapping_add(1);
+                    out.push(wrap_pcom_packet(
+                        client_seq,
+                        s_seq_spawn,
+                        &spawn_fernando.encode(),
+                    ));
+
+                    session.replication.pawn_spawned = true;
+                } else if session.replication.pawn_spawned {
+                    // Client is sending input/acknowledgement; stream movement transform delta
+                    let delta = session.replication.stream_baseline_delta(0.016);
+                    let s_seq_delta = session.server_sequence;
+                    session.server_sequence = session.server_sequence.wrapping_add(1);
+                    out.push(wrap_pcom_packet(client_seq, s_seq_delta, &delta.encode()));
+                }
+
+                return Ok(out);
+            }
+        }
+
         let packet = parse_cpack_udp(data)?;
         let mut responses = Vec::new();
 
@@ -330,6 +433,27 @@ fn rand_session_id() -> u32 {
     (now & 0xFFFFFFFF) as u32
 }
 
+/// Constructs a UE3 PComNetConn keepalive ACK datagram.
+fn wrap_pcom_ack(client_seq: u8, server_seq: u8) -> Vec<u8> {
+    vec![client_seq, 0x00, 0x00, 0x00, 0x00, 0x00, server_seq, 0x40]
+}
+
+/// Wraps payload into a UE3 PComNetConn datagram with trailing 1 bit.
+fn wrap_pcom_packet(client_seq: u8, server_seq: u8, payload: &[u8]) -> Vec<u8> {
+    let mut pkt = Vec::with_capacity(8 + payload.len() + 1);
+    pkt.push(client_seq);
+    pkt.push(0x00);
+    pkt.push(0x00);
+    pkt.push(0x00);
+    pkt.push(0x00);
+    pkt.push(0x00);
+    pkt.push(server_seq);
+    pkt.push(0x80);
+    pkt.extend_from_slice(payload);
+    pkt.push(0x01); // UE3 BitReader termination marker
+    pkt
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -411,7 +535,7 @@ mod tests {
         let welcome_msg = ControlMessage::decode(&bunch2.data).unwrap();
         match welcome_msg {
             ControlMessage::Welcome { level_url, .. } => {
-                assert_eq!(level_url, "ShootingRange?game=ChaosGame.ChaosGameInfo");
+                assert_eq!(level_url, DEFAULT_SHOOTING_RANGE_MAP);
             }
             other => panic!("Expected welcome message, found {:?}", other),
         }

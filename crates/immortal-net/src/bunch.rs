@@ -13,7 +13,9 @@ use crate::udp_framing::CPACK_OP_BUNCH;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Cursor, Read};
 
-pub const DEFAULT_SHOOTING_RANGE_MAP: &str = "ShootingRange?game=ChaosGame.ChaosGameInfo";
+pub const DEFAULT_SHOOTING_RANGE_MAP: &str =
+    "Shootingrange_P?game=TgGame.TgGame_Paladins_ShootingRange?GameState=OGS_NoSession?GameMode=0?Team=0";
+pub const DEFAULT_GAME_CLASS: &str = "TgGame.TgGame_Paladins_ShootingRange";
 pub const DEFAULT_NET_SPEED: u32 = 24000;
 pub const MAX_FSTRING_LEN: usize = 4096;
 
@@ -576,7 +578,7 @@ mod tests {
         // Second reply is NMT_Welcome (0x01) with ShootingRange URL
         match &replies[1] {
             ControlMessage::Welcome { level_url, .. } => {
-                assert_eq!(level_url, "ShootingRange?game=ChaosGame.ChaosGameInfo");
+                assert_eq!(level_url, DEFAULT_SHOOTING_RANGE_MAP);
             }
             other => panic!("Expected Welcome message, found {:?}", other),
         }

@@ -10,8 +10,10 @@
 /dirty_room/
 /disassembly/
 /captures/
+/pcaps/
 *.pcap
 *.pcapng
+*.raw
 
 # Local Extracted Game Assets (BYOD - Bring Your Own Data Standard)
 # Zero proprietary assets may be committed. All assets are extracted locally.

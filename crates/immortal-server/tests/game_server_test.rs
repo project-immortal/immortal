@@ -113,7 +113,7 @@ async fn test_game_server_loopback_integration() {
     let welcome = ControlMessage::decode(&received_bunches[1].data).expect("Decode welcome");
     match welcome {
         ControlMessage::Welcome { level_url, .. } => {
-            assert_eq!(level_url, "ShootingRange?game=ChaosGame.ChaosGameInfo");
+            assert_eq!(level_url, immortal_net::DEFAULT_SHOOTING_RANGE_MAP);
         }
         other => panic!("Expected Welcome message, found {:?}", other),
     }

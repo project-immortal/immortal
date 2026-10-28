@@ -85,7 +85,11 @@ impl PckArchive {
             reader.read_u32::<LittleEndian>(),
             reader.read_u32::<LittleEndian>(),
         ) {
-            let total = 28u64 + (first_val as u64) + (bank_sz as u64) + (stream_sz as u64) + (ext_sz as u64);
+            let total = 28u64
+                + (first_val as u64)
+                + (bank_sz as u64)
+                + (stream_sz as u64)
+                + (ext_sz as u64);
             total == (header_size as u64 + 8)
         } else {
             false
