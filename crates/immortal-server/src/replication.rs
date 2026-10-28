@@ -20,6 +20,8 @@ pub const FERNANDO_SPAWN_X: f32 = 0.0;
 pub const FERNANDO_SPAWN_Y: f32 = 0.0;
 pub const FERNANDO_SPAWN_Z: f32 = 100.0;
 pub const FERNANDO_BASE_HEALTH: f32 = 4600.0;
+pub const DEVICE_FERNANDO_FLAME_LANCE: u32 = 10774;
+pub const FERNANDO_DEFAULT_TEAM: u8 = 0;
 
 // Replication Message Sub-Opcodes
 pub const REP_OP_OPEN_CHANNEL: u8 = 0x01;
@@ -129,6 +131,8 @@ pub struct PawnActor {
     pub actor_id: u32,
     pub class_name: String,
     pub champion_id: ChampionId,
+    pub weapon_device_id: u32,
+    pub team: u8,
     pub location: Vector3,
     pub rotation: Rotator,
     pub velocity: Vector3,
@@ -142,6 +146,8 @@ impl Default for PawnActor {
             actor_id: 100,
             class_name: FERNANDO_PAWN_CLASS.to_string(),
             champion_id: ChampionId::Fernando,
+            weapon_device_id: DEVICE_FERNANDO_FLAME_LANCE,
+            team: FERNANDO_DEFAULT_TEAM,
             location: Vector3::new(FERNANDO_SPAWN_X, FERNANDO_SPAWN_Y, FERNANDO_SPAWN_Z),
             rotation: Rotator::default(),
             velocity: Vector3::zero(),
@@ -195,6 +201,7 @@ impl ReplicationSession {
     }
 
     /// Spawns and replicates Fernando pawn (`TgPawn_Knight`, `ChampionId::Fernando = 1026`)
+    /// with Weapon Device ID 10774 (`DEVICE_FERNANDO_FLAME_LANCE`) and Team 0
     /// at spawn coordinates `(0.0, 0.0, 100.0)`.
     pub fn spawn_fernando(&mut self) -> Bunch {
         self.pawn_spawned = true;
@@ -203,6 +210,9 @@ impl ReplicationSession {
         data.write_u32::<LittleEndian>(self.pawn.actor_id).unwrap();
         data.write_u32::<LittleEndian>(self.pawn.champion_id as u32)
             .unwrap();
+        data.write_u32::<LittleEndian>(self.pawn.weapon_device_id)
+            .unwrap();
+        data.push(self.pawn.team);
 
         let class_bytes = self.pawn.class_name.as_bytes();
         data.write_u16::<LittleEndian>(class_bytes.len() as u16)
@@ -272,6 +282,8 @@ pub enum ReplicationPayload {
     SpawnActor {
         actor_id: u32,
         champion_id: ChampionId,
+        weapon_device_id: u32,
+        team: u8,
         class_name: String,
         location: Vector3,
         rotation: Rotator,
@@ -308,6 +320,8 @@ impl ReplicationPayload {
                 let actor_id = cursor.read_u32::<LittleEndian>()?;
                 let champ_raw = cursor.read_u32::<LittleEndian>()?;
                 let champ_id = ChampionId::from_id(champ_raw);
+                let weapon_device_id = cursor.read_u32::<LittleEndian>()?;
+                let team = cursor.read_u8()?;
 
                 let class_len = cursor.read_u16::<LittleEndian>()? as usize;
                 let mut class_buf = vec![0u8; class_len];
@@ -322,6 +336,8 @@ impl ReplicationPayload {
                 Ok(Self::SpawnActor {
                     actor_id,
                     champion_id: champ_id,
+                    weapon_device_id,
+                    team,
                     class_name,
                     location,
                     rotation,
@@ -357,6 +373,9 @@ mod tests {
         assert_eq!(FERNANDO_SPAWN_X, 0.0);
         assert_eq!(FERNANDO_SPAWN_Y, 0.0);
         assert_eq!(FERNANDO_SPAWN_Z, 100.0);
+        assert_eq!(FERNANDO_BASE_HEALTH, 4600.0);
+        assert_eq!(DEVICE_FERNANDO_FLAME_LANCE, 10774);
+        assert_eq!(FERNANDO_DEFAULT_TEAM, 0);
     }
 
     #[test]
@@ -396,6 +415,8 @@ mod tests {
             ReplicationPayload::SpawnActor {
                 actor_id,
                 champion_id,
+                weapon_device_id,
+                team,
                 class_name,
                 location,
                 health,
@@ -403,6 +424,8 @@ mod tests {
             } => {
                 assert_eq!(actor_id, 100);
                 assert_eq!(champion_id, ChampionId::Fernando);
+                assert_eq!(weapon_device_id, 10774);
+                assert_eq!(team, 0);
                 assert_eq!(class_name, "TgPawn_Knight");
                 assert_eq!(location.x, 0.0);
                 assert_eq!(location.y, 0.0);

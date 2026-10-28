@@ -11,11 +11,12 @@ pub mod game_server;
 pub mod replication;
 
 pub use game_server::{
-    ClientSession, GameServer, GameServerConfig, GameServerHandle, SessionPhase,
+    wrap_pcom_ack, wrap_pcom_packet, ClientSession, GameServer, GameServerConfig, GameServerHandle,
+    SessionPhase,
 };
 pub use replication::{
     PawnActor, PlayerControllerActor, ReplicationPayload, ReplicationSession, Rotator, Vector3,
-    FERNANDO_BASE_HEALTH, FERNANDO_CHAMPION_ID, FERNANDO_PAWN_CLASS, FERNANDO_SPAWN_X,
-    FERNANDO_SPAWN_Y, FERNANDO_SPAWN_Z, REP_OP_DESTROY_ACTOR, REP_OP_OPEN_CHANNEL,
-    REP_OP_SPAWN_ACTOR, REP_OP_UPDATE_TRANSFORM,
+    DEVICE_FERNANDO_FLAME_LANCE, FERNANDO_BASE_HEALTH, FERNANDO_CHAMPION_ID, FERNANDO_DEFAULT_TEAM,
+    FERNANDO_PAWN_CLASS, FERNANDO_SPAWN_X, FERNANDO_SPAWN_Y, FERNANDO_SPAWN_Z,
+    REP_OP_DESTROY_ACTOR, REP_OP_OPEN_CHANNEL, REP_OP_SPAWN_ACTOR, REP_OP_UPDATE_TRANSFORM,
 };
