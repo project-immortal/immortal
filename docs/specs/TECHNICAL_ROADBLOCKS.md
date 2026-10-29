@@ -1,9 +1,8 @@
 # Technical Roadblocks & De-risking Invariants: Project Immortal
 <!-- SPDX-License-Identifier: AGPL-3.0 -->
-<!-- Copyright (c) 2026 Arafat Zahan (@kuasha420) -->
-<!-- Corporate Stewardship & Infrastructure: Purrfect Software Limited (PSL) -->
-<!-- Governed by: ICARO-42/b Ordinance (Company-Supported Personal IP Framework) -->
-<!-- Invariant: PSL-INV-007 (Universal Cleanroom Reverse Engineering Standard) -->
+<!-- Copyright (c) 2026 Project Immortal Contributors -->
+<!-- Governed by: Cleanroom Preservation Standard & Community IP Framework -->
+<!-- Invariant: Cleanroom Reverse Engineering Standard (INV-007) -->
 
 This document formalizes the five deep technical roadblocks identified in the Unreal Engine 3 / Paladins cleanroom architecture across the G1–G6 milestones, along with their concrete de-risking invariants.
 

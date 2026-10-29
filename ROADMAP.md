@@ -1,7 +1,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright (c) 2026 Arafat Zahan (@kuasha420) -->
-<!-- Corporate Stewardship & Infrastructure: Purrfect Software Limited (PSL) -->
-<!-- Governed by: ICARO-42/b Ordinance (Company-Supported Personal IP Framework) -->
+<!-- Copyright (c) 2026 Project Immortal Contributors -->
+<!-- Governed by: Cleanroom Preservation Standard & Community IP Framework -->
 
 # Project Immortal: Living Engineering Roadmap 🗺️🛡️
 

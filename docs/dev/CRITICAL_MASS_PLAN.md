@@ -1,13 +1,12 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright (c) 2026 Arafat Zahan (@kuasha420) -->
-<!-- Corporate Stewardship & Infrastructure: Purrfect Software Limited (PSL) -->
-<!-- Governed by: ICARO-42/b Ordinance (Company-Supported Personal IP Framework) -->
+<!-- Copyright (c) 2026 Project Immortal Contributors -->
+<!-- Governed by: Cleanroom Preservation Standard & Community IP Framework -->
 
 # The Critical Mass Horizon: When & How We Fan Out 🎯🤝
 
 > *"I will not die, not yet, amigo!"* — Fernando (*Project Immortal*)
 
-**Document Standard**: `PSL-SPEC-2026-IMMORTAL-COMMUNITY-SCALE-001`  
+**Document Standard**: `SPEC-2026-IMMORTAL-COMMUNITY-SCALE-001`  
 **Operational Regime**: Track C (Cockpit Flight Direction / Community Scaling Framework)  
 **Governing ADRs**: ADR-012 (Artifact-First Planning), ADR-014 (Product vs Project Bifurcation), ADR-015 (Clean-Room Verification), ADR-028 (Cleanroom Reconstruction)
 
@@ -15,7 +14,7 @@
 
 ## 1. Executive Vision: The Soul of the Project
 
-*Paladins: Champions of the Realm* holds a unique place in the hearts of competitive gamers, game preservationists, and the engineering team at **Purrfect Software Limited (PSL)**. Having grown up playing the game together through youth and adulthood, the team shares a deep, personal commitment to ensuring that *Paladins* remains perpetually playable, decentralized, and free from proprietary vendor obsolescence.
+*Paladins: Champions of the Realm* holds a unique place in the hearts of competitive gamers, game preservationists, and the core engineering team. Having grown up playing the game together through youth and adulthood, the contributors share a deep, personal commitment to ensuring that *Paladins* remains perpetually playable, decentralized, and free from proprietary vendor obsolescence.
 
 A frequent and natural question is:  
 **"When do we hit critical mass — the inflection point where we can involve the entire team and open community for massive, repetitive, parallel development?"**
@@ -30,7 +29,7 @@ In cleanroom emulator and server preservation projects (such as Dolphin, Trinity
 
 ```
 [Phase 1: The Monolithic Pioneer Tunnel]  ──► [CRITICAL MASS] ──► [Phase 2: The Parallel Assembly Line]
- • 1-2 core architects                       "First Playable"       • 20+ PSL devs & community contributors
+ • 1-2 core architects                       "First Playable"       • 20+ core devs & community contributors
  • Reverse engineering opaque protocols      Fernando walks/shoots  • Modular Champion Factory (~59 heroes)
  • Unraveling crashes & bitstreams           in 3D sandbox          • Map extraction & Card databases
  • High risk of Brooks's Law bottleneck                             • Zero merge conflicts / High throughput
@@ -127,8 +126,8 @@ When Milestone 4 concludes and Critical Mass is unlocked:
    - Engineers self-assign by claiming the champion issue (e.g. `[Champion]: Implement Drogoz (ID: 2246)`).
 2. **Standardized Champion Integration Guide**:
    - Every contributor follows [`docs/dev/champion_guide.md`](champion_guide.md) to author, extract, wire, and test their champion hermetically.
-3. **PSL Immortal Hackathons & Community Playtests**:
-   - Internal PSL hackathons where pairs of engineers spend dedicated pairing sessions building and testing champion kits in local shooting range duels.
+3. **Immortal Community Hackathons & Playtests**:
+   - Community hackathons where pairs of engineers spend dedicated pairing sessions building and testing champion kits in local shooting range duels.
    - Regular community playtest milestones running on local Docker instances of `immortal-server`.
 
 ---
@@ -143,4 +142,4 @@ When Milestone 4 concludes and Critical Mass is unlocked:
 | **M3** | UDP 7777 Protocol Handshake Driver | **In Progress** | Implemented & Integrating |
 | **M4** | **Authoritative Simulation & Fernando (Critical Mass)** | **Scheduled** | **CRITICAL MASS GATE** |
 
-We are currently bridging Milestone 1 to Milestone 2. Once the live client boots into `Shootingrange_P` and Fernando materializes, the gateway opens for the entire PSL team and community to build together.
+We are currently bridging Milestone 1 to Milestone 2. Once the live client boots into `Shootingrange_P` and Fernando materializes, the gateway opens for the entire community and developer team to build together.

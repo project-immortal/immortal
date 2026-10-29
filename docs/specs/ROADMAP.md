@@ -1,13 +1,12 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright (c) 2026 Arafat Zahan (@kuasha420) -->
-<!-- Corporate Stewardship & Infrastructure: Purrfect Software Limited (PSL) -->
-<!-- Governed by: ICARO-42/b Ordinance (Company-Supported Personal IP Framework) -->
+<!-- Copyright (c) 2026 Project Immortal Contributors -->
+<!-- Governed by: Cleanroom Preservation Standard & Community IP Framework -->
 
 # Project Immortal: Living Engineering Roadmap 🗺️🛡️
 
 > *"I will not die, not yet, amigo!"* — Fernando (*Project Immortal*)
 
-**Document Standard**: `PSL-SPEC-2026-IMMORTAL-ROADMAP-001`  
+**Document Standard**: `SPEC-2026-IMMORTAL-ROADMAP-001`  
 **Governing ADRs**: ADR-012 (Artifact-First Planning), ADR-014 (Product vs Project Bifurcation), ADR-015 (Clean-Room Verification), ADR-028 (Cleanroom Reconstruction)  
 **Target Client**: *Paladins: Champions of the Realm* (UE3 64-bit `ShippingPC-ChaosGame.exe`, version `8.1.5839.0`)  
 **Core Server Binary**: `crates/immortal-server` (Cleanroom Rust implementation on TCP 9000 & UDP 7777)
@@ -18,7 +17,7 @@
 
 Project Immortal is an independent, cleanroom game preservation suite and high-performance dedicated server emulator for *Paladins: Champions of the Realm*. The project decouples the unmaintained retail client from proprietary backend dependencies, ensuring long-term preservation, community hosting, and verifiable protocol determinism.
 
-### The Cleanroom Boundary Invariant (PSL-INV-007)
+### The Cleanroom Boundary Invariant (INV-007)
 All reverse engineering occurs in an isolated **Dirty Room** (`/mnt/fast_data/re_dirtyroom`), using automated Ghidra decompilation, REA inspection, and binary indexing (`scripts/dirtyroom/dirty`). Zero proprietary game binaries, decompiled C++ snippets, or vendor assets are ever committed or tracked in the cleanroom repository. All server components are authored cleanly in Rust from typed specifications and validated via automated test gates (`cargo test --all`).
 
 ---
@@ -169,7 +168,7 @@ Cross-referenced with [`docs/specs/TECHNICAL_ROADBLOCKS.md`](technical_roadblock
 ## 5. Living Governance & Verification Standard
 
 Every milestone and pull request must satisfy the project's **Universal Automated Verification Standard** before landing:
-1. **Automated Verification Contract (PSL-INV-001)**: `cargo test --all` must exit 0 with sub-second SLA (<2.0s).
+1. **Automated Verification Contract (INV-001)**: `cargo test --all` must exit 0 with sub-second SLA (<2.0s).
 2. **Compiler & Linter Hygiene**: `cargo clippy --all -- -D warnings` must compile with zero diagnostics.
 3. **Documentation Sync**: `mdbook build docs` must succeed without broken includes or missing anchors.
-4. **Cleanroom Dual-Auditor Gate (PSL-INV-008)**: Independent verification by `agyis_reviewer` (boundary audit) and `agyis_auditor` (benchmark & certification) prior to release.
+4. **Cleanroom Dual-Auditor Gate (INV-008)**: Independent verification by `agyis_reviewer` (boundary audit) and `agyis_auditor` (benchmark & certification) prior to release.
