@@ -1,0 +1,357 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0
+# Copyright (c) 2026 Arafat Zahan (@kuasha420)
+# Corporate Stewardship & Infrastructure: Purrfect Software Limited (PSL)
+# Governed by: ICARO-42/b Ordinance (Company-Supported Personal IP Framework)
+
+"""
+dirty - Unified CLI for the Immortal Dirty-Room Reverse Engineering Pipeline.
+Supports sub-millisecond SQLite queries, headless Ghidra decompilation,
+PCAP frame inspection, and Cleanroom Evidence generation.
+"""
+
+import argparse
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+DIRTYROOM_ROOT = os.environ.get("IMMORTAL_DIRTYROOM")
+if not DIRTYROOM_ROOT:
+    local_sym = os.path.join(REPO_ROOT, ".dirtyroom")
+    if os.path.exists(local_sym):
+        DIRTYROOM_ROOT = local_sym
+    else:
+        DIRTYROOM_ROOT = "/mnt/fast_data/re_dirtyroom/paladins_8.1.5839.0"
+
+GHIDRA_DIR = os.path.join(DIRTYROOM_ROOT, "ghidra")
+PROJECT_NAME = "PaladinsProject"
+DB_PATH = os.path.join(DIRTYROOM_ROOT, "symbols", "paladins_symbols.sqlite")
+PCAPS_DIR = os.path.join(DIRTYROOM_ROOT, "pcaps")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def get_db():
+    if not os.path.exists(DB_PATH):
+        print(f"[!] Warning: Database not found at {DB_PATH}. Run setup_dirtyroom.sh first.", file=sys.stderr)
+        return None
+    return sqlite3.connect(DB_PATH)
+
+def cmd_status(args):
+    conn = get_db()
+    data = {
+        "dirtyroom_root": DIRTYROOM_ROOT,
+        "ghidra_project": os.path.join(GHIDRA_DIR, PROJECT_NAME + ".gpr"),
+        "project_exists": os.path.exists(os.path.join(GHIDRA_DIR, PROJECT_NAME + ".gpr")),
+        "binaries": [],
+        "metrics": {"functions": 0, "strings": 0, "rtti_classes": 0}
+    }
+    
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name, sha256, file_size FROM binaries")
+        for row in cursor.fetchall():
+            data["binaries"].append({
+                "name": row[0],
+                "sha256": row[1],
+                "size_mb": round(row[2] / (1024 * 1024), 2)
+            })
+        
+        cursor.execute("SELECT count(*) FROM functions")
+        data["metrics"]["functions"] = cursor.fetchone()[0]
+        cursor.execute("SELECT count(*) FROM strings")
+        data["metrics"]["strings"] = cursor.fetchone()[0]
+        cursor.execute("SELECT count(*) FROM rtti_classes")
+        data["metrics"]["rtti_classes"] = cursor.fetchone()[0]
+        conn.close()
+
+    if getattr(args, "json", False):
+        print(json.dumps(data, indent=2))
+        return
+
+    print("=== Immortal Dirty-Room Status ===")
+    print(f"Dirty Room Root: {data['dirtyroom_root']}")
+    print(f"Ghidra Project:  {data['ghidra_project']}")
+    print(f"  Project Exists: {'YES' if data['project_exists'] else 'NO'}")
+    
+    print("\nRegistered Binaries:")
+    for b in data["binaries"]:
+        print(f"  - {b['name']}: {b['size_mb']} MB (SHA-256: {b['sha256'][:12]}...)")
+    
+    print(f"\nIndexed Database Metrics:")
+    print(f"  Functions:    {data['metrics']['functions']:,}")
+    print(f"  Strings:      {data['metrics']['strings']:,}")
+    print(f"  RTTI Classes: {data['metrics']['rtti_classes']:,}")
+
+def cmd_find(args):
+    conn = get_db()
+    if not conn:
+        return
+    query = f"%{args.query}%"
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT b.name, b.sha256, f.address, f.name, f.signature
+        FROM functions f
+        JOIN binaries b ON f.binary_id = b.id
+        WHERE f.name LIKE ? OR f.demangled_name LIKE ?
+        LIMIT ?
+    """, (query, query, args.limit))
+    rows = cursor.fetchall()
+    conn.close()
+
+    if getattr(args, "json", False):
+        res = [{
+            "binary": r[0], "sha256": r[1], "address": hex(r[2]), "name": r[3], "signature": r[4]
+        } for r in rows]
+        print(json.dumps(res, indent=2))
+        return
+
+    if getattr(args, "evidence", False):
+        for bname, sha, addr, fname, sig in rows:
+            print(f"### Evidence: Function `{fname}`")
+            print(f"- **Binary**: `{bname}` (SHA-256: `{sha}`)")
+            print(f"- **Virtual Address**: `0x{addr:016x}`")
+            print(f"- **Observed Signature**: `{sig or fname}`\n")
+        return
+
+    if not rows:
+        print(f"No functions found matching '{args.query}'")
+        return
+    print(f"Found {len(rows)} function(s) matching '{args.query}':")
+    for bname, sha, addr, fname, sig in rows:
+        print(f"  [{bname}] 0x{addr:016x}  {fname}")
+        if sig and sig != fname:
+            print(f"      Sig: {sig}")
+
+def cmd_string(args):
+    conn = get_db()
+    if not conn:
+        return
+    query = f"%{args.query}%"
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT b.name, b.sha256, s.address, s.string_type, s.value
+        FROM strings s
+        JOIN binaries b ON s.binary_id = b.id
+        WHERE s.value LIKE ?
+        LIMIT ?
+    """, (query, args.limit))
+    rows = cursor.fetchall()
+    conn.close()
+
+    if getattr(args, "json", False):
+        res = [{
+            "binary": r[0], "sha256": r[1], "address": hex(r[2]), "type": r[3], "value": r[4]
+        } for r in rows]
+        print(json.dumps(res, indent=2))
+        return
+
+    if getattr(args, "evidence", False):
+        for bname, sha, addr, stype, val in rows:
+            print(f"### Evidence: String literal `{val.strip()}`")
+            print(f"- **Binary**: `{bname}` (SHA-256: `{sha}`)")
+            print(f"- **Virtual Address**: `0x{addr:016x}`")
+            print(f"- **Encoding**: `{stype}`\n")
+        return
+
+    if not rows:
+        print(f"No strings found matching '{args.query}'")
+        return
+    print(f"Found {len(rows)} string(s) matching '{args.query}':")
+    for bname, sha, addr, stype, val in rows:
+        print(f"  [{bname}] 0x{addr:016x} ({stype:5}) {val.strip()}")
+
+def cmd_rtti(args):
+    conn = get_db()
+    if not conn:
+        return
+    query = f"%{args.query}%"
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT b.name, b.sha256, r.type_descriptor_addr, r.demangled_name, r.class_name
+        FROM rtti_classes r
+        JOIN binaries b ON r.binary_id = b.id
+        WHERE r.demangled_name LIKE ? OR r.class_name LIKE ?
+        LIMIT ?
+    """, (query, query, args.limit))
+    rows = cursor.fetchall()
+    conn.close()
+
+    if getattr(args, "json", False):
+        res = [{
+            "binary": r[0], "sha256": r[1], "address": hex(r[2]), "demangled": r[3], "mangled": r[4]
+        } for r in rows]
+        print(json.dumps(res, indent=2))
+        return
+
+    if not rows:
+        print(f"No RTTI classes found matching '{args.query}'")
+        return
+    print(f"Found {len(rows)} RTTI class(es) matching '{args.query}':")
+    for bname, sha, addr, demangled, mangled in rows:
+        print(f"  [{bname}] 0x{addr:016x}  {demangled}  ({mangled})")
+
+def cmd_decompile(args):
+    target = args.target
+    binary = args.binary or "ShippingPC-ChaosGame.exe"
+    print(f"[*] Decompiling {target} from {binary} in Ghidra project...")
+    
+    cmd = [
+        "/opt/ghidra/support/analyzeHeadless",
+        GHIDRA_DIR,
+        PROJECT_NAME,
+        "-process", binary,
+        "-noanalysis",
+        "-readOnly",
+        "-scriptPath", SCRIPT_DIR,
+        "-postScript", "DecompileFunc.java", target
+    ]
+    
+    env = os.environ.copy()
+    env["GHIDRA_HEADLESS_MAXMEM"] = "16G"
+    env["JAVA_HOME"] = "/usr/lib/jvm/java-21-openjdk"
+    env["PATH"] = f"{env['JAVA_HOME']}/bin:{env['PATH']}"
+    
+    proc = subprocess.run(cmd, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    out_lines = proc.stdout.splitlines()
+    capturing = False
+    printed_any = False
+    for line in out_lines:
+        if "=== Decompilation:" in line:
+            capturing = True
+        if capturing:
+            print(line)
+            printed_any = True
+            
+    if not printed_any:
+        print("[!] Decompilation output not captured. Tail of Ghidra log:")
+        for l in out_lines[-15:]:
+            print(f"    {l}")
+
+def cmd_mcts(args):
+    conn = get_db()
+    token = args.token
+    try:
+        val = int(token, 0)
+        hex_val = f"0x{val:08x}"
+    except ValueError:
+        val = None
+        hex_val = "unknown"
+
+    matched = None
+    if conn and val is not None:
+        cursor = conn.cursor()
+        cursor.execute("SELECT hash_uint32, hash_hex, token_name, raw_handler, notes FROM mcts_hashes WHERE hash_uint32 = ?", (val,))
+        row = cursor.fetchone()
+        if row:
+            matched = {
+                "token_name": row[2],
+                "handler": row[3],
+                "notes": row[4]
+            }
+        conn.close()
+
+    if getattr(args, "json", False):
+        res = {
+            "query": token,
+            "decimal": val,
+            "hex": hex_val,
+            "matched": matched
+        }
+        print(json.dumps(res, indent=2))
+        return
+
+    print(f"[*] Resolving MCTS token/function: {token}")
+    print(f"  Decimal: {val}")
+    print(f"  Hex:     {hex_val}")
+    if matched:
+        print(f"  Matched MCTS Hash Record:")
+        print(f"    Token:   {matched['token_name']}")
+        print(f"    Handler: {matched['handler']}")
+        print(f"    Notes:   {matched['notes']}")
+    else:
+        print("  (Hash not yet mapped in database)")
+
+def cmd_pcap(args):
+    pcap_file = args.file
+    if not os.path.isabs(pcap_file):
+        candidate = os.path.join(PCAPS_DIR, pcap_file)
+        if os.path.exists(candidate):
+            pcap_file = candidate
+            
+    if not os.path.exists(pcap_file):
+        print(f"Error: PCAP file not found: {pcap_file}", file=sys.stderr)
+        return
+
+    cmd = ["tshark", "-r", pcap_file, "-T", "fields"]
+    fields = args.fields.split(",")
+    for f in fields:
+        cmd.extend(["-e", f.strip()])
+        
+    if args.filter:
+        cmd.extend(["-Y", args.filter])
+        
+    cmd.extend(["-c", str(args.limit)])
+    
+    try:
+        proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        lines = proc.stdout.strip().splitlines()
+        print(f"[*] PCAP Inspection: {os.path.basename(pcap_file)} (Filter: '{args.filter or 'none'}', Top {len(lines)} frames):")
+        print(" | ".join(f.strip() for f in fields))
+        print("-" * 60)
+        for l in lines:
+            print(" | ".join(l.split("\t")))
+    except Exception as e:
+        print(f"Error executing tshark: {e}", file=sys.stderr)
+
+def main():
+    parser = argparse.ArgumentParser(description="Immortal Dirty-Room Reverse Engineering CLI")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_status = sub.add_parser("status", help="Show dirty-room environment status")
+    p_status.add_argument("--json", action="store_true", help="Output as JSON")
+    p_status.set_defaults(func=cmd_status)
+
+    p_find = sub.add_parser("find", help="Find functions or symbols in the indexed database")
+    p_find.add_argument("query", help="Search query (substring)")
+    p_find.add_argument("--limit", type=int, default=25, help="Max results")
+    p_find.add_argument("--json", action="store_true", help="Output as JSON")
+    p_find.add_argument("--evidence", action="store_true", help="Format as Cleanroom Evidence Markdown")
+    p_find.set_defaults(func=cmd_find)
+
+    p_str = sub.add_parser("string", help="Find string in indexed database")
+    p_str.add_argument("query", help="Search query (substring)")
+    p_str.add_argument("--limit", type=int, default=25, help="Max results")
+    p_str.add_argument("--json", action="store_true", help="Output as JSON")
+    p_str.add_argument("--evidence", action="store_true", help="Format as Cleanroom Evidence Markdown")
+    p_str.set_defaults(func=cmd_string)
+
+    p_rtti = sub.add_parser("rtti", help="Find RTTI C++ class in indexed database")
+    p_rtti.add_argument("query", help="Search query (substring)")
+    p_rtti.add_argument("--limit", type=int, default=25, help="Max results")
+    p_rtti.add_argument("--json", action="store_true", help="Output as JSON")
+    p_rtti.set_defaults(func=cmd_rtti)
+
+    p_decomp = sub.add_parser("decompile", help="Decompile function via headless Ghidra")
+    p_decomp.add_argument("target", help="Address (0x...) or function symbol name")
+    p_decomp.add_argument("--binary", default="ShippingPC-ChaosGame.exe", help="Target binary in project")
+    p_decomp.set_defaults(func=cmd_decompile)
+
+    p_mcts = sub.add_parser("mcts", help="Look up or calculate MCTS marshal tokens")
+    p_mcts.add_argument("token", help="Decimal or hex function hash")
+    p_mcts.add_argument("--json", action="store_true", help="Output as JSON")
+    p_mcts.set_defaults(func=cmd_mcts)
+
+    p_pcap = sub.add_parser("pcap", help="Inspect dirty-room packet captures with TShark")
+    p_pcap.add_argument("file", default="mcts_only.pcap", nargs="?", help="PCAP filename in dirtyroom pcaps/")
+    p_pcap.add_argument("--filter", default="tcp.port==9000", help="Wireshark display filter")
+    p_pcap.add_argument("--fields", default="frame.number,ip.src,ip.dst,tcp.srcport,tcp.dstport,tcp.len", help="Comma-separated fields")
+    p_pcap.add_argument("--limit", type=int, default=10, help="Max frames to inspect")
+    p_pcap.set_defaults(func=cmd_pcap)
+
+    args = parser.parse_args()
+    args.func(args)
+
+if __name__ == "__main__":
+    main()

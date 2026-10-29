@@ -139,9 +139,12 @@ impl AuthGateway {
     }
 }
 
-pub const CHUNK1_HANDSHAKE: &[u8] = include_bytes!("chunk1_handshake.bin");
-pub const CHUNK2_ACK: &[u8] = include_bytes!("chunk2_ack.bin");
-pub const CHUNK3_SESSION: &[u8] = include_bytes!("chunk3_session.bin");
+pub use crate::mcts_handshake::{
+    CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
+    MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
+    MCTS_HANDSHAKE_CHUNK1, MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION,
+    MCTS_WIRE_FLAG_CHUNK,
+};
 
 async fn handle_connection(
     mut stream: TcpStream,
@@ -153,42 +156,51 @@ async fn handle_connection(
     loop {
         let mut header = [0u8; HEADER_LEN];
         match stream.read_exact(&mut header).await {
-            Ok(_) => {}
+            Ok(_) => {
+                debug!("Received wire header from {}: {:02x?}", peer_addr, &header);
+            }
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                info!("Peer {} closed connection (EOF)", peer_addr);
                 break;
             }
-            Err(e) => return Err(NetError::Io(e)),
+            Err(e) => {
+                error!("Peer {} read error: {:?}", peer_addr, e);
+                return Err(NetError::Io(e));
+            }
         }
 
         let field0 = u16::from_le_bytes([header[0], header[1]]);
         let field1 = u16::from_le_bytes([header[2], header[3]]);
 
-        if field0 == 405 && field1 == 0 {
+        if field0 == MCTS_CLIENT_AUTH_REQUEST_LEN && field1 == MCTS_CLIENT_AUTH_REQUEST_FLAGS {
             // Live MCTS Step 1: Client Auth Request (405 bytes, flags 0x0000)
-            let mut payload = vec![0u8; 405];
+            let mut payload = vec![0u8; MCTS_CLIENT_AUTH_REQUEST_LEN as usize];
             stream.read_exact(&mut payload).await?;
 
-            let mut pkt = Vec::with_capacity(4 + CHUNK1_HANDSHAKE.len());
-            pkt.extend_from_slice(&(CHUNK1_HANDSHAKE.len() as u16).to_le_bytes());
-            pkt.extend_from_slice(&0x0100u16.to_le_bytes());
-            pkt.extend_from_slice(CHUNK1_HANDSHAKE);
+            let hex_preview = payload.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+            info!("Received Live MCTS Step 1 (405 bytes) from {}: {}", peer_addr, hex_preview);
+
+            let mut pkt = Vec::with_capacity(4 + MCTS_HANDSHAKE_CHUNK1.len());
+            pkt.extend_from_slice(&(MCTS_HANDSHAKE_CHUNK1.len() as u16).to_le_bytes());
+            pkt.extend_from_slice(&MCTS_WIRE_FLAG_CHUNK.to_le_bytes());
+            pkt.extend_from_slice(&MCTS_HANDSHAKE_CHUNK1);
             stream.write_all(&pkt).await?;
             stream.flush().await?;
-            debug!("Sent Live MCTS Handshake Chunk 1 to {}", peer_addr);
-        } else if field0 == 1117 && field1 == 0x0100 {
+            info!("Sent Live MCTS Handshake Chunk 1 to {}. Awaiting Step 2...", peer_addr);
+        } else if field0 == MCTS_CLIENT_CRYPTO_TICKET_LEN && field1 == MCTS_CLIENT_CRYPTO_TICKET_FLAGS {
             // Live MCTS Step 2: Client Crypto Ticket (1117 bytes, flags 0x0100)
-            let mut payload = vec![0u8; 1117];
+            let mut payload = vec![0u8; MCTS_CLIENT_CRYPTO_TICKET_LEN as usize];
             stream.read_exact(&mut payload).await?;
 
             // Send Chunk 2 ACK (21 bytes) with wire header [21 as u16, 0x0100]
-            let mut ack_pkt = Vec::with_capacity(4 + CHUNK2_ACK.len());
-            ack_pkt.extend_from_slice(&(CHUNK2_ACK.len() as u16).to_le_bytes());
-            ack_pkt.extend_from_slice(&0x0100u16.to_le_bytes());
-            ack_pkt.extend_from_slice(CHUNK2_ACK);
+            let mut ack_pkt = Vec::with_capacity(4 + MCTS_HANDSHAKE_CHUNK2_ACK.len());
+            ack_pkt.extend_from_slice(&(MCTS_HANDSHAKE_CHUNK2_ACK.len() as u16).to_le_bytes());
+            ack_pkt.extend_from_slice(&MCTS_WIRE_FLAG_CHUNK.to_le_bytes());
+            ack_pkt.extend_from_slice(&MCTS_HANDSHAKE_CHUNK2_ACK);
             stream.write_all(&ack_pkt).await?;
 
             // Send Chunk 3 Session (75 bytes, which already contains the 3 framed subpackets)
-            stream.write_all(CHUNK3_SESSION).await?;
+            stream.write_all(&MCTS_HANDSHAKE_CHUNK3_SESSION).await?;
 
             // Also send the LoginResponse containing Fernando (1026), Cassie (1024), Viktor (1025), Flame Lance (10774), and Starter Deck (16379), along with MatchTicket routing to 127.0.0.1:7777
             let match_ticket = MatchTicket::new(

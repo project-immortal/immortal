@@ -12,6 +12,7 @@ pub mod error;
 pub mod framing;
 pub mod gateway;
 pub mod marshal;
+pub mod mcts_handshake;
 pub mod udp_framing;
 
 pub use bunch::{
@@ -22,8 +23,12 @@ pub use bunch::{
 };
 pub use error::NetError;
 pub use framing::{CPackFrame, MagicToken, HEADER_LEN, MAX_PAYLOAD_LEN};
-pub use gateway::{
-    AuthGateway, AuthGatewayConfig, AuthGatewayHandle, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION,
+pub use gateway::{AuthGateway, AuthGatewayConfig, AuthGatewayHandle};
+pub use mcts_handshake::{
+    CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
+    MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
+    MCTS_HANDSHAKE_CHUNK1, MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION,
+    MCTS_WIRE_FLAG_CHUNK,
 };
 pub use marshal::{
     create_default_inventory, CMarshalMessage, ChampionRosterEntry, DeckEntry, DeviceEntry,
