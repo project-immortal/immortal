@@ -8,8 +8,7 @@
 
 use immortal_net::{
     AuthGateway, AuthGatewayConfig, CPackFrame, LoginRequest, LoginResponse, MagicToken,
-    CHAMPION_CASSIE, CHAMPION_FERNANDO, CHAMPION_VIKTOR, CHUNK1_HANDSHAKE, CHUNK2_ACK,
-    CHUNK3_SESSION, DECK_FERNANDO_STARTER, DEVICE_FERNANDO_FLAME_LANCE, HEADER_LEN,
+    CHAMPION_CASSIE, CHAMPION_FERNANDO, CHAMPION_VIKTOR, CHUNK2_ACK, CHUNK3_SESSION, DECK_FERNANDO_STARTER, DEVICE_FERNANDO_FLAME_LANCE, HEADER_LEN,
 };
 use std::net::SocketAddr;
 use std::time::Instant;
@@ -225,17 +224,17 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     stream.write_all(&client_frame_4).await.unwrap();
     stream.flush().await.unwrap();
 
-    // Expect server Frame 6 (Chunk 1: 433 bytes payload, flags 0x0100)
+    // Expect server unencrypted CMarshal Hello response (20 bytes payload, flags 0x0000)
     let mut header_buf = [0u8; 4];
     stream.read_exact(&mut header_buf).await.unwrap();
     let len = u16::from_le_bytes([header_buf[0], header_buf[1]]);
     let flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
-    assert_eq!(len, 433);
-    assert_eq!(flags, 0x0100);
+    assert_eq!(len, 20);
+    assert_eq!(flags, 0x0000);
 
-    let mut chunk1_buf = vec![0u8; 433];
-    stream.read_exact(&mut chunk1_buf).await.unwrap();
-    assert_eq!(&chunk1_buf[..], CHUNK1_HANDSHAKE);
+    let mut hello_resp_buf = vec![0u8; 20];
+    stream.read_exact(&mut hello_resp_buf).await.unwrap();
+    assert_eq!(&hello_resp_buf[..], &immortal_net::MCTS_HELLO_RESPONSE_PAYLOAD[..]);
 
     // 2. Step 2: Send client Frame 8 (1117 bytes payload, flags 0x0100)
     let mut client_frame_8 = Vec::with_capacity(1121);
@@ -261,35 +260,53 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     stream.read_exact(&mut chunk3_buf).await.unwrap();
     assert_eq!(&chunk3_buf[..], CHUNK3_SESSION);
 
-    // Expect LoginResponse
+    // Expect authentic Live MCTS OnLoginResponse wire frame
     stream.read_exact(&mut header_buf).await.unwrap();
-    let magic_raw = u16::from_le_bytes([header_buf[0], header_buf[1]]);
-    let magic = MagicToken::from_u16(magic_raw).expect("Invalid magic");
-    let payload_len = u16::from_le_bytes([header_buf[2], header_buf[3]]) as usize;
-    let mut payload = vec![0u8; payload_len];
+    let frame_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let wire_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(wire_flags, 0x0000);
+
+    let mut payload = vec![0u8; frame_len];
     stream.read_exact(&mut payload).await.unwrap();
 
-    let resp_frame = CPackFrame { magic, payload };
-    let uncompressed_bytes = resp_frame.uncompressed_payload().unwrap();
-    let login_resp = LoginResponse::from_bytes(&uncompressed_bytes).unwrap();
+    assert_eq!(payload[0], 0x00); // this[0x30]
+    let func_id = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]);
+    assert_eq!(func_id, immortal_net::MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE);
+    assert_eq!(func_id, 0x7a4036ab);
 
-    assert_eq!(login_resp.status, 0);
-    assert_eq!(login_resp.match_ticket.server_host, "127.0.0.1");
-    assert_eq!(login_resp.match_ticket.server_port, 7777);
+    let field_count = u16::from_le_bytes([payload[5], payload[6]]);
+    assert_eq!(field_count, 7);
 
-    let roster = &login_resp.champion_roster;
-    assert_eq!(roster.len(), 3);
-    assert_eq!(roster[0].champion_id, CHAMPION_FERNANDO);
-    assert_eq!(roster[1].champion_id, CHAMPION_CASSIE);
-    assert_eq!(roster[2].champion_id, CHAMPION_VIKTOR);
+    // Group 0x1000: Field 2 (bool true)
+    let grp1 = u16::from_le_bytes([payload[7], payload[8]]);
+    assert_eq!(grp1, 0x1001);
+    assert_eq!(u16::from_le_bytes([payload[9], payload[10]]), 2);
+    assert_eq!(payload[11], 1);
 
-    let weapons = &login_resp.weapon_devices;
-    assert_eq!(weapons.len(), 1);
-    assert_eq!(weapons[0].device_id, DEVICE_FERNANDO_FLAME_LANCE);
+    // Group 0x3000: Field 26 (0), Field 3 (0), Field 8 (account_id), Field 1868 (account_id)
+    let grp4 = u16::from_le_bytes([payload[12], payload[13]]);
+    assert_eq!(grp4, 0x3004);
+    assert_eq!(u32::from_le_bytes([payload[22], payload[23], payload[24], payload[25]]), 0); // status = 0
+    assert_eq!(u32::from_le_bytes([payload[26], payload[27], payload[28], payload[29]]), 0); // error = 0
+    let v8 = u32::from_le_bytes([payload[30], payload[31], payload[32], payload[33]]);
+    let v1868 = u32::from_le_bytes([payload[34], payload[35], payload[36], payload[37]]);
+    assert_eq!(v8, 8302401);
+    assert_eq!(v1868, 8302401);
 
-    let decks = &login_resp.deck_loadouts;
-    assert_eq!(decks.len(), 1);
-    assert_eq!(decks[0].deck_id, DECK_FERNANDO_STARTER);
+    // String 1: Token 7 (session_token)
+    assert_eq!(u16::from_le_bytes([payload[38], payload[39]]), 0xa001);
+    assert_eq!(u16::from_le_bytes([payload[40], payload[41]]), 7);
+    let s1_len = u16::from_le_bytes([payload[42], payload[43]]) as usize;
+    let s1_str = std::str::from_utf8(&payload[44..44 + s1_len]).unwrap();
+    assert_eq!(s1_str, "IMMORTAL-DEV-SESSION-TICKET");
+
+    // String 2: Token 1708 (player_name)
+    let p2 = 44 + s1_len;
+    assert_eq!(u16::from_le_bytes([payload[p2], payload[p2 + 1]]), 0xa001);
+    assert_eq!(u16::from_le_bytes([payload[p2 + 2], payload[p2 + 3]]), 1708);
+    let s2_len = u16::from_le_bytes([payload[p2 + 4], payload[p2 + 5]]) as usize;
+    let s2_str = std::str::from_utf8(&payload[p2 + 6..p2 + 6 + s2_len]).unwrap();
+    assert_eq!(s2_str, "Fernando");
 
     handle.shutdown().await.unwrap();
 

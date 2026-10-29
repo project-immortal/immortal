@@ -16,13 +16,14 @@ import os
 import sqlite3
 import subprocess
 import sys
+import time
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DIRTYROOM_ROOT = os.environ.get("IMMORTAL_DIRTYROOM")
 if not DIRTYROOM_ROOT:
     local_sym = os.path.join(REPO_ROOT, ".dirtyroom")
     if os.path.exists(local_sym):
-        DIRTYROOM_ROOT = local_sym
+        DIRTYROOM_ROOT = os.path.realpath(local_sym)
     else:
         DIRTYROOM_ROOT = "/mnt/fast_data/re_dirtyroom/paladins_8.1.5839.0"
 
@@ -305,6 +306,187 @@ def cmd_pcap(args):
     except Exception as e:
         print(f"Error executing tshark: {e}", file=sys.stderr)
 
+def resolve_binary_path(binary_name):
+    # Check Steam library path
+    steam_path = os.path.join("/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/Binaries/Win64", binary_name)
+    if os.path.exists(steam_path):
+        return steam_path
+    dirty_path = os.path.join(DIRTYROOM_ROOT, "binaries", binary_name)
+    if os.path.exists(dirty_path):
+        return dirty_path
+    return None
+
+def cmd_disasm(args):
+    target = args.target
+    binary = args.binary or "ShippingPC-ChaosGame.exe"
+    bin_path = resolve_binary_path(binary)
+    if not bin_path:
+        print(f"Error: Binary {binary} not found", file=sys.stderr)
+        return
+
+    try:
+        addr = int(target, 0)
+    except ValueError:
+        conn = get_db()
+        addr = None
+        if conn:
+            c = conn.cursor()
+            c.execute("SELECT address FROM functions WHERE name = ? LIMIT 1", (target,))
+            row = c.fetchone()
+            if row:
+                addr = row[0]
+            conn.close()
+        if addr is None:
+            print(f"Error: Could not resolve target symbol/address: {target}", file=sys.stderr)
+            return
+
+    start_addr = addr
+    stop_addr = addr + (args.bytes or 128)
+    cmd = ["objdump", "-d", "-M", "intel", f"--start-address={hex(start_addr)}", f"--stop-address={hex(stop_addr)}", bin_path]
+    try:
+        proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        lines = proc.stdout.splitlines()
+        code_lines = [l for l in lines if l.strip() and not l.startswith("Disassembly of section") and not l.endswith(":")]
+        print(f"[*] Disassembly for {binary} at {hex(start_addr)}..{hex(stop_addr)}:")
+        for l in code_lines[:args.limit]:
+            print(l)
+    except Exception as e:
+        print(f"Error executing objdump: {e}", file=sys.stderr)
+
+def cmd_xrefs(args):
+    target = args.target
+    try:
+        target_va = int(target, 0)
+    except ValueError:
+        print(f"Error: Target must be a hex address (0x...): {target}", file=sys.stderr)
+        return
+
+    binary = args.binary or "MctsInterface.dll"
+    bin_path = resolve_binary_path(binary)
+    if not bin_path:
+        print(f"Error: Binary {binary} not found", file=sys.stderr)
+        return
+
+    import struct
+    with open(bin_path, "rb") as f:
+        buf = f.read()
+
+    e_lfanew = struct.unpack_from("<I", buf, 0x3c)[0]
+    num_sections = struct.unpack_from("<H", buf, e_lfanew + 6)[0]
+    opt_hdr_size = struct.unpack_from("<H", buf, e_lfanew + 20)[0]
+    image_base = struct.unpack_from("<Q", buf, e_lfanew + 24 + 24)[0]
+
+    sec_offset = e_lfanew + 24 + opt_hdr_size
+    found_xrefs = []
+    for s in range(num_sections):
+        sec_hdr = buf[sec_offset + s*40 : sec_offset + (s+1)*40]
+        sec_name = sec_hdr[:8].rstrip(b"\x00").decode("latin-1")
+        vsize, vaddr, raw_size, raw_offset = struct.unpack_from("<IIII", sec_hdr, 8)
+        if sec_name in (".text", "code"):
+            sec_data = buf[raw_offset : raw_offset + raw_size]
+            base_va = image_base + vaddr
+            for i in range(len(sec_data) - 4):
+                disp = struct.unpack_from("<i", sec_data, i)[0]
+                curr_va = base_va + i + 4
+                if curr_va + disp == target_va:
+                    found_xrefs.append(base_va + i)
+
+    conn = get_db()
+    print(f"[*] Found {len(found_xrefs)} cross-reference(s) to {hex(target_va)} in {binary}:")
+    for xref in found_xrefs:
+        func_name = "unknown"
+        if conn:
+            c = conn.cursor()
+            c.execute("SELECT name, address FROM functions WHERE binary_id = (SELECT id FROM binaries WHERE name=?) AND address <= ? ORDER BY address DESC LIMIT 1", (binary, xref))
+            r = c.fetchone()
+            if r:
+                func_name = f"{r[0]} + {hex(xref - r[1])}"
+        print(f"  {hex(xref)}  ({func_name})")
+    if conn:
+        conn.close()
+
+def cmd_screenshot(args):
+    output_path = args.output
+    if not output_path:
+        output_path = "/home/kuasha/.gemini/antigravity/brain/4285221e-d9db-4c16-a6ee-6d8e037cf338/game_current_screen.png"
+    
+    cmd = ["spectacle", "-b", "-o", output_path]
+    try:
+        subprocess.run(cmd, check=True)
+        print(f"[*] Screenshot saved to: {output_path}")
+    except Exception as e:
+        print(f"Error taking screenshot: {e}", file=sys.stderr)
+
+def cmd_game(args):
+    action = args.action
+    if action == "status":
+        proc = subprocess.run(["pgrep", "-a", "-f", "ShippingPC-ChaosGame.exe|immortal-server"], text=True, stdout=subprocess.PIPE)
+        lines = [l for l in proc.stdout.splitlines() if not "dirty" in l and not "pgrep" in l]
+        if lines:
+            print("[*] Running game/server processes:")
+            for l in lines:
+                print(f"  {l}")
+        else:
+            print("[*] No Paladins client or Immortal server processes running.")
+    elif action == "kill":
+        subprocess.run(["pkill", "-9", "-f", "ShippingPC-ChaosGame.exe"], stderr=subprocess.DEVNULL)
+        subprocess.run(["pkill", "-9", "-f", "immortal-server"], stderr=subprocess.DEVNULL)
+        print("[*] Terminated all game and server processes.")
+    elif action == "logs":
+        target = getattr(args, "target", "client")
+        log_file = os.path.join(DIRTYROOM_ROOT, "logs", f"{target}.log")
+        if os.path.isfile(log_file):
+            print(f"[*] Showing last 30 lines of {log_file}:")
+            proc = subprocess.run(["tail", "-n", "30", log_file], text=True, stdout=subprocess.PIPE)
+            print(proc.stdout)
+        else:
+            print(f"[*] Log file not found: {log_file}")
+    elif action == "start":
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+        server_bin = os.path.join(repo_root, "target/release/immortal-server")
+        if not os.path.isfile(server_bin):
+            server_bin = os.path.join(repo_root, "target/debug/immortal-server")
+
+        # 1. Ensure immortal-server is running
+        proc = subprocess.run(["pgrep", "-f", "immortal-server"], stdout=subprocess.PIPE, text=True)
+        if not proc.stdout.strip():
+            if os.path.isfile(server_bin):
+                server_log = os.path.join(DIRTYROOM_ROOT, "logs", "server.log")
+                os.makedirs(os.path.dirname(server_log), exist_ok=True)
+                senv = os.environ.copy()
+                senv["RUST_LOG"] = "info,immortal_net=debug,immortal_server=debug"
+                slog = open(server_log, "a")
+                subprocess.Popen([server_bin], env=senv, stdout=slog, stderr=subprocess.STDOUT, start_new_session=True)
+                print(f"[*] immortal-server daemon started (logging to {server_log}).")
+                time.sleep(0.5)
+            else:
+                print(f"[!] Warning: immortal-server binary not found at {server_bin}.")
+        else:
+            print("[*] immortal-server is already running.")
+
+        print("[*] Launching game client in online flow...")
+        client_path = "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/Binaries/Win64/ShippingPC-ChaosGame.exe"
+        proton_bin = os.path.expanduser("~/.local/share/Steam/compatibilitytools.d/GE-Proton9-15/proton")
+        env = os.environ.copy()
+        env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = os.path.expanduser("~/.local/share/Steam")
+        env["STEAM_COMPAT_DATA_PATH"] = "/mnt/fast_data/games/SteamLibrary/steamapps/compatdata/444090"
+        env["STEAM_COMPAT_APP_ID"] = "444090"
+        env["SteamAppId"] = "444090"
+        env["SteamGameId"] = "444090"
+        args = [
+            proton_bin, "run", client_path,
+            "-steam", "-NoEAC", "-nomovie",
+            "-hostx=127.0.0.1:9000",
+            "-tcp=1",
+            "-dumpmar", "-dumpallmar",
+            "-seekfreeloadingPCConsole"
+        ]
+        log_path = os.path.join(DIRTYROOM_ROOT, "logs", "client.log")
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        log_file = open(log_path, "w")
+        subprocess.Popen(args, env=env, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
+        print(f"[*] Paladins client process dispatched (logging to {log_path}).")
+
 def main():
     parser = argparse.ArgumentParser(description="Immortal Dirty-Room Reverse Engineering CLI")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -349,6 +531,27 @@ def main():
     p_pcap.add_argument("--fields", default="frame.number,ip.src,ip.dst,tcp.srcport,tcp.dstport,tcp.len", help="Comma-separated fields")
     p_pcap.add_argument("--limit", type=int, default=10, help="Max frames to inspect")
     p_pcap.set_defaults(func=cmd_pcap)
+
+    p_disasm = sub.add_parser("disasm", help="Disassemble instructions at address/symbol via native objdump")
+    p_disasm.add_argument("target", help="Address (0x...) or symbol name")
+    p_disasm.add_argument("--binary", default="ShippingPC-ChaosGame.exe", help="Target binary in project")
+    p_disasm.add_argument("--bytes", type=int, default=128, help="Number of bytes to disassemble")
+    p_disasm.add_argument("--limit", type=int, default=30, help="Max instructions to display")
+    p_disasm.set_defaults(func=cmd_disasm)
+
+    p_xrefs = sub.add_parser("xrefs", help="Find cross-references to an address in binary sections")
+    p_xrefs.add_argument("target", help="Target hex address (0x...)")
+    p_xrefs.add_argument("--binary", default="MctsInterface.dll", help="Target binary in project")
+    p_xrefs.set_defaults(func=cmd_xrefs)
+
+    p_shot = sub.add_parser("screenshot", help="Capture game window or desktop screenshot")
+    p_shot.add_argument("--output", help="Output file path (default: artifact directory)")
+    p_shot.set_defaults(func=cmd_screenshot)
+
+    p_game = sub.add_parser("game", help="Control and inspect Paladins game and server processes")
+    p_game.add_argument("action", choices=["status", "kill", "start", "logs"], help="Action to perform")
+    p_game.add_argument("target", nargs="?", default="client", choices=["client", "server"], help="Target log to view for 'logs'")
+    p_game.set_defaults(func=cmd_game)
 
     args = parser.parse_args()
     args.func(args)

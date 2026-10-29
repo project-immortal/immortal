@@ -22,6 +22,33 @@ pub const MCTS_CLIENT_CRYPTO_TICKET_FLAGS: u16 = 0x0100;
 /// Framing flag indicating chunked MCTS marshal wire transport
 pub const MCTS_WIRE_FLAG_CHUNK: u16 = 0x0100;
 
+/// Programmatic unencrypted CMarshal Hello response payload (20 bytes).
+/// Reverse engineered from `MctsInterface.dll` (`FUN_180125ca0` and `FUN_1800512b0`).
+///
+/// Function ID: 0xb44c4107
+/// Field 2 (bool): true (group 0x1001, token 0x0002, val 0x01)
+/// Field 4 (uint32): 1 (group 0x3001, token 0x0004, val 0x00000001)
+pub const MCTS_HELLO_RESPONSE_PAYLOAD: [u8; 20] = [
+    0x00, // this[0x30]
+    0x07, 0x41, 0x4c, 0xb4, // Function ID 0xb44c4107
+    0x02, 0x00, // Total field count: 2
+    0x01, 0x10, // Group 0x1001 (1-byte fields count: 1)
+    0x02, 0x00, // Field 2
+    0x01, // Value: true
+    0x01, 0x30, // Group 0x3001 (4-byte fields count: 1)
+    0x04, 0x00, // Field 4
+    0x01, 0x00, 0x00, 0x00, // Value: 1
+];
+
+/// Wire-framed unencrypted Hello response (24 bytes):
+/// 4-byte header: length 20 (0x0014), flags 0x0000 (unencrypted).
+/// 20-byte payload: [`MCTS_HELLO_RESPONSE_PAYLOAD`].
+pub const MCTS_HELLO_RESPONSE_FRAME: [u8; 24] = [
+    0x14, 0x00, 0x00, 0x00, // Length: 20 (0x0014), Flags: 0x0000
+    0x00, 0x07, 0x41, 0x4c, 0xb4, 0x02, 0x00, 0x01, 0x10, 0x02, 0x00, 0x01, 0x01, 0x30, 0x04, 0x00,
+    0x01, 0x00, 0x00, 0x00,
+];
+
 /// Server Handshake Challenge payload (433 bytes) emitted in response to Client Auth Request.
 pub const MCTS_HANDSHAKE_CHUNK1: [u8; 433] = [
     0x1a, 0x93, 0x1e, 0x57, 0xeb, 0x0c, 0x2d, 0x1a, 0xfe, 0x6d, 0x79, 0x79, 0xcf, 0x35, 0x20, 0xf4,
@@ -70,3 +97,186 @@ pub const MCTS_HANDSHAKE_CHUNK3_SESSION: [u8; 75] = [
 pub const CHUNK1_HANDSHAKE: &[u8] = &MCTS_HANDSHAKE_CHUNK1;
 pub const CHUNK2_ACK: &[u8] = &MCTS_HANDSHAKE_CHUNK2_ACK;
 pub const CHUNK3_SESSION: &[u8] = &MCTS_HANDSHAKE_CHUNK3_SESSION;
+
+/// Authentic Function ID for `CMctsNetwork::OnLoginResponse` (0x7a4036ab).
+/// Reverse engineered from `MctsInterface.dll` / client dispatch tables (Token OBL-MCTS-003, PSL-INV-007).
+pub const MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE: u32 = 0x7a4036ab;
+
+/// Builds an authentic live MCTS `OnLoginResponse` wire frame for `CMctsNetwork::OnLoginResponse`.
+///
+/// Format matches reverse engineered `CMarshalRow::Store` specification:
+/// - Prefix: byte `0x00` (`this[0x30]`)
+/// - Function ID: `0x7a4036ab` (`MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE`) in little-endian u32
+/// - CMarshalRow field count: 7 (u16 little-endian)
+/// - Group 0x1000 (1-byte fields):
+///   - Header: `0x1001` (group 0x1000 | 1)
+///   - Token 2 (u16): bool true (0x01 u8)
+/// - Group 0x3000 (4-byte fields):
+///   - Header: `0x3004` (group 0x3000 | 4)
+///   - Tokens: 26, 3, 8, 1868 (u16 each)
+///   - Values: 0, 0, account_id, account_id (u32 each, little-endian)
+/// - Group 0xa000 (UTF-8 string fields, count 1 each):
+///   - Header: `0xa001`
+///   - Token 7 (u16): session_token (u16 length + UTF-8 bytes)
+///   - Header: `0xa001`
+///   - Token 1708 (u16): player_name (u16 length + UTF-8 bytes)
+/// - TCP Framing:
+///   - Length: payload length (u16 little-endian)
+///   - Wire flags: `0x0000` (u16 little-endian)
+///   - Followed by payload bytes
+pub fn create_mcts_login_response_frame(
+    account_id: u32,
+    player_name: &str,
+    session_token: &str,
+) -> Vec<u8> {
+    let player_bytes = player_name.as_bytes();
+    let session_bytes = session_token.as_bytes();
+
+    let mut payload = Vec::with_capacity(64 + player_bytes.len() + session_bytes.len());
+    payload.push(0x00); // this[0x30]
+    payload.extend_from_slice(&MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE.to_le_bytes());
+
+    // CMarshalRow: total fields = 7 (1 byte field + 4 dword fields + 2 string fields)
+    let total_fields: u16 = 7;
+    payload.extend_from_slice(&total_fields.to_le_bytes());
+
+    // Group 0x1000 (1-byte fields: 1 field)
+    let grp1_hdr: u16 = 0x1000 | 1;
+    payload.extend_from_slice(&grp1_hdr.to_le_bytes());
+    payload.extend_from_slice(&2u16.to_le_bytes()); // Token 2
+    payload.push(0x01); // bool true
+
+    // Group 0x3000 (4-byte fields: 4 fields)
+    let grp4_hdr: u16 = 0x3000 | 4;
+    payload.extend_from_slice(&grp4_hdr.to_le_bytes());
+    payload.extend_from_slice(&26u16.to_le_bytes()); // Token 26: status
+    payload.extend_from_slice(&3u16.to_le_bytes());  // Token 3: error
+    payload.extend_from_slice(&8u16.to_le_bytes());  // Token 8: account_id
+    payload.extend_from_slice(&1868u16.to_le_bytes()); // Token 1868: account_id
+
+    payload.extend_from_slice(&0u32.to_le_bytes()); // status = 0
+    payload.extend_from_slice(&0u32.to_le_bytes()); // error = 0
+    payload.extend_from_slice(&account_id.to_le_bytes()); // account_id
+    payload.extend_from_slice(&account_id.to_le_bytes()); // account_id
+
+    // String field 7: session_token
+    payload.extend_from_slice(&0xa001u16.to_le_bytes());
+    payload.extend_from_slice(&7u16.to_le_bytes());
+    payload.extend_from_slice(&(session_bytes.len() as u16).to_le_bytes());
+    payload.extend_from_slice(session_bytes);
+
+    // String field 1708: player_name
+    payload.extend_from_slice(&0xa001u16.to_le_bytes());
+    payload.extend_from_slice(&1708u16.to_le_bytes());
+    payload.extend_from_slice(&(player_bytes.len() as u16).to_le_bytes());
+    payload.extend_from_slice(player_bytes);
+
+    // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
+    let mut frame = Vec::with_capacity(4 + payload.len());
+    let payload_len = payload.len() as u16;
+    frame.extend_from_slice(&payload_len.to_le_bytes());
+    frame.extend_from_slice(&0x0000u16.to_le_bytes());
+    frame.extend_from_slice(&payload);
+
+    frame
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_mcts_login_response_frame_structure() {
+        let frame = create_mcts_login_response_frame(10001, "Fernando", "IMMORTAL_SESSION_001");
+        assert_eq!(frame.len(), 82);
+
+        // Header check: 4 bytes [length: u16, flags: u16]
+        let length = u16::from_le_bytes([frame[0], frame[1]]);
+        let flags = u16::from_le_bytes([frame[2], frame[3]]);
+        assert_eq!(length as usize, frame.len() - 4);
+        assert_eq!(flags, 0x0000);
+
+        let payload = &frame[4..];
+        assert_eq!(payload[0], 0x00); // this[0x30]
+
+        let func_id = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]);
+        assert_eq!(func_id, MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE);
+        assert_eq!(func_id, 0x7a4036ab);
+
+        let total_fields = u16::from_le_bytes([payload[5], payload[6]]);
+        assert_eq!(total_fields, 7);
+
+        // Group 0x1000 check
+        let grp1 = u16::from_le_bytes([payload[7], payload[8]]);
+        assert_eq!(grp1, 0x1001);
+        let token2 = u16::from_le_bytes([payload[9], payload[10]]);
+        assert_eq!(token2, 2);
+        assert_eq!(payload[11], 1); // bool true
+
+        // Group 0x3000 check
+        let grp4 = u16::from_le_bytes([payload[12], payload[13]]);
+        assert_eq!(grp4, 0x3004);
+        let t26 = u16::from_le_bytes([payload[14], payload[15]]);
+        let t3 = u16::from_le_bytes([payload[16], payload[17]]);
+        let t8 = u16::from_le_bytes([payload[18], payload[19]]);
+        let t1868 = u16::from_le_bytes([payload[20], payload[21]]);
+        assert_eq!(t26, 26);
+        assert_eq!(t3, 3);
+        assert_eq!(t8, 8);
+        assert_eq!(t1868, 1868);
+
+        let v26 = u32::from_le_bytes([payload[22], payload[23], payload[24], payload[25]]);
+        let v3 = u32::from_le_bytes([payload[26], payload[27], payload[28], payload[29]]);
+        let v8 = u32::from_le_bytes([payload[30], payload[31], payload[32], payload[33]]);
+        let v1868 = u32::from_le_bytes([payload[34], payload[35], payload[36], payload[37]]);
+        assert_eq!(v26, 0);
+        assert_eq!(v3, 0);
+        assert_eq!(v8, 10001);
+        assert_eq!(v1868, 10001);
+
+        // String 1 check: Token 7
+        let str1_grp = u16::from_le_bytes([payload[38], payload[39]]);
+        assert_eq!(str1_grp, 0xa001);
+        let str1_token = u16::from_le_bytes([payload[40], payload[41]]);
+        assert_eq!(str1_token, 7);
+        let str1_len = u16::from_le_bytes([payload[42], payload[43]]) as usize;
+        let str1_val = std::str::from_utf8(&payload[44..44 + str1_len]).unwrap();
+        assert_eq!(str1_val, "IMMORTAL_SESSION_001");
+
+        // String 2 check: Token 1708
+        let pos = 44 + str1_len;
+        let str2_grp = u16::from_le_bytes([payload[pos], payload[pos + 1]]);
+        assert_eq!(str2_grp, 0xa001);
+        let str2_token = u16::from_le_bytes([payload[pos + 2], payload[pos + 3]]);
+        assert_eq!(str2_token, 1708);
+        let str2_len = u16::from_le_bytes([payload[pos + 4], payload[pos + 5]]) as usize;
+        let str2_val = std::str::from_utf8(&payload[pos + 6..pos + 6 + str2_len]).unwrap();
+        assert_eq!(str2_val, "Fernando");
+        assert_eq!(pos + 6 + str2_len, payload.len());
+    }
+
+    #[test]
+    fn test_create_mcts_login_response_frame_custom_parameters() {
+        let frame = create_mcts_login_response_frame(8302401, "Cassie", "DEV_TOKEN_42");
+        let length = u16::from_le_bytes([frame[0], frame[1]]) as usize;
+        assert_eq!(length, frame.len() - 4);
+        let payload = &frame[4..];
+
+        // Verify account_id
+        let v8 = u32::from_le_bytes([payload[30], payload[31], payload[32], payload[33]]);
+        let v1868 = u32::from_le_bytes([payload[34], payload[35], payload[36], payload[37]]);
+        assert_eq!(v8, 8302401);
+        assert_eq!(v1868, 8302401);
+
+        // Verify session_token
+        let str1_len = u16::from_le_bytes([payload[42], payload[43]]) as usize;
+        let str1_val = std::str::from_utf8(&payload[44..44 + str1_len]).unwrap();
+        assert_eq!(str1_val, "DEV_TOKEN_42");
+
+        // Verify player_name
+        let pos = 44 + str1_len;
+        let str2_len = u16::from_le_bytes([payload[pos + 4], payload[pos + 5]]) as usize;
+        let str2_val = std::str::from_utf8(&payload[pos + 6..pos + 6 + str2_len]).unwrap();
+        assert_eq!(str2_val, "Cassie");
+    }
+}

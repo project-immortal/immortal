@@ -25,6 +25,7 @@ pub struct AuthGatewayConfig {
     pub game_server_host: String,
     pub game_server_port: u16,
     pub account_id: i32,
+    pub player_name: String,
     pub session_token: String,
     pub match_ticket_str: String,
     pub compress_response: bool,
@@ -37,6 +38,7 @@ impl Default for AuthGatewayConfig {
             game_server_host: "127.0.0.1".to_string(),
             game_server_port: crate::DEFAULT_GAME_PORT,
             account_id: 8302401,
+            player_name: "Fernando".to_string(),
             session_token: "IMMORTAL-DEV-SESSION-TICKET".to_string(),
             match_ticket_str: "IMMORTAL-MATCH-TICKET-7777".to_string(),
             compress_response: false,
@@ -140,10 +142,11 @@ impl AuthGateway {
 }
 
 pub use crate::mcts_handshake::{
-    CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
-    MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
-    MCTS_HANDSHAKE_CHUNK1, MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION,
-    MCTS_WIRE_FLAG_CHUNK,
+    create_mcts_login_response_frame, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION,
+    MCTS_CLIENT_AUTH_REQUEST_FLAGS, MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS,
+    MCTS_CLIENT_CRYPTO_TICKET_LEN, MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE, MCTS_HANDSHAKE_CHUNK1,
+    MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION, MCTS_HELLO_RESPONSE_FRAME,
+    MCTS_HELLO_RESPONSE_PAYLOAD, MCTS_WIRE_FLAG_CHUNK,
 };
 
 async fn handle_connection(
@@ -173,35 +176,40 @@ async fn handle_connection(
         let field1 = u16::from_le_bytes([header[2], header[3]]);
 
         if field0 == MCTS_CLIENT_AUTH_REQUEST_LEN && field1 == MCTS_CLIENT_AUTH_REQUEST_FLAGS {
-            // Live MCTS Step 1: Client Auth Request (405 bytes, flags 0x0000)
+            // Live MCTS Step 1: Client Auth Request / Hello (405 bytes, flags 0x0000)
             let mut payload = vec![0u8; MCTS_CLIENT_AUTH_REQUEST_LEN as usize];
             stream.read_exact(&mut payload).await?;
 
             let hex_preview = payload
                 .iter()
+                .take(16)
                 .map(|b| format!("{:02x}", b))
                 .collect::<String>();
             info!(
-                "Received Live MCTS Step 1 (405 bytes) from {}: {}",
+                "Received Live MCTS Step 1 Hello (405 bytes) from {}: {}...",
                 peer_addr, hex_preview
             );
 
-            let mut pkt = Vec::with_capacity(4 + MCTS_HANDSHAKE_CHUNK1.len());
-            pkt.extend_from_slice(&(MCTS_HANDSHAKE_CHUNK1.len() as u16).to_le_bytes());
-            pkt.extend_from_slice(&MCTS_WIRE_FLAG_CHUNK.to_le_bytes());
-            pkt.extend_from_slice(&MCTS_HANDSHAKE_CHUNK1);
-            stream.write_all(&pkt).await?;
+            // Respond with unencrypted CMarshal Hello response (wire flags 0x0000, 20-byte payload)
+            // Client checks Field 2 (true) and Field 4 (1), setting CPackSession to authenticated.
+            stream.write_all(&MCTS_HELLO_RESPONSE_FRAME).await?;
             stream.flush().await?;
             info!(
-                "Sent Live MCTS Handshake Chunk 1 to {}. Awaiting Step 2...",
+                "Sent unencrypted Live MCTS Hello Response (24 bytes, flags 0x0000) to {}. Awaiting SendLogin...",
                 peer_addr
             );
-        } else if field0 == MCTS_CLIENT_CRYPTO_TICKET_LEN
-            && field1 == MCTS_CLIENT_CRYPTO_TICKET_FLAGS
+        } else if (field0 == MCTS_CLIENT_CRYPTO_TICKET_LEN
+            && field1 == MCTS_CLIENT_CRYPTO_TICKET_FLAGS)
+            || (field0 > 0 && field1 == 0x0100)
         {
-            // Live MCTS Step 2: Client Crypto Ticket (1117 bytes, flags 0x0100)
-            let mut payload = vec![0u8; MCTS_CLIENT_CRYPTO_TICKET_LEN as usize];
+            // Live MCTS Step 2: Client SendLogin (1117 bytes or chunked wire transport)
+            let mut payload = vec![0u8; field0 as usize];
             stream.read_exact(&mut payload).await?;
+
+            info!(
+                "Received Live MCTS Step 2 SendLogin ({} bytes, flags 0x{:04x}) from {}",
+                field0, field1, peer_addr
+            );
 
             // Send Chunk 2 ACK (21 bytes) with wire header [21 as u16, 0x0100]
             let mut ack_pkt = Vec::with_capacity(4 + MCTS_HANDSHAKE_CHUNK2_ACK.len());
@@ -213,26 +221,17 @@ async fn handle_connection(
             // Send Chunk 3 Session (75 bytes, which already contains the 3 framed subpackets)
             stream.write_all(&MCTS_HANDSHAKE_CHUNK3_SESSION).await?;
 
-            // Also send the LoginResponse containing Fernando (1026), Cassie (1024), Viktor (1025), Flame Lance (10774), and Starter Deck (16379), along with MatchTicket routing to 127.0.0.1:7777
-            let match_ticket = MatchTicket::new(
-                &config.game_server_host,
-                config.game_server_port,
-                &config.match_ticket_str,
+            // Send authentic Live MCTS OnLoginResponse wire frame (reverse engineered CMarshalRow::Store format)
+            let login_frame = create_mcts_login_response_frame(
+                config.account_id as u32,
+                &config.player_name,
+                &config.session_token,
             );
-            let response =
-                LoginResponse::new(config.account_id, &config.session_token, match_ticket);
-            let response_bytes = response.to_bytes()?;
-            let should_compress = config.compress_response;
-            let response_packet = if should_compress {
-                CPackFrame::encode_compressed(&response_bytes)?
-            } else {
-                CPackFrame::encode_uncompressed(&response_bytes)?
-            };
-            stream.write_all(&response_packet).await?;
+            stream.write_all(&login_frame).await?;
             stream.flush().await?;
-            debug!(
-                "Sent Live MCTS Chunk 2 ACK, Chunk 3 Session, and LoginResponse to {}",
-                peer_addr
+            info!(
+                "Sent Live MCTS Chunk 2 ACK, Chunk 3 Session, and OnLoginResponse (account_id={}, player_name={}) to {}",
+                config.account_id, config.player_name, peer_addr
             );
         } else {
             // Synthetic / standard CPackFrame flow
