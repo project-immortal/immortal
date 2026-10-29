@@ -126,3 +126,14 @@ All 4 checks must pass cleanly with exit code 0.
    - [x] All local tests, clippy, and spec verification gates pass.
 3. Address review feedback through contiguous, focused commits or rebased clean branches.
 4. Once CI passes and reviewers approve, the PR will be merged via squash or rebase merge.
+
+---
+
+## 6. The Critical Mass Horizon: Community & Team Scaling 🎯
+
+Wondering when the project unlocks wide parallel development? Read our dedicated scaling strategy:
+
+👉 **[The Critical Mass Horizon: When & How We Fan Out](docs/dev/CRITICAL_MASS_PLAN.md)**
+
+Once **Milestone 4 (First Playable Fernando in 3D Sandbox)** is reached, the project will open up the **Modular Champion Factory** (claiming and implementing individual champions from the ~59-character roster), the **Item Shop & Card Data Engine**, and **Map Geometry Nav-Meshes** for massive parallel team and community contribution.
+
