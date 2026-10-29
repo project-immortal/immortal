@@ -24,12 +24,6 @@ pub use bunch::{
 pub use error::NetError;
 pub use framing::{CPackFrame, MagicToken, HEADER_LEN, MAX_PAYLOAD_LEN};
 pub use gateway::{AuthGateway, AuthGatewayConfig, AuthGatewayHandle};
-pub use mcts_handshake::{
-    CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
-    MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
-    MCTS_HANDSHAKE_CHUNK1, MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION,
-    MCTS_WIRE_FLAG_CHUNK,
-};
 pub use marshal::{
     create_default_inventory, CMarshalMessage, ChampionRosterEntry, DeckEntry, DeviceEntry,
     FieldValue, InventoryResponse, LoginRequest, LoginResponse, MarshalField, MatchTicket,
@@ -37,6 +31,12 @@ pub use marshal::{
     DEVICE_FERNANDO_FLAME_LANCE, FUNCTION_ID_ON_LOGIN_RESPONSE, FUNCTION_ID_SEND_LOGIN,
     TOKEN_ACCOUNT_ID, TOKEN_CHAMPION_ROSTER, TOKEN_DECK_LOADOUTS, TOKEN_MATCH_TICKET,
     TOKEN_SESSION_TOKEN, TOKEN_STATUS, TOKEN_WEAPON_DEVICES,
+};
+pub use mcts_handshake::{
+    CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
+    MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
+    MCTS_HANDSHAKE_CHUNK1, MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION,
+    MCTS_WIRE_FLAG_CHUNK,
 };
 pub use udp_framing::{
     current_time_millis, hmac_sha256, parse_cpack_udp, sha256, CPackUdpPacket, HelloRecvReply,

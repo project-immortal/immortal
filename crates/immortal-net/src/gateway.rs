@@ -177,8 +177,14 @@ async fn handle_connection(
             let mut payload = vec![0u8; MCTS_CLIENT_AUTH_REQUEST_LEN as usize];
             stream.read_exact(&mut payload).await?;
 
-            let hex_preview = payload.iter().map(|b| format!("{:02x}", b)).collect::<String>();
-            info!("Received Live MCTS Step 1 (405 bytes) from {}: {}", peer_addr, hex_preview);
+            let hex_preview = payload
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>();
+            info!(
+                "Received Live MCTS Step 1 (405 bytes) from {}: {}",
+                peer_addr, hex_preview
+            );
 
             let mut pkt = Vec::with_capacity(4 + MCTS_HANDSHAKE_CHUNK1.len());
             pkt.extend_from_slice(&(MCTS_HANDSHAKE_CHUNK1.len() as u16).to_le_bytes());
@@ -186,8 +192,13 @@ async fn handle_connection(
             pkt.extend_from_slice(&MCTS_HANDSHAKE_CHUNK1);
             stream.write_all(&pkt).await?;
             stream.flush().await?;
-            info!("Sent Live MCTS Handshake Chunk 1 to {}. Awaiting Step 2...", peer_addr);
-        } else if field0 == MCTS_CLIENT_CRYPTO_TICKET_LEN && field1 == MCTS_CLIENT_CRYPTO_TICKET_FLAGS {
+            info!(
+                "Sent Live MCTS Handshake Chunk 1 to {}. Awaiting Step 2...",
+                peer_addr
+            );
+        } else if field0 == MCTS_CLIENT_CRYPTO_TICKET_LEN
+            && field1 == MCTS_CLIENT_CRYPTO_TICKET_FLAGS
+        {
             // Live MCTS Step 2: Client Crypto Ticket (1117 bytes, flags 0x0100)
             let mut payload = vec![0u8; MCTS_CLIENT_CRYPTO_TICKET_LEN as usize];
             stream.read_exact(&mut payload).await?;
@@ -274,4 +285,3 @@ async fn handle_connection(
 
     Ok(())
 }
-

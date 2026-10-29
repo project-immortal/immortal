@@ -222,7 +222,8 @@ impl CMarshalMessage {
         if row_count > remaining.len() / 3 {
             return Err(NetError::Marshal(format!(
                 "Invalid row_count {} for payload length {}",
-                row_count, remaining.len()
+                row_count,
+                remaining.len()
             )));
         }
 
@@ -237,7 +238,8 @@ impl CMarshalMessage {
                 }
                 TYPE_WCHAR_STRING => {
                     let char_count = cursor.read_u32::<LittleEndian>()? as usize;
-                    let remaining_bytes = (cursor.get_ref().len() as u64).saturating_sub(cursor.position()) as usize;
+                    let remaining_bytes =
+                        (cursor.get_ref().len() as u64).saturating_sub(cursor.position()) as usize;
                     if char_count * 2 > remaining_bytes || char_count > 65535 {
                         return Err(NetError::Marshal(format!(
                             "Invalid char_count {} (remaining bytes {})",
@@ -254,7 +256,8 @@ impl CMarshalMessage {
                 }
                 TYPE_ROWSET_BLOB => {
                     let blob_len = cursor.read_u32::<LittleEndian>()? as usize;
-                    let remaining_bytes = (cursor.get_ref().len() as u64).saturating_sub(cursor.position()) as usize;
+                    let remaining_bytes =
+                        (cursor.get_ref().len() as u64).saturating_sub(cursor.position()) as usize;
                     if blob_len > remaining_bytes || blob_len > 1_000_000 {
                         return Err(NetError::Marshal(format!(
                             "Invalid blob_len {} (remaining bytes {})",

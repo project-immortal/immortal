@@ -13,7 +13,7 @@ Project Immortal adheres strictly to the **Cleanroom Reverse Engineering Standar
 
 ## 1. Architectural Philosophy & Cleanroom Boundaries
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        DIRTY ROOM (Quarantine)                         │
 │  - Storage: Fast Local NVMe (/mnt/fast_data/re_dirtyroom/ or .dirtyroom)│
@@ -55,7 +55,7 @@ Project Immortal adheres strictly to the **Cleanroom Reverse Engineering Standar
 
 The dirty room lives outside git tracking. By convention, a `.dirtyroom` symlink in the project root points to a high-speed NVMe storage directory:
 
-```
+```text
 immortal/
 ├── .dirtyroom/                     # Symlink -> /mnt/fast_data/re_dirtyroom/paladins_8.1.5839.0/
 │   ├── ghidra/
@@ -144,7 +144,7 @@ Once scaffolded, the `./scripts/dirtyroom/dirty` CLI provides instantaneous, sub
 ./scripts/dirtyroom/dirty status
 ```
 *Output:*
-```
+```text
 === Immortal Dirty-Room Status ===
 Dirty Room Root: /home/kuasha/Dev/immortal/.dirtyroom
 Ghidra Project:  /home/kuasha/Dev/immortal/.dirtyroom/ghidra/PaladinsProject.gpr

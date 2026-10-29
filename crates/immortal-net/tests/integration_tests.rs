@@ -300,4 +300,3 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         elapsed
     );
 }
-
