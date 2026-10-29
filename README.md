@@ -112,8 +112,11 @@ graph TD
 
 - [`crates/immortal-core`](crates/immortal-core): Shared game types, champion IDs, math primitives, and constants.
 - [`crates/immortal-extract`](crates/immortal-extract): Cleanroom UPK package parser and LZO/Zlib chunk decompressor.
-- [`crates/immortal-net`](crates/immortal-net): UE3 bitstream parser, bunch serializer, and auth protocol state machines.
+- [`crates/immortal-net`](crates/immortal-net): UE3 bitstream parser, bunch serializer, MCTS two-step handshake, and auth gateway.
 - [`crates/immortal-server`](crates/immortal-server): High-performance async game server daemon (Tokio).
+- [`scripts/dirtyroom`](scripts/dirtyroom): Isolated dirty-room reverse engineering pipeline (`dirty` CLI, headless Ghidra pre-analysis, SQLite symbol/string/RTTI indexer).
+- [`docs/dev/DIRTYROOM_GUIDE.md`](docs/dev/DIRTYROOM_GUIDE.md): BYOD Dirty-Room scaffolding & setup guide.
+- [`docs/specs/CLEANROOM_LEDGER.md`](docs/specs/CLEANROOM_LEDGER.md): Cleanroom Obligation Ledger linking claims to immutable cryptographic evidence.
 - [`docs/specs`](docs/specs): Formal markdown cleanroom specifications.
 
 ---
