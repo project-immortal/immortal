@@ -37,7 +37,8 @@ pub use mcts_handshake::{
     create_mcts_change_map_frame, create_mcts_champion_roster_frame,
     create_mcts_login_response_frame, create_mcts_map_transition_frame,
     create_mcts_match_invitation_frame, create_mcts_match_status_frame,
-    create_mcts_match_status_with_members_frame, create_mcts_on_match_invite_frame,
+    create_mcts_match_status_with_members_frame,
+    create_mcts_match_status_with_queue_and_members_frame, create_mcts_on_match_invite_frame,
     create_mcts_player_svc_change_map_frame, BOT_ID_FERNANDO, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION,
     MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME,
     MCTS_CLIENT_AUTH_REQUEST_FLAGS, MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS,
@@ -49,8 +50,9 @@ pub use mcts_handshake::{
     MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP_LE, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP,
     MCTS_HANDSHAKE_CHUNK1, MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION,
     MCTS_HELLO_RESPONSE_FRAME, MCTS_HELLO_RESPONSE_PAYLOAD, MCTS_TOKEN_ACCOUNT_ID,
-    MCTS_TOKEN_INVITED_MEMBERS, MCTS_TOKEN_MEMBERS, MCTS_TOKEN_PLAYER_ID, MCTS_TOKEN_TIMEOUT_WARNING,
-    MCTS_WIRE_FLAG_CHUNK,
+    MCTS_TOKEN_INVITED_MEMBERS, MCTS_TOKEN_MEMBERS, MCTS_TOKEN_PLAYER_ID,
+    MCTS_TOKEN_QUEUE_STATE, MCTS_TOKEN_QUEUE_STATUS, MCTS_TOKEN_TIMEOUT_WARNING,
+    MCTS_TOKEN_TIMESTAMP, MCTS_WIRE_FLAG_CHUNK,
 };
 pub use udp_framing::{
     current_time_millis, hmac_sha256, parse_cpack_udp, sha256, CPackUdpPacket, HelloRecvReply,

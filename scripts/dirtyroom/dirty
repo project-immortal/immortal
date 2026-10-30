@@ -7,12 +7,18 @@
 """
 dirty - Unified CLI for the Immortal Dirty-Room Reverse Engineering Pipeline.
 Supports sub-millisecond SQLite queries, headless Ghidra decompilation,
-PCAP frame inspection, and Cleanroom Evidence generation.
+PCAP frame inspection, Cleanroom Evidence generation, hardware-accelerated
+screen recording, and game input automation.
 """
 
 import argparse
+from datetime import datetime
 import json
 import os
+import re
+import shutil
+import signal
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -508,6 +514,603 @@ def cmd_game(args):
         subprocess.Popen(cmd_args, env=env, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
         print(f"[*] Paladins client process dispatched (logging to {log_path}).")
 
+def check_dependencies(bins):
+    missing = [b for b in bins if shutil.which(b) is None]
+    if missing:
+        print(f"[!] Error: Missing required system dependencies: {', '.join(missing)}", file=sys.stderr)
+        print("    Install them with: sudo pacman -S --needed gpu-screen-recorder ydotool xdotool", file=sys.stderr)
+        sys.exit(1)
+
+RECORD_PID_FILE = "/tmp/dirty_recorder.json"
+
+def pid_is_running(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+def cmd_record_start(args):
+    check_dependencies(["gpu-screen-recorder"])
+    recordings_dir = os.path.join(REPO_ROOT, "scratch", "recordings")
+    os.makedirs(recordings_dir, exist_ok=True)
+
+    if os.path.exists(RECORD_PID_FILE):
+        try:
+            with open(RECORD_PID_FILE, "r") as f:
+                state = json.load(f)
+            pid = state.get("pid")
+            if pid and pid_is_running(pid):
+                print(f"[!] Error: Recorder already running (PID: {pid}, output: {state.get('output_file')})", file=sys.stderr)
+                return 1
+        except Exception:
+            pass
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_file = args.output or os.path.join(recordings_dir, f"rec_{ts}.mp4")
+    out_file = os.path.abspath(out_file)
+    os.makedirs(os.path.dirname(out_file), exist_ok=True)
+
+    preset = "agent" if (getattr(args, "agent", False) or getattr(args, "fast", False)) else "standard"
+    res = args.resolution or ("854x480" if preset == "agent" else "1920x1080")
+    fps = str(args.fps or (3 if preset == "agent" else 30))
+    window = args.window or "screen"
+
+    cmd = [
+        "gpu-screen-recorder",
+        "-w", window,
+        "-s", res,
+        "-f", fps,
+        "-c", "mp4",
+        "-o", out_file
+    ]
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    state = {
+        "pid": proc.pid,
+        "output_file": out_file,
+        "start_time": time.time(),
+        "preset": preset,
+        "resolution": res,
+        "fps": fps,
+        "window": window,
+    }
+    with open(RECORD_PID_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+    print(f"[*] Screen recording started (PID: {proc.pid})")
+    print(f"    Output:     {out_file}")
+    print(f"    Preset:     {preset} ({res} @ {fps}fps)")
+    print(f"    Target:     {window}")
+    return 0
+
+def cmd_record_stop(args):
+    if not os.path.exists(RECORD_PID_FILE):
+        print("[!] No active recording found.", file=sys.stderr)
+        return 1
+
+    try:
+        with open(RECORD_PID_FILE, "r") as f:
+            state = json.load(f)
+    except Exception as e:
+        print(f"[!] Failed to read recorder state: {e}", file=sys.stderr)
+        return 1
+
+    pid = state.get("pid")
+    out_file = state.get("output_file")
+    if pid and pid_is_running(pid):
+        try:
+            os.kill(pid, signal.SIGINT)
+        except ProcessLookupError:
+            pass
+
+        start_wait = time.time()
+        while time.time() - start_wait < 5.0:
+            if not pid_is_running(pid):
+                break
+            time.sleep(0.1)
+
+        if pid_is_running(pid):
+            print(f"[!] Process {pid} did not exit after SIGINT, forcing termination...", file=sys.stderr)
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    if os.path.exists(RECORD_PID_FILE):
+        try:
+            os.remove(RECORD_PID_FILE)
+        except OSError:
+            pass
+
+    size_bytes = os.path.getsize(out_file) if out_file and os.path.exists(out_file) else 0
+    size_kb = round(size_bytes / 1024, 2)
+    print(f"[*] Screen recording stopped (PID: {pid}).")
+    print(f"    Output: {out_file} ({size_kb} KB, {size_bytes} bytes)")
+    return 0
+
+def cmd_record_status(args):
+    if not os.path.exists(RECORD_PID_FILE):
+        if getattr(args, "json", False):
+            print(json.dumps({"active": False}))
+        else:
+            print("[*] No active screen recording.")
+        return 0
+
+    try:
+        with open(RECORD_PID_FILE, "r") as f:
+            state = json.load(f)
+    except Exception:
+        state = {}
+
+    pid = state.get("pid")
+    out_file = state.get("output_file")
+    is_active = pid and pid_is_running(pid)
+
+    if not is_active:
+        if os.path.exists(RECORD_PID_FILE):
+            os.remove(RECORD_PID_FILE)
+        if getattr(args, "json", False):
+            print(json.dumps({"active": False, "stale_cleaned": True}))
+        else:
+            print(f"[*] No active recording (cleared stale state for PID {pid}).")
+        return 0
+
+    elapsed = time.time() - state.get("start_time", time.time())
+    size_bytes = os.path.getsize(out_file) if out_file and os.path.exists(out_file) else 0
+    size_kb = round(size_bytes / 1024, 2)
+
+    res = {
+        "active": True,
+        "pid": pid,
+        "output_file": out_file,
+        "elapsed_seconds": round(elapsed, 1),
+        "size_bytes": size_bytes,
+        "size_kb": size_kb,
+        "preset": state.get("preset"),
+        "resolution": state.get("resolution"),
+        "fps": state.get("fps"),
+        "window": state.get("window")
+    }
+
+    if getattr(args, "json", False):
+        print(json.dumps(res, indent=2))
+        return 0
+
+    print("=== Active Screen Recording ===")
+    print(f"  PID:        {pid}")
+    print(f"  Output:     {out_file}")
+    print(f"  Duration:   {elapsed:.1f}s")
+    print(f"  File Size:  {size_kb} KB ({size_bytes} bytes)")
+    print(f"  Preset:     {state.get('preset')} ({state.get('resolution')} @ {state.get('fps')}fps)")
+    print(f"  Target:     {state.get('window')}")
+    return 0
+
+def cmd_record_clip(args):
+    check_dependencies(["gpu-screen-recorder"])
+    recordings_dir = os.path.join(REPO_ROOT, "scratch", "recordings")
+    os.makedirs(recordings_dir, exist_ok=True)
+
+    duration = float(args.duration or 5.0)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_file = args.output or os.path.join(recordings_dir, f"clip_{ts}.mp4")
+    out_file = os.path.abspath(out_file)
+    os.makedirs(os.path.dirname(out_file), exist_ok=True)
+
+    preset = "agent" if (getattr(args, "agent", False) or getattr(args, "fast", False)) else "standard"
+    res = args.resolution or ("854x480" if preset == "agent" else "1920x1080")
+    fps = str(args.fps or (3 if preset == "agent" else 30))
+    window = args.window or "screen"
+
+    cmd = [
+        "gpu-screen-recorder",
+        "-w", window,
+        "-s", res,
+        "-f", fps,
+        "-c", "mp4",
+        "-o", out_file
+    ]
+
+    print(f"[*] Recording {duration}s clip ({preset} {res}@{fps}fps) to {out_file}...")
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        time.sleep(duration)
+        proc.send_signal(signal.SIGINT)
+        proc.wait(timeout=10)
+    except Exception as e:
+        proc.kill()
+        print(f"[!] Recording interrupted or timed out: {e}", file=sys.stderr)
+        return 1
+
+    if not os.path.exists(out_file):
+        print(f"[!] Output file was not created: {out_file}", file=sys.stderr)
+        return 1
+
+    size_bytes = os.path.getsize(out_file)
+    size_kb = round(size_bytes / 1024, 2)
+    print(f"[*] Clip recording completed successfully.")
+    print(f"    Path: {out_file}")
+    print(f"    Size: {size_kb} KB ({size_bytes} bytes)")
+    if getattr(args, "json", False):
+        print(json.dumps({
+            "status": "ok",
+            "path": out_file,
+            "duration": duration,
+            "size_bytes": size_bytes,
+            "size_kb": size_kb
+        }))
+    return 0
+
+YDOTOOL_SOCKET = "/tmp/.ydotool_socket"
+
+def is_ydotoold_alive():
+    if not os.path.exists(YDOTOOL_SOCKET):
+        return False
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        s.connect(YDOTOOL_SOCKET)
+        s.close()
+        return True
+    except (ConnectionRefusedError, OSError):
+        return False
+
+def ensure_ydotoold():
+    check_dependencies(["ydotool", "ydotoold"])
+    if not is_ydotoold_alive():
+        if os.path.exists(YDOTOOL_SOCKET):
+            try:
+                os.remove(YDOTOOL_SOCKET)
+            except OSError:
+                pass
+        subprocess.Popen(
+            ["ydotoold", "--socket-path", YDOTOOL_SOCKET],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True
+        )
+        for _ in range(25):
+            time.sleep(0.04)
+            if is_ydotoold_alive():
+                break
+
+def run_ydotool(*args):
+    ensure_ydotoold()
+    env = os.environ.copy()
+    env["YDOTOOL_SOCKET"] = YDOTOOL_SOCKET
+    cmd = ["ydotool"] + [str(a) for a in args]
+    return subprocess.run(cmd, env=env, capture_output=True, text=True)
+
+def get_window_info(name="Paladins"):
+    check_dependencies(["xdotool"])
+    res = subprocess.run(["xdotool", "search", "--name", name], capture_output=True, text=True)
+    if res.returncode != 0 or not res.stdout.strip():
+        return None
+
+    wids = [line.strip() for line in res.stdout.strip().splitlines() if line.strip()]
+    best = None
+    for wid in wids:
+        geom_res = subprocess.run(["xdotool", "getwindowgeometry", wid], capture_output=True, text=True)
+        if geom_res.returncode == 0:
+            pos_m = re.search(r"Position:\s*(-?\d+),(-?\d+)", geom_res.stdout)
+            dim_m = re.search(r"Geometry:\s*(\d+)x(\d+)", geom_res.stdout)
+            if pos_m and dim_m:
+                w = int(dim_m.group(1))
+                h = int(dim_m.group(2))
+                info = {
+                    "window_id": int(wid),
+                    "window_id_hex": hex(int(wid)),
+                    "name": name,
+                    "x": int(pos_m.group(1)),
+                    "y": int(pos_m.group(2)),
+                    "width": w,
+                    "height": h
+                }
+                if w > 100 and h > 100:
+                    return info
+                if not best:
+                    best = info
+    return best
+
+KEY_NAME_MAP = {
+    "esc": 1, "escape": 1,
+    "1": 2, "2": 3, "3": 4, "4": 5, "5": 6, "6": 7, "7": 8, "8": 9, "9": 10, "0": 11,
+    "minus": 12, "equal": 13, "backspace": 14,
+    "tab": 15,
+    "q": 16, "w": 17, "e": 18, "r": 19, "t": 20, "y": 21, "u": 22, "i": 23, "o": 24, "p": 25,
+    "leftbrace": 26, "rightbrace": 27,
+    "enter": 28, "return": 28,
+    "leftctrl": 29, "ctrl": 29,
+    "a": 30, "s": 31, "d": 32, "f": 33, "g": 34, "h": 35, "j": 36, "k": 37, "l": 38,
+    "semicolon": 39, "apostrophe": 40,
+    "grave": 41, "asciitilde": 41, "tilde": 41, "`": 41, "~": 41,
+    "leftshift": 42, "shift": 42,
+    "backslash": 43,
+    "z": 44, "x": 45, "c": 46, "v": 47, "b": 48, "n": 49, "m": 50,
+    "comma": 51, "dot": 52, "period": 52, "slash": 53,
+    "rightshift": 54,
+    "leftalt": 56, "alt": 56,
+    "space": 57,
+    "capslock": 58,
+    "f1": 59, "f2": 60, "f3": 61, "f4": 62, "f5": 63, "f6": 64, "f7": 65, "f8": 66, "f9": 67, "f10": 68,
+    "f11": 87, "f12": 88,
+    "up": 103, "left": 105, "right": 106, "down": 108,
+}
+
+def key_to_events(key_spec):
+    parts = key_spec.strip().split()
+    if all(":" in p for p in parts):
+        return parts
+
+    k = key_spec.strip().lower()
+    if k.startswith("key_"):
+        k = k[4:]
+    if k in KEY_NAME_MAP:
+        code = KEY_NAME_MAP[k]
+        return [f"{code}:1", f"{code}:0"]
+    try:
+        code = int(key_spec)
+        return [f"{code}:1", f"{code}:0"]
+    except ValueError:
+        return [key_spec]
+
+def send_key(key_name):
+    events = key_to_events(key_name)
+    return run_ydotool("key", *events)
+
+def button_to_hex(button, state="click"):
+    b_str = str(button).lower().strip()
+    if b_str.startswith("0x"):
+        return b_str
+
+    btn_idx = 0x00
+    if b_str in ("1", "left"):
+        btn_idx = 0x00
+    elif b_str in ("2", "middle"):
+        btn_idx = 0x02
+    elif b_str in ("3", "right"):
+        btn_idx = 0x01
+    else:
+        try:
+            btn_idx = int(b_str)
+        except ValueError:
+            btn_idx = 0x00
+
+    if state == "click":
+        return hex(0xC0 | btn_idx)
+    elif state == "down":
+        return hex(0x40 | btn_idx)
+    elif state == "up":
+        return hex(0x80 | btn_idx)
+    return hex(0xC0 | btn_idx)
+
+def cmd_input_window(args):
+    check_dependencies(["xdotool"])
+    name = getattr(args, "name", "Paladins")
+    win = get_window_info(name)
+    if not win:
+        if getattr(args, "json", False):
+            print(json.dumps({"found": False, "name": name}))
+        else:
+            print(f"[!] Window matching '{name}' not found.")
+        return 1
+
+    if getattr(args, "json", False):
+        print(json.dumps(win, indent=2))
+        return 0
+
+    print("=== Window Information ===")
+    print(f"  Name:       {win['name']}")
+    print(f"  Window ID:  {win['window_id']} ({win['window_id_hex']})")
+    print(f"  Position:   X={win['x']}, Y={win['y']}")
+    print(f"  Dimensions: Width={win['width']}, Height={win['height']}")
+    return 0
+
+def cmd_input_click(args):
+    win = get_window_info(getattr(args, "window_name", "Paladins"))
+    if win:
+        subprocess.run(["xdotool", "windowactivate", "--sync", str(win["window_id"])], check=False)
+        time.sleep(0.05)
+
+    x = float(args.x)
+    y = float(args.y)
+    if getattr(args, "relative", False):
+        if not win:
+            print("[!] Error: --relative specified but target window was not found.", file=sys.stderr)
+            return 1
+        target_x = int(win["x"] + x * win["width"])
+        target_y = int(win["y"] + y * win["height"])
+    else:
+        target_x = int(x)
+        target_y = int(y)
+
+    btn_hex = button_to_hex(getattr(args, "button", 1), state="click")
+    run_ydotool("mousemove", "--absolute", str(target_x), str(target_y))
+    time.sleep(0.02)
+    run_ydotool("click", btn_hex)
+    print(f"[*] Clicked at ({target_x}, {target_y}) [button: {btn_hex}]")
+    return 0
+
+def cmd_input_key(args):
+    res = send_key(args.key_name)
+    if res.returncode == 0:
+        print(f"[*] Sent key: {args.key_name}")
+        return 0
+    else:
+        print(f"[!] Failed to send key: {args.key_name} (code: {res.returncode})", file=sys.stderr)
+        return 1
+
+def cmd_input_type(args):
+    res = run_ydotool("type", "--", args.text)
+    if res.returncode == 0:
+        print(f"[*] Typed: {args.text}")
+        return 0
+    else:
+        print(f"[!] Failed to type text (code: {res.returncode})", file=sys.stderr)
+        return 1
+
+def cmd_input_drag(args):
+    x1 = float(args.x1)
+    y1 = float(args.y1)
+    x2 = float(args.x2)
+    y2 = float(args.y2)
+    duration_ms = float(getattr(args, "duration", 300) or 300)
+
+    win = get_window_info(getattr(args, "window_name", "Paladins"))
+    if getattr(args, "relative", False):
+        if not win:
+            print("[!] Error: --relative specified but target window was not found.", file=sys.stderr)
+            return 1
+        x1 = win["x"] + x1 * win["width"]
+        y1 = win["y"] + y1 * win["height"]
+        x2 = win["x"] + x2 * win["width"]
+        y2 = win["y"] + y2 * win["height"]
+
+    button = getattr(args, "button", 1)
+    down_hex = button_to_hex(button, state="down")
+    up_hex = button_to_hex(button, state="up")
+
+    if win:
+        subprocess.run(["xdotool", "windowactivate", "--sync", str(win["window_id"])], check=False)
+        time.sleep(0.05)
+
+    run_ydotool("mousemove", "--absolute", str(int(x1)), str(int(y1)))
+    time.sleep(0.03)
+    run_ydotool("click", down_hex)
+    time.sleep(0.02)
+
+    steps = max(10, int(duration_ms / 20))
+    step_delay = (duration_ms / 1000.0) / steps
+    for i in range(1, steps + 1):
+        t = i / steps
+        cur_x = int(x1 + (x2 - x1) * t)
+        cur_y = int(y1 + (y2 - y1) * t)
+        run_ydotool("mousemove", "--absolute", str(cur_x), str(cur_y))
+        time.sleep(step_delay)
+
+    time.sleep(0.02)
+    run_ydotool("click", up_hex)
+    print(f"[*] Dragged from ({int(x1)}, {int(y1)}) to ({int(x2)}, {int(y2)}) over {duration_ms}ms")
+    return 0
+
+def cmd_input_console(args):
+    win = get_window_info(getattr(args, "window_name", "Paladins"))
+    if win:
+        subprocess.run(["xdotool", "windowactivate", "--sync", str(win["window_id"])], check=False)
+        time.sleep(0.1)
+
+    send_key("F10")
+    time.sleep(0.1)
+    run_ydotool("type", "--", args.command)
+    time.sleep(0.05)
+    send_key("Return")
+    print(f"[*] Dispatched console command: '{args.command}'")
+    return 0
+
+def cmd_input_macro(args):
+    macro_path = args.path
+    if not os.path.isabs(macro_path):
+        macro_path = os.path.abspath(macro_path)
+
+    if not os.path.exists(macro_path):
+        print(f"[!] Error: Macro file not found: {macro_path}", file=sys.stderr)
+        return 1
+
+    try:
+        with open(macro_path, "r") as f:
+            steps = json.load(f)
+    except Exception as e:
+        print(f"[!] Error parsing macro JSON: {e}", file=sys.stderr)
+        return 1
+
+    if not isinstance(steps, list):
+        print("[!] Error: Macro file must contain a JSON array of action objects.", file=sys.stderr)
+        return 1
+
+    print(f"[*] Executing macro ({len(steps)} steps) from {macro_path}...")
+    win = get_window_info("Paladins")
+
+    for idx, step in enumerate(steps):
+        act = step.get("action", "").lower()
+        if act == "click":
+            x = float(step.get("x", 0))
+            y = float(step.get("y", 0))
+            if step.get("relative", False) and win:
+                x = int(win["x"] + x * win["width"])
+                y = int(win["y"] + y * win["height"])
+            else:
+                x = int(x)
+                y = int(y)
+            btn = button_to_hex(step.get("button", 1), state="click")
+            run_ydotool("mousemove", "--absolute", str(x), str(y))
+            time.sleep(0.02)
+            run_ydotool("click", btn)
+        elif act in ("move", "mousemove"):
+            x = float(step.get("x", 0))
+            y = float(step.get("y", 0))
+            if step.get("relative", False) and win:
+                x = int(win["x"] + x * win["width"])
+                y = int(win["y"] + y * win["height"])
+            else:
+                x = int(x)
+                y = int(y)
+            run_ydotool("mousemove", "--absolute", str(x), str(y))
+        elif act == "drag":
+            x1 = float(step.get("x1", 0))
+            y1 = float(step.get("y1", 0))
+            x2 = float(step.get("x2", 0))
+            y2 = float(step.get("y2", 0))
+            if step.get("relative", False) and win:
+                x1 = win["x"] + x1 * win["width"]
+                y1 = win["y"] + y1 * win["height"]
+                x2 = win["x"] + x2 * win["width"]
+                y2 = win["y"] + y2 * win["height"]
+            duration_ms = float(step.get("duration", 300) or 300)
+            btn_down = button_to_hex(step.get("button", 1), state="down")
+            btn_up = button_to_hex(step.get("button", 1), state="up")
+            run_ydotool("mousemove", "--absolute", str(int(x1)), str(int(y1)))
+            time.sleep(0.02)
+            run_ydotool("click", btn_down)
+            st = max(10, int(duration_ms / 20))
+            for i in range(1, st + 1):
+                cur_x = int(x1 + (x2 - x1) * (i / st))
+                cur_y = int(y1 + (y2 - y1) * (i / st))
+                run_ydotool("mousemove", "--absolute", str(cur_x), str(cur_y))
+                time.sleep((duration_ms / 1000.0) / st)
+            time.sleep(0.02)
+            run_ydotool("click", btn_up)
+        elif act == "key":
+            key_name = step.get("key", "")
+            if key_name:
+                send_key(key_name)
+        elif act == "type":
+            text = step.get("text", "")
+            if text:
+                run_ydotool("type", "--", text)
+        elif act == "console":
+            cmd_text = step.get("command", "")
+            if win:
+                subprocess.run(["xdotool", "windowactivate", "--sync", str(win["window_id"])], check=False)
+                time.sleep(0.05)
+            send_key("F10")
+            time.sleep(0.1)
+            run_ydotool("type", "--", cmd_text)
+            time.sleep(0.05)
+            send_key("Return")
+        elif act in ("sleep", "wait"):
+            ms = float(step.get("ms", 0))
+            time.sleep(ms / 1000.0)
+        elif act in ("activate", "focus"):
+            target_name = step.get("name", "Paladins")
+            w = get_window_info(target_name)
+            if w:
+                subprocess.run(["xdotool", "windowactivate", "--sync", str(w["window_id"])], check=False)
+                time.sleep(0.05)
+        else:
+            print(f"[!] Warning: Unknown action '{act}' in step {idx}", file=sys.stderr)
+
+    print("[*] Macro completed successfully.")
+    return 0
+
 def main():
     parser = argparse.ArgumentParser(description="Immortal Dirty-Room Reverse Engineering CLI")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -575,8 +1178,84 @@ def main():
     p_game.add_argument("--map", default=None, help="Map URL or name to load in client")
     p_game.set_defaults(func=cmd_game)
 
+    # dirty record
+    p_rec = sub.add_parser("record", help="Hardware-accelerated screen recording via gpu-screen-recorder")
+    rec_sub = p_rec.add_subparsers(dest="record_action", required=True)
+
+    rec_start = rec_sub.add_parser("start", help="Start background screen recording")
+    rec_start.add_argument("--agent", "--fast", action="store_true", dest="agent", help="Use fast agentic preset (480p 3fps)")
+    rec_start.add_argument("--output", "-o", help="Output MP4 file path (default: scratch/recordings/rec_TIMESTAMP.mp4)")
+    rec_start.add_argument("--resolution", "-s", help="Custom resolution WxH (default: 1920x1080 or 854x480)")
+    rec_start.add_argument("--fps", "-f", type=int, help="Custom framerate (default: 30 or 3)")
+    rec_start.add_argument("--window", "-w", default="screen", help="Target window ID/monitor (default: screen)")
+    rec_start.set_defaults(func=cmd_record_start)
+
+    rec_stop = rec_sub.add_parser("stop", help="Stop active screen recording cleanly with SIGINT")
+    rec_stop.set_defaults(func=cmd_record_stop)
+
+    rec_status = rec_sub.add_parser("status", help="Check screen recording status")
+    rec_status.add_argument("--json", action="store_true", help="Output status as JSON")
+    rec_status.set_defaults(func=cmd_record_status)
+
+    rec_clip = rec_sub.add_parser("clip", help="Record a short timed clip synchronously")
+    rec_clip.add_argument("--duration", "-d", type=float, default=5.0, help="Clip duration in seconds (default: 5.0)")
+    rec_clip.add_argument("--agent", "--fast", action="store_true", dest="agent", help="Use fast agentic preset (480p 3fps)")
+    rec_clip.add_argument("--output", "-o", help="Output MP4 file path (default: scratch/recordings/clip_TIMESTAMP.mp4)")
+    rec_clip.add_argument("--resolution", "-s", help="Custom resolution WxH (default: 1920x1080 or 854x480)")
+    rec_clip.add_argument("--fps", "-f", type=int, help="Custom framerate (default: 30 or 3)")
+    rec_clip.add_argument("--window", "-w", default="screen", help="Target window ID/monitor (default: screen)")
+    rec_clip.add_argument("--json", action="store_true", help="Output result as JSON")
+    rec_clip.set_defaults(func=cmd_record_clip)
+
+    # dirty input
+    p_inp = sub.add_parser("input", help="Game window and uinput automation via ydotoold + xdotool")
+    inp_sub = p_inp.add_subparsers(dest="input_action", required=True)
+
+    inp_win = inp_sub.add_parser("window", help="Inspect window geometry and ID")
+    inp_win.add_argument("--name", default="Paladins", help="Window name regex/substring (default: Paladins)")
+    inp_win.add_argument("--json", action="store_true", help="Output as JSON")
+    inp_win.set_defaults(func=cmd_input_window)
+
+    inp_click = inp_sub.add_parser("click", help="Click at screen or window-relative coordinates")
+    inp_click.add_argument("x", type=float, help="X coordinate (absolute pixel or 0.0..1.0 if --relative)")
+    inp_click.add_argument("y", type=float, help="Y coordinate (absolute pixel or 0.0..1.0 if --relative)")
+    inp_click.add_argument("--button", default=1, help="Mouse button (1=Left, 2=Middle, 3=Right, or hex like 0xC0)")
+    inp_click.add_argument("--relative", action="store_true", help="Use normalized floats (0.0..1.0) relative to window")
+    inp_click.add_argument("--window-name", default="Paladins", help="Target window name for relative mode")
+    inp_click.set_defaults(func=cmd_input_click)
+
+    inp_key = inp_sub.add_parser("key", help="Send keyboard key event")
+    inp_key.add_argument("key_name", help="Key name (Escape, Return, Space, w, etc.) or raw keycode:state")
+    inp_key.set_defaults(func=cmd_input_key)
+
+    inp_type = inp_sub.add_parser("type", help="Type string via ydotool")
+    inp_type.add_argument("text", help="Text string to type")
+    inp_type.set_defaults(func=cmd_input_type)
+
+    inp_drag = inp_sub.add_parser("drag", help="Interpolated mouse drag while button pressed")
+    inp_drag.add_argument("x1", type=float, help="Start X")
+    inp_drag.add_argument("y1", type=float, help="Start Y")
+    inp_drag.add_argument("x2", type=float, help="End X")
+    inp_drag.add_argument("y2", type=float, help="End Y")
+    inp_drag.add_argument("--duration", type=float, default=300, help="Drag duration in milliseconds (default: 300)")
+    inp_drag.add_argument("--button", default=1, help="Mouse button (1=Left, 2=Middle, 3=Right)")
+    inp_drag.add_argument("--relative", action="store_true", help="Use normalized window-relative coordinates")
+    inp_drag.add_argument("--window-name", default="Paladins", help="Target window name")
+    inp_drag.set_defaults(func=cmd_input_drag)
+
+    inp_console = inp_sub.add_parser("console", help="Focus window, open console (F10/~), type command, press Return")
+    inp_console.add_argument("command", help="Unreal Engine console command to execute")
+    inp_console.add_argument("--window-name", default="Paladins", help="Target window name (default: Paladins)")
+    inp_console.set_defaults(func=cmd_input_console)
+
+    inp_macro = inp_sub.add_parser("macro", help="Execute input automation sequence from JSON file")
+    inp_macro.add_argument("path", help="Path to JSON macro file")
+    inp_macro.set_defaults(func=cmd_input_macro)
+
     args = parser.parse_args()
-    args.func(args)
+    res = args.func(args)
+    if isinstance(res, int) and res != 0:
+        sys.exit(res)
 
 if __name__ == "__main__":
     main()
