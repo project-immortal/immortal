@@ -275,7 +275,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(func_id, 0x7a4036ab);
 
     let field_count = u16::from_le_bytes([payload[5], payload[6]]);
-    assert_eq!(field_count, 7);
+    assert_eq!(field_count, 6);
 
     // Group 0x1000: Field 2 (bool true)
     let grp1 = u16::from_le_bytes([payload[7], payload[8]]);
@@ -283,15 +283,23 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(u16::from_le_bytes([payload[9], payload[10]]), 2);
     assert_eq!(payload[11], 1);
 
-    // Group 0x3000: Field 26 (0), Field 3 (0), Field 8 (account_id), Field 1868 (account_id)
+    // Group 0x3000: Field 3 (0), Field 739 (60)
     let grp4 = u16::from_le_bytes([payload[12], payload[13]]);
-    assert_eq!(grp4, 0x3004);
-    assert_eq!(u32::from_le_bytes([payload[22], payload[23], payload[24], payload[25]]), 0); // status = 0
-    assert_eq!(u32::from_le_bytes([payload[26], payload[27], payload[28], payload[29]]), 0); // error = 0
-    let v8 = u32::from_le_bytes([payload[30], payload[31], payload[32], payload[33]]);
-    let v1868 = u32::from_le_bytes([payload[34], payload[35], payload[36], payload[37]]);
-    assert_eq!(v8, 8302401);
-    assert_eq!(v1868, 8302401);
+    assert_eq!(grp4, 0x3002);
+    assert_eq!(u16::from_le_bytes([payload[14], payload[15]]), 3);
+    assert_eq!(u16::from_le_bytes([payload[16], payload[17]]), 739);
+    assert_eq!(u32::from_le_bytes([payload[18], payload[19], payload[20], payload[21]]), 0); // Token 3 = 0
+    assert_eq!(u32::from_le_bytes([payload[22], payload[23], payload[24], payload[25]]), 60); // Token 739 = 60
+
+    // Group 0x4000: Field 26 (account_id as u64)
+    let grp8 = u16::from_le_bytes([payload[26], payload[27]]);
+    assert_eq!(grp8, 0x4001);
+    assert_eq!(u16::from_le_bytes([payload[28], payload[29]]), 26);
+    let v26 = u64::from_le_bytes([
+        payload[30], payload[31], payload[32], payload[33],
+        payload[34], payload[35], payload[36], payload[37],
+    ]);
+    assert_eq!(v26, 8302401);
 
     // String 1: Token 7 (session_token)
     assert_eq!(u16::from_le_bytes([payload[38], payload[39]]), 0xa001);
@@ -300,15 +308,15 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     let s1_str = std::str::from_utf8(&payload[44..44 + s1_len]).unwrap();
     assert_eq!(s1_str, "IMMORTAL-DEV-SESSION-TICKET");
 
-    // String 2: Token 1708 (player_name)
+    // String 2: Token 758 (player_name)
     let p2 = 44 + s1_len;
     assert_eq!(u16::from_le_bytes([payload[p2], payload[p2 + 1]]), 0xa001);
-    assert_eq!(u16::from_le_bytes([payload[p2 + 2], payload[p2 + 3]]), 1708);
+    assert_eq!(u16::from_le_bytes([payload[p2 + 2], payload[p2 + 3]]), 758);
     let s2_len = u16::from_le_bytes([payload[p2 + 4], payload[p2 + 5]]) as usize;
     let s2_str = std::str::from_utf8(&payload[p2 + 6..p2 + 6 + s2_len]).unwrap();
     assert_eq!(s2_str, "Fernando");
 
-    // 3. Step 3: Expect authentic Live MCTS OnMatchStatus wire frame (0x2cdbafe1, queue_id 0, match_id 0, launch_time 0)
+    // 3. Step 3: Expect authentic Live MCTS MATCH_STATUS wire frame (0x392dcda5, queue_id 0, match_id 0, match_lobby_state 0, launch_seconds 0)
     stream.read_exact(&mut header_buf).await.unwrap();
     let status_frame_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
     let status_wire_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
@@ -318,21 +326,36 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     stream.read_exact(&mut status_payload).await.unwrap();
     assert_eq!(status_payload[0], 0x00);
     let status_func_id = u32::from_le_bytes([status_payload[1], status_payload[2], status_payload[3], status_payload[4]]);
-    assert_eq!(status_func_id, immortal_net::MCTS_FUNCTION_ID_ON_MATCH_STATUS);
-    assert_eq!(status_func_id, 0x2cdbafe1);
+    assert_eq!(status_func_id, immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS);
+    assert_eq!(status_func_id, 0x392dcda5);
     let field_count = u16::from_le_bytes([status_payload[5], status_payload[6]]);
-    assert_eq!(field_count, 3);
+    assert_eq!(field_count, 4);
+
+    // Group 0x3000: Token 1342 (match_lobby_state = 0), Token 1690 (launch_seconds = 0)
     let grp4 = u16::from_le_bytes([status_payload[7], status_payload[8]]);
-    assert_eq!(grp4, 0x3003);
-    assert_eq!(u16::from_le_bytes([status_payload[9], status_payload[10]]), 703);
-    assert_eq!(u16::from_le_bytes([status_payload[11], status_payload[12]]), 36);
-    assert_eq!(u16::from_le_bytes([status_payload[13], status_payload[14]]), 912);
-    let v703 = u32::from_le_bytes([status_payload[15], status_payload[16], status_payload[17], status_payload[18]]);
-    let v36 = u32::from_le_bytes([status_payload[19], status_payload[20], status_payload[21], status_payload[22]]);
-    let v912 = u32::from_le_bytes([status_payload[23], status_payload[24], status_payload[25], status_payload[26]]);
-    assert_eq!(v703, 0); // match_id = 0
-    assert_eq!(v36, 0);  // queue_id = 0
-    assert_eq!(v912, 0); // launch_time = 0
+    assert_eq!(grp4, 0x3002);
+    assert_eq!(u16::from_le_bytes([status_payload[9], status_payload[10]]), 1342);
+    assert_eq!(u16::from_le_bytes([status_payload[11], status_payload[12]]), 1690);
+    let v1342 = u32::from_le_bytes([status_payload[13], status_payload[14], status_payload[15], status_payload[16]]);
+    let v1690 = u32::from_le_bytes([status_payload[17], status_payload[18], status_payload[19], status_payload[20]]);
+    assert_eq!(v1342, 0); // match_lobby_state = 0
+    assert_eq!(v1690, 0); // launch_seconds = 0
+
+    // Group 0x4000: Token 700 (match_id = 0), Token 703 (queue_id = 0)
+    let grp8 = u16::from_le_bytes([status_payload[21], status_payload[22]]);
+    assert_eq!(grp8, 0x4002);
+    assert_eq!(u16::from_le_bytes([status_payload[23], status_payload[24]]), 700);
+    assert_eq!(u16::from_le_bytes([status_payload[25], status_payload[26]]), 703);
+    let v700 = u64::from_le_bytes([
+        status_payload[27], status_payload[28], status_payload[29], status_payload[30],
+        status_payload[31], status_payload[32], status_payload[33], status_payload[34],
+    ]);
+    let v703 = u64::from_le_bytes([
+        status_payload[35], status_payload[36], status_payload[37], status_payload[38],
+        status_payload[39], status_payload[40], status_payload[41], status_payload[42],
+    ]);
+    assert_eq!(v700, 0); // match_id = 0
+    assert_eq!(v703, 0); // queue_id = 0
 
     // 4. Step 4: Client sends champion select frame for Fernando (ID 2203 / 0x089b)
     let mut champ_frame = Vec::new();

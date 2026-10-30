@@ -146,9 +146,10 @@ pub use crate::mcts_handshake::{
     CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MAP_GAME_ID_SHOOTING_RANGE,
     MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
     MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
-    MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP, MCTS_HANDSHAKE_CHUNK1,
-    MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION, MCTS_HELLO_RESPONSE_FRAME,
-    MCTS_HELLO_RESPONSE_PAYLOAD, MCTS_WIRE_FLAG_CHUNK,
+    MCTS_FUNCTION_ID_MATCH_STATUS, MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE,
+    MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP, MCTS_HANDSHAKE_CHUNK1, MCTS_HANDSHAKE_CHUNK2_ACK,
+    MCTS_HANDSHAKE_CHUNK3_SESSION, MCTS_HELLO_RESPONSE_FRAME, MCTS_HELLO_RESPONSE_PAYLOAD,
+    MCTS_WIRE_FLAG_CHUNK,
 };
 
 async fn handle_connection(
@@ -225,7 +226,7 @@ async fn handle_connection(
 
             // Send authentic Live MCTS OnLoginResponse wire frame (reverse engineered CMarshalRow::Store format)
             let login_frame = create_mcts_login_response_frame(
-                config.account_id as u32,
+                config.account_id as u64,
                 &config.player_name,
                 &config.session_token,
             );
@@ -236,12 +237,12 @@ async fn handle_connection(
                 config.account_id, config.player_name, peer_addr
             );
 
-            // Emit OnMatchStatus frame declaring initial lobby state (queue_id 0, match_id 0, launch_time 0)
-            let match_status_frame = create_mcts_match_status_frame(0, 0, 0);
+            // Emit OnMatchStatus frame declaring initial lobby state (queue_id 0, match_id 0, match_lobby_state 0, launch_seconds 0)
+            let match_status_frame = create_mcts_match_status_frame(0, 0, 0, 0);
             stream.write_all(&match_status_frame).await?;
             stream.flush().await?;
             info!( // agyis: no-mutant logging
-                "Sent Live MCTS OnMatchStatus initial lobby frame (0, 0, 0) to {}",
+                "Sent Live MCTS OnMatchStatus initial lobby frame (0, 0, 0, 0) to {}",
                 peer_addr
             );
         } else if field0 == 37 || field0 == 19 || field0 == 33 || field0 == 15 || field1 == 0x0108 {

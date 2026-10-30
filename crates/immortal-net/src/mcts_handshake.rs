@@ -107,25 +107,28 @@ pub const MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE: u32 = 0x7a4036ab;
 /// Format matches reverse engineered `CMarshalRow::Store` specification:
 /// - Prefix: byte `0x00` (`this[0x30]`)
 /// - Function ID: `0x7a4036ab` (`MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE`) in little-endian u32
-/// - CMarshalRow field count: 7 (u16 little-endian)
+/// - CMarshalRow field count: 6 (u16 little-endian)
 /// - Group 0x1000 (1-byte fields):
 ///   - Header: `0x1001` (group 0x1000 | 1)
 ///   - Token 2 (u16): bool true (0x01 u8)
 /// - Group 0x3000 (4-byte fields):
-///   - Header: `0x3004` (group 0x3000 | 4)
-///   - Tokens: 26, 3, 8, 1868 (u16 each)
-///   - Values: 0, 0, account_id, account_id (u32 each, little-endian)
+///   - Header: `0x3002` (group 0x3000 | 2)
+///   - Tokens: 3, 739 (u16 each)
+///   - Values: 0, 60 (u32 each, little-endian)
+/// - Group 0x4000 (8-byte fields):
+///   - Header: `0x4001` (group 0x4000 | 1)
+///   - Token 26 (u16): account_id (u64 little-endian)
 /// - Group 0xa000 (UTF-8 string fields, count 1 each):
 ///   - Header: `0xa001`
 ///   - Token 7 (u16): session_token (u16 length + UTF-8 bytes)
 ///   - Header: `0xa001`
-///   - Token 1708 (u16): player_name (u16 length + UTF-8 bytes)
+///   - Token 758 (u16): player_name (u16 length + UTF-8 bytes)
 /// - TCP Framing:
 ///   - Length: payload length (u16 little-endian)
 ///   - Wire flags: `0x0000` (u16 little-endian)
 ///   - Followed by payload bytes
 pub fn create_mcts_login_response_frame(
-    account_id: u32,
+    account_id: u64,
     player_name: &str,
     session_token: &str,
 ) -> Vec<u8> {
@@ -136,8 +139,8 @@ pub fn create_mcts_login_response_frame(
     payload.push(0x00); // this[0x30]
     payload.extend_from_slice(&MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE.to_le_bytes());
 
-    // CMarshalRow: total fields = 7 (1 byte field + 4 dword fields + 2 string fields)
-    let total_fields: u16 = 7;
+    // CMarshalRow: total fields = 6 (1 byte field + 2 dword fields + 1 qword field + 2 string fields)
+    let total_fields: u16 = 6;
     payload.extend_from_slice(&total_fields.to_le_bytes());
 
     // Group 0x1000 (1-byte fields: 1 field)
@@ -146,18 +149,20 @@ pub fn create_mcts_login_response_frame(
     payload.extend_from_slice(&2u16.to_le_bytes()); // Token 2
     payload.push(0x01); // bool true
 
-    // Group 0x3000 (4-byte fields: 4 fields)
-    let grp4_hdr: u16 = 0x3000 | 4;
+    // Group 0x3000 (4-byte fields: 2 fields)
+    let grp4_hdr: u16 = 0x3000 | 2;
     payload.extend_from_slice(&grp4_hdr.to_le_bytes());
-    payload.extend_from_slice(&26u16.to_le_bytes()); // Token 26: status
-    payload.extend_from_slice(&3u16.to_le_bytes());  // Token 3: error
-    payload.extend_from_slice(&8u16.to_le_bytes());  // Token 8: account_id
-    payload.extend_from_slice(&1868u16.to_le_bytes()); // Token 1868: account_id
+    payload.extend_from_slice(&3u16.to_le_bytes());   // Token 3
+    payload.extend_from_slice(&739u16.to_le_bytes()); // Token 739: MINUTES
 
-    payload.extend_from_slice(&0u32.to_le_bytes()); // status = 0
-    payload.extend_from_slice(&0u32.to_le_bytes()); // error = 0
-    payload.extend_from_slice(&account_id.to_le_bytes()); // account_id
-    payload.extend_from_slice(&account_id.to_le_bytes()); // account_id
+    payload.extend_from_slice(&0u32.to_le_bytes());  // Token 3 = 0
+    payload.extend_from_slice(&60u32.to_le_bytes()); // Token 739 = 60
+
+    // Group 0x4000 (8-byte fields: 1 field)
+    let grp8_hdr: u16 = 0x4000 | 1;
+    payload.extend_from_slice(&grp8_hdr.to_le_bytes());
+    payload.extend_from_slice(&26u16.to_le_bytes()); // Token 26: ACCOUNT_ID
+    payload.extend_from_slice(&account_id.to_le_bytes()); // account_id as u64
 
     // String field 7: session_token
     payload.extend_from_slice(&0xa001u16.to_le_bytes());
@@ -165,9 +170,9 @@ pub fn create_mcts_login_response_frame(
     payload.extend_from_slice(&(session_bytes.len() as u16).to_le_bytes());
     payload.extend_from_slice(session_bytes);
 
-    // String field 1708: player_name
+    // String field 758: player_name
     payload.extend_from_slice(&0xa001u16.to_le_bytes());
-    payload.extend_from_slice(&1708u16.to_le_bytes());
+    payload.extend_from_slice(&758u16.to_le_bytes());
     payload.extend_from_slice(&(player_bytes.len() as u16).to_le_bytes());
     payload.extend_from_slice(player_bytes);
 
@@ -251,48 +256,64 @@ pub fn create_mcts_change_map_frame(
     frame
 }
 
-/// Authentic Function ID for `CMctsNetwork::OnMatchStatus` (0x2cdbafe1).
-pub const MCTS_FUNCTION_ID_ON_MATCH_STATUS: u32 = 0x2cdbafe1;
+/// Authentic Function ID for `CMctsNetwork::MATCH_STATUS` (0x392dcda5).
+/// Reverse engineered from `MctsInterface.dll` / client dispatch tables (Token OBL-MCTS-003, PSL-INV-007).
+pub const MCTS_FUNCTION_ID_MATCH_STATUS: u32 = 0x392dcda5;
 
-/// Builds an authentic live MCTS `OnMatchStatus` wire frame for `CMctsNetwork::OnMatchStatus`.
+/// Backwards compatibility alias for `MCTS_FUNCTION_ID_MATCH_STATUS`.
+pub const MCTS_FUNCTION_ID_ON_MATCH_STATUS: u32 = MCTS_FUNCTION_ID_MATCH_STATUS;
+
+/// Builds an authentic live MCTS `MATCH_STATUS` wire frame for `CMctsNetwork::MATCH_STATUS`.
 ///
-/// Matches reverse engineered `CMarshalRow::Store` specification for Table 0xf2/242:
+/// Matches reverse engineered `CMarshalRow::Store` specification:
 /// - Prefix: byte `0x00` (`this[0x30]`)
-/// - Function ID: `0x2cdbafe1` (`MCTS_FUNCTION_ID_ON_MATCH_STATUS`) in little-endian u32
-/// - CMarshalRow field count: 3 (3 uint32 fields in Group 0x3000)
+/// - Function ID: `0x392dcda5` (`MCTS_FUNCTION_ID_MATCH_STATUS`) in little-endian u32
+/// - CMarshalRow field count: 4 (2 uint32 fields in Group 0x3000 + 2 uint64 fields in Group 0x4000)
 /// - Group 0x3000 (4-byte fields):
-///   - Header: `0x3003` (group 0x3000 | 3)
-///   - Token 703 (u16): match_id
-///   - Token 36 (u16): queue_id
-///   - Token 912 (u16): launch_time
-///   - Values: match_id (lower 32-bits), queue_id, launch_time
+///   - Header: `0x3002` (group 0x3000 | 2)
+///   - Token 1342 (u16): match_lobby_state
+///   - Token 1690 (u16): launch_seconds
+///   - Values: match_lobby_state, launch_seconds
+/// - Group 0x4000 (8-byte fields):
+///   - Header: `0x4002` (group 0x4000 | 2)
+///   - Token 700 (u16): match_id
+///   - Token 703 (u16): queue_id
+///   - Values: match_id, queue_id
 /// - TCP Framing:
 ///   - Length: payload length (u16 little-endian)
 ///   - Wire flags: `0x0000` (u16 little-endian)
 ///   - Followed by payload bytes
 pub fn create_mcts_match_status_frame(
-    queue_id: u32,
+    queue_id: u64,
     match_id: u64,
-    launch_time: u32,
+    match_lobby_state: u32,
+    launch_seconds: u32,
 ) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(32);
+    let mut payload = Vec::with_capacity(48);
     payload.push(0x00); // this[0x30]
-    payload.extend_from_slice(&MCTS_FUNCTION_ID_ON_MATCH_STATUS.to_le_bytes());
+    payload.extend_from_slice(&MCTS_FUNCTION_ID_MATCH_STATUS.to_le_bytes());
 
-    // CMarshalRow: total fields = 3 (3 dword fields for Table 0xf2/242)
-    let total_fields: u16 = 3;
+    // CMarshalRow: total fields = 4 (2 dword fields + 2 qword fields)
+    let total_fields: u16 = 4;
     payload.extend_from_slice(&total_fields.to_le_bytes());
 
-    // Group 0x3000 (4-byte fields: 3 fields)
-    let grp4_hdr: u16 = 0x3000 | 3;
+    // Group 0x3000 (4-byte fields: 2 fields)
+    let grp4_hdr: u16 = 0x3000 | 2;
     payload.extend_from_slice(&grp4_hdr.to_le_bytes());
-    payload.extend_from_slice(&703u16.to_le_bytes()); // Token 703: match_id
-    payload.extend_from_slice(&36u16.to_le_bytes());  // Token 36: queue_id
-    payload.extend_from_slice(&912u16.to_le_bytes()); // Token 912: launch_time
+    payload.extend_from_slice(&1342u16.to_le_bytes()); // Token 1342: MATCH_LOBBY_STATE
+    payload.extend_from_slice(&1690u16.to_le_bytes()); // Token 1690: LAUNCH_SECONDS
 
-    payload.extend_from_slice(&(match_id as u32).to_le_bytes());
+    payload.extend_from_slice(&match_lobby_state.to_le_bytes());
+    payload.extend_from_slice(&launch_seconds.to_le_bytes());
+
+    // Group 0x4000 (8-byte fields: 2 fields)
+    let grp8_hdr: u16 = 0x4000 | 2;
+    payload.extend_from_slice(&grp8_hdr.to_le_bytes());
+    payload.extend_from_slice(&700u16.to_le_bytes()); // Token 700: MATCH_ID
+    payload.extend_from_slice(&703u16.to_le_bytes()); // Token 703: MATCH_QUEUE_ID
+
+    payload.extend_from_slice(&match_id.to_le_bytes());
     payload.extend_from_slice(&queue_id.to_le_bytes());
-    payload.extend_from_slice(&launch_time.to_le_bytes());
 
     // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
     let mut frame = Vec::with_capacity(4 + payload.len());
@@ -327,7 +348,7 @@ mod tests {
         assert_eq!(func_id, 0x7a4036ab);
 
         let total_fields = u16::from_le_bytes([payload[5], payload[6]]);
-        assert_eq!(total_fields, 7);
+        assert_eq!(total_fields, 6);
 
         // Group 0x1000 check
         let grp1 = u16::from_le_bytes([payload[7], payload[8]]);
@@ -338,24 +359,27 @@ mod tests {
 
         // Group 0x3000 check
         let grp4 = u16::from_le_bytes([payload[12], payload[13]]);
-        assert_eq!(grp4, 0x3004);
-        let t26 = u16::from_le_bytes([payload[14], payload[15]]);
-        let t3 = u16::from_le_bytes([payload[16], payload[17]]);
-        let t8 = u16::from_le_bytes([payload[18], payload[19]]);
-        let t1868 = u16::from_le_bytes([payload[20], payload[21]]);
-        assert_eq!(t26, 26);
+        assert_eq!(grp4, 0x3002);
+        let t3 = u16::from_le_bytes([payload[14], payload[15]]);
+        let t739 = u16::from_le_bytes([payload[16], payload[17]]);
         assert_eq!(t3, 3);
-        assert_eq!(t8, 8);
-        assert_eq!(t1868, 1868);
+        assert_eq!(t739, 739);
 
-        let v26 = u32::from_le_bytes([payload[22], payload[23], payload[24], payload[25]]);
-        let v3 = u32::from_le_bytes([payload[26], payload[27], payload[28], payload[29]]);
-        let v8 = u32::from_le_bytes([payload[30], payload[31], payload[32], payload[33]]);
-        let v1868 = u32::from_le_bytes([payload[34], payload[35], payload[36], payload[37]]);
-        assert_eq!(v26, 0);
+        let v3 = u32::from_le_bytes([payload[18], payload[19], payload[20], payload[21]]);
+        let v739 = u32::from_le_bytes([payload[22], payload[23], payload[24], payload[25]]);
         assert_eq!(v3, 0);
-        assert_eq!(v8, 10001);
-        assert_eq!(v1868, 10001);
+        assert_eq!(v739, 60);
+
+        // Group 0x4000 check
+        let grp8 = u16::from_le_bytes([payload[26], payload[27]]);
+        assert_eq!(grp8, 0x4001);
+        let t26 = u16::from_le_bytes([payload[28], payload[29]]);
+        assert_eq!(t26, 26);
+        let v26 = u64::from_le_bytes([
+            payload[30], payload[31], payload[32], payload[33],
+            payload[34], payload[35], payload[36], payload[37],
+        ]);
+        assert_eq!(v26, 10001);
 
         // String 1 check: Token 7
         let str1_grp = u16::from_le_bytes([payload[38], payload[39]]);
@@ -366,12 +390,12 @@ mod tests {
         let str1_val = std::str::from_utf8(&payload[44..44 + str1_len]).unwrap();
         assert_eq!(str1_val, "IMMORTAL_SESSION_001");
 
-        // String 2 check: Token 1708
+        // String 2 check: Token 758
         let pos = 44 + str1_len;
         let str2_grp = u16::from_le_bytes([payload[pos], payload[pos + 1]]);
         assert_eq!(str2_grp, 0xa001);
         let str2_token = u16::from_le_bytes([payload[pos + 2], payload[pos + 3]]);
-        assert_eq!(str2_token, 1708);
+        assert_eq!(str2_token, 758);
         let str2_len = u16::from_le_bytes([payload[pos + 4], payload[pos + 5]]) as usize;
         let str2_val = std::str::from_utf8(&payload[pos + 6..pos + 6 + str2_len]).unwrap();
         assert_eq!(str2_val, "Fernando");
@@ -386,10 +410,11 @@ mod tests {
         let payload = &frame[4..];
 
         // Verify account_id
-        let v8 = u32::from_le_bytes([payload[30], payload[31], payload[32], payload[33]]);
-        let v1868 = u32::from_le_bytes([payload[34], payload[35], payload[36], payload[37]]);
-        assert_eq!(v8, 8302401);
-        assert_eq!(v1868, 8302401);
+        let v26 = u64::from_le_bytes([
+            payload[30], payload[31], payload[32], payload[33],
+            payload[34], payload[35], payload[36], payload[37],
+        ]);
+        assert_eq!(v26, 8302401);
 
         // Verify session_token
         let str1_len = u16::from_le_bytes([payload[42], payload[43]]) as usize;
@@ -398,6 +423,8 @@ mod tests {
 
         // Verify player_name
         let pos = 44 + str1_len;
+        let str2_token = u16::from_le_bytes([payload[pos + 2], payload[pos + 3]]);
+        assert_eq!(str2_token, 758);
         let str2_len = u16::from_le_bytes([payload[pos + 4], payload[pos + 5]]) as usize;
         let str2_val = std::str::from_utf8(&payload[pos + 6..pos + 6 + str2_len]).unwrap();
         assert_eq!(str2_val, "Cassie");
@@ -442,8 +469,8 @@ mod tests {
 
     #[test]
     fn test_create_mcts_match_status_frame_structure() { // agyis: no-mutant unit test
-        let frame = create_mcts_match_status_frame(434, 878850364, 120); // agyis: no-mutant
-        assert_eq!(frame.len(), 31); // agyis: no-mutant
+        let frame = create_mcts_match_status_frame(434, 878850364, 1, 120); // agyis: no-mutant
+        assert_eq!(frame.len(), 47); // agyis: no-mutant
 
         let length = u16::from_le_bytes([frame[0], frame[1]]) as usize; // agyis: no-mutant
         assert_eq!(length, frame.len() - 4); // agyis: no-mutant
@@ -453,27 +480,42 @@ mod tests {
         let payload = &frame[4..]; // agyis: no-mutant
         assert_eq!(payload[0], 0x00); // this[0x30] // agyis: no-mutant
         let func_id = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]); // agyis: no-mutant
-        assert_eq!(func_id, MCTS_FUNCTION_ID_ON_MATCH_STATUS); // agyis: no-mutant
-        assert_eq!(func_id, 0x2cdbafe1); // agyis: no-mutant
+        assert_eq!(func_id, MCTS_FUNCTION_ID_MATCH_STATUS); // agyis: no-mutant
+        assert_eq!(func_id, 0x392dcda5); // agyis: no-mutant
 
         let total_fields = u16::from_le_bytes([payload[5], payload[6]]); // agyis: no-mutant
-        assert_eq!(total_fields, 3); // agyis: no-mutant
+        assert_eq!(total_fields, 4); // agyis: no-mutant
 
         // Group 0x3000 check
         let grp4 = u16::from_le_bytes([payload[7], payload[8]]); // agyis: no-mutant
-        assert_eq!(grp4, 0x3003); // agyis: no-mutant
-        let t703 = u16::from_le_bytes([payload[9], payload[10]]); // agyis: no-mutant
-        let t36 = u16::from_le_bytes([payload[11], payload[12]]); // agyis: no-mutant
-        let t912 = u16::from_le_bytes([payload[13], payload[14]]); // agyis: no-mutant
-        assert_eq!(t703, 703); // agyis: no-mutant
-        assert_eq!(t36, 36); // agyis: no-mutant
-        assert_eq!(t912, 912); // agyis: no-mutant
+        assert_eq!(grp4, 0x3002); // agyis: no-mutant
+        let t1342 = u16::from_le_bytes([payload[9], payload[10]]); // agyis: no-mutant
+        let t1690 = u16::from_le_bytes([payload[11], payload[12]]); // agyis: no-mutant
+        assert_eq!(t1342, 1342); // agyis: no-mutant
+        assert_eq!(t1690, 1690); // agyis: no-mutant
 
-        let v703 = u32::from_le_bytes([payload[15], payload[16], payload[17], payload[18]]); // agyis: no-mutant
-        let v36 = u32::from_le_bytes([payload[19], payload[20], payload[21], payload[22]]); // agyis: no-mutant
-        let v912 = u32::from_le_bytes([payload[23], payload[24], payload[25], payload[26]]); // agyis: no-mutant
-        assert_eq!(v703, 878850364); // agyis: no-mutant
-        assert_eq!(v36, 434); // agyis: no-mutant
-        assert_eq!(v912, 120); // agyis: no-mutant
+        let v1342 = u32::from_le_bytes([payload[13], payload[14], payload[15], payload[16]]); // agyis: no-mutant
+        let v1690 = u32::from_le_bytes([payload[17], payload[18], payload[19], payload[20]]); // agyis: no-mutant
+        assert_eq!(v1342, 1); // agyis: no-mutant
+        assert_eq!(v1690, 120); // agyis: no-mutant
+
+        // Group 0x4000 check
+        let grp8 = u16::from_le_bytes([payload[21], payload[22]]); // agyis: no-mutant
+        assert_eq!(grp8, 0x4002); // agyis: no-mutant
+        let t700 = u16::from_le_bytes([payload[23], payload[24]]); // agyis: no-mutant
+        let t703 = u16::from_le_bytes([payload[25], payload[26]]); // agyis: no-mutant
+        assert_eq!(t700, 700); // agyis: no-mutant
+        assert_eq!(t703, 703); // agyis: no-mutant
+
+        let v700 = u64::from_le_bytes([
+            payload[27], payload[28], payload[29], payload[30],
+            payload[31], payload[32], payload[33], payload[34],
+        ]); // agyis: no-mutant
+        let v703 = u64::from_le_bytes([
+            payload[35], payload[36], payload[37], payload[38],
+            payload[39], payload[40], payload[41], payload[42],
+        ]); // agyis: no-mutant
+        assert_eq!(v700, 878850364); // agyis: no-mutant
+        assert_eq!(v703, 434); // agyis: no-mutant
     }
 }
