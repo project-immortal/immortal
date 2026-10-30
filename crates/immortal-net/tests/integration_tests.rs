@@ -316,7 +316,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     let s2_str = std::str::from_utf8(&payload[p2 + 6..p2 + 6 + s2_len]).unwrap();
     assert_eq!(s2_str, "Fernando");
 
-    // 3. Step 3: Expect authentic Live MCTS MATCH_STATUS wire frame (0x392dcda5, queue_id 0, match_id 0, match_lobby_state 0, launch_seconds 0)
+    // 3. Step 3: Expect authentic Live MCTS MATCH_STATUS wire frame (0x392dcda5, queue_id 0, match_id 0, match_lobby_state 0, launch_seconds 0, player_lobby_state 0, player_queue_state 0)
     stream.read_exact(&mut header_buf).await.unwrap();
     let status_frame_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
     let status_wire_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
@@ -329,30 +329,36 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(status_func_id, immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS);
     assert_eq!(status_func_id, 0x392dcda5);
     let field_count = u16::from_le_bytes([status_payload[5], status_payload[6]]);
-    assert_eq!(field_count, 4);
+    assert_eq!(field_count, 6);
 
-    // Group 0x3000: Token 1342 (match_lobby_state = 0), Token 1690 (launch_seconds = 0)
+    // Group 0x3000: Token 1342 (match_lobby_state = 0), Token 1690 (launch_seconds = 0), Token 1344 (player_lobby_state = 0), Token 2191 (player_queue_state = 0)
     let grp4 = u16::from_le_bytes([status_payload[7], status_payload[8]]);
-    assert_eq!(grp4, 0x3002);
+    assert_eq!(grp4, 0x3004);
     assert_eq!(u16::from_le_bytes([status_payload[9], status_payload[10]]), 1342);
     assert_eq!(u16::from_le_bytes([status_payload[11], status_payload[12]]), 1690);
-    let v1342 = u32::from_le_bytes([status_payload[13], status_payload[14], status_payload[15], status_payload[16]]);
-    let v1690 = u32::from_le_bytes([status_payload[17], status_payload[18], status_payload[19], status_payload[20]]);
+    assert_eq!(u16::from_le_bytes([status_payload[13], status_payload[14]]), 1344);
+    assert_eq!(u16::from_le_bytes([status_payload[15], status_payload[16]]), 2191);
+    let v1342 = u32::from_le_bytes([status_payload[17], status_payload[18], status_payload[19], status_payload[20]]);
+    let v1690 = u32::from_le_bytes([status_payload[21], status_payload[22], status_payload[23], status_payload[24]]);
+    let v1344 = u32::from_le_bytes([status_payload[25], status_payload[26], status_payload[27], status_payload[28]]);
+    let v2191 = u32::from_le_bytes([status_payload[29], status_payload[30], status_payload[31], status_payload[32]]);
     assert_eq!(v1342, 0); // match_lobby_state = 0
     assert_eq!(v1690, 0); // launch_seconds = 0
+    assert_eq!(v1344, 0); // player_lobby_state = 0
+    assert_eq!(v2191, 0); // player_queue_state = 0
 
     // Group 0x4000: Token 700 (match_id = 0), Token 703 (queue_id = 0)
-    let grp8 = u16::from_le_bytes([status_payload[21], status_payload[22]]);
+    let grp8 = u16::from_le_bytes([status_payload[33], status_payload[34]]);
     assert_eq!(grp8, 0x4002);
-    assert_eq!(u16::from_le_bytes([status_payload[23], status_payload[24]]), 700);
-    assert_eq!(u16::from_le_bytes([status_payload[25], status_payload[26]]), 703);
+    assert_eq!(u16::from_le_bytes([status_payload[35], status_payload[36]]), 700);
+    assert_eq!(u16::from_le_bytes([status_payload[37], status_payload[38]]), 703);
     let v700 = u64::from_le_bytes([
-        status_payload[27], status_payload[28], status_payload[29], status_payload[30],
-        status_payload[31], status_payload[32], status_payload[33], status_payload[34],
+        status_payload[39], status_payload[40], status_payload[41], status_payload[42],
+        status_payload[43], status_payload[44], status_payload[45], status_payload[46],
     ]);
     let v703 = u64::from_le_bytes([
-        status_payload[35], status_payload[36], status_payload[37], status_payload[38],
-        status_payload[39], status_payload[40], status_payload[41], status_payload[42],
+        status_payload[47], status_payload[48], status_payload[49], status_payload[50],
+        status_payload[51], status_payload[52], status_payload[53], status_payload[54],
     ]);
     assert_eq!(v700, 0); // match_id = 0
     assert_eq!(v703, 0); // queue_id = 0
@@ -381,17 +387,31 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         u32::from_le_bytes([status8_payload[1], status8_payload[2], status8_payload[3], status8_payload[4]]),
         immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS
     );
-    let s8_state = u32::from_le_bytes([status8_payload[13], status8_payload[14], status8_payload[15], status8_payload[16]]);
-    let s8_launch = u32::from_le_bytes([status8_payload[17], status8_payload[18], status8_payload[19], status8_payload[20]]);
+    assert_eq!(u16::from_le_bytes([status8_payload[5], status8_payload[6]]), 6);
+    assert_eq!(u16::from_le_bytes([status8_payload[7], status8_payload[8]]), 0x3004);
+    assert_eq!(u16::from_le_bytes([status8_payload[9], status8_payload[10]]), 1342);
+    assert_eq!(u16::from_le_bytes([status8_payload[11], status8_payload[12]]), 1690);
+    assert_eq!(u16::from_le_bytes([status8_payload[13], status8_payload[14]]), 1344);
+    assert_eq!(u16::from_le_bytes([status8_payload[15], status8_payload[16]]), 2191);
+    let s8_state = u32::from_le_bytes([status8_payload[17], status8_payload[18], status8_payload[19], status8_payload[20]]);
+    let s8_launch = u32::from_le_bytes([status8_payload[21], status8_payload[22], status8_payload[23], status8_payload[24]]);
+    let s8_player_lobby = u32::from_le_bytes([status8_payload[25], status8_payload[26], status8_payload[27], status8_payload[28]]);
+    let s8_player_queue = u32::from_le_bytes([status8_payload[29], status8_payload[30], status8_payload[31], status8_payload[32]]);
     assert_eq!(s8_state, 8);
     assert_eq!(s8_launch, 0);
+    assert_eq!(s8_player_lobby, 0);
+    assert_eq!(s8_player_queue, 0);
+
+    assert_eq!(u16::from_le_bytes([status8_payload[33], status8_payload[34]]), 0x4002);
+    assert_eq!(u16::from_le_bytes([status8_payload[35], status8_payload[36]]), 700);
+    assert_eq!(u16::from_le_bytes([status8_payload[37], status8_payload[38]]), 703);
     let s8_match_id = u64::from_le_bytes([
-        status8_payload[27], status8_payload[28], status8_payload[29], status8_payload[30],
-        status8_payload[31], status8_payload[32], status8_payload[33], status8_payload[34],
+        status8_payload[39], status8_payload[40], status8_payload[41], status8_payload[42],
+        status8_payload[43], status8_payload[44], status8_payload[45], status8_payload[46],
     ]);
     let s8_queue_id = u64::from_le_bytes([
-        status8_payload[35], status8_payload[36], status8_payload[37], status8_payload[38],
-        status8_payload[39], status8_payload[40], status8_payload[41], status8_payload[42],
+        status8_payload[47], status8_payload[48], status8_payload[49], status8_payload[50],
+        status8_payload[51], status8_payload[52], status8_payload[53], status8_payload[54],
     ]);
     assert_eq!(s8_match_id, 878850364);
     assert_eq!(s8_queue_id, 434);
@@ -408,20 +428,34 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         u32::from_le_bytes([status10_payload[1], status10_payload[2], status10_payload[3], status10_payload[4]]),
         immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS
     );
-    let s10_state = u32::from_le_bytes([status10_payload[13], status10_payload[14], status10_payload[15], status10_payload[16]]);
-    let s10_launch = u32::from_le_bytes([status10_payload[17], status10_payload[18], status10_payload[19], status10_payload[20]]);
+    assert_eq!(u16::from_le_bytes([status10_payload[5], status10_payload[6]]), 6);
+    assert_eq!(u16::from_le_bytes([status10_payload[7], status10_payload[8]]), 0x3004);
+    assert_eq!(u16::from_le_bytes([status10_payload[9], status10_payload[10]]), 1342);
+    assert_eq!(u16::from_le_bytes([status10_payload[11], status10_payload[12]]), 1690);
+    assert_eq!(u16::from_le_bytes([status10_payload[13], status10_payload[14]]), 1344);
+    assert_eq!(u16::from_le_bytes([status10_payload[15], status10_payload[16]]), 2191);
+    let s10_state = u32::from_le_bytes([status10_payload[17], status10_payload[18], status10_payload[19], status10_payload[20]]);
+    let s10_launch = u32::from_le_bytes([status10_payload[21], status10_payload[22], status10_payload[23], status10_payload[24]]);
+    let s10_player_lobby = u32::from_le_bytes([status10_payload[25], status10_payload[26], status10_payload[27], status10_payload[28]]);
+    let s10_player_queue = u32::from_le_bytes([status10_payload[29], status10_payload[30], status10_payload[31], status10_payload[32]]);
     assert_eq!(s10_state, 10);
     assert_eq!(s10_launch, 0);
+    assert_eq!(s10_player_lobby, 5);
+    assert_eq!(s10_player_queue, 7);
+
+    assert_eq!(u16::from_le_bytes([status10_payload[33], status10_payload[34]]), 0x4002);
+    assert_eq!(u16::from_le_bytes([status10_payload[35], status10_payload[36]]), 700);
+    assert_eq!(u16::from_le_bytes([status10_payload[37], status10_payload[38]]), 703);
     let s10_match_id = u64::from_le_bytes([
-        status10_payload[27], status10_payload[28], status10_payload[29], status10_payload[30],
-        status10_payload[31], status10_payload[32], status10_payload[33], status10_payload[34],
+        status10_payload[39], status10_payload[40], status10_payload[41], status10_payload[42],
+        status10_payload[43], status10_payload[44], status10_payload[45], status10_payload[46],
     ]);
     let s10_queue_id = u64::from_le_bytes([
-        status10_payload[35], status10_payload[36], status10_payload[37], status10_payload[38],
-        status10_payload[39], status10_payload[40], status10_payload[41], status10_payload[42],
+        status10_payload[47], status10_payload[48], status10_payload[49], status10_payload[50],
+        status10_payload[51], status10_payload[52], status10_payload[53], status10_payload[54],
     ]);
     assert_eq!(s10_match_id, 878850364);
-    assert_eq!(s10_queue_id, 434);
+    assert_eq!(s10_queue_id, 0);
 
     // (c) Champion Roster (Function ID 0xdb15d3d7, Table 249, Token 122)
     stream.read_exact(&mut header_buf).await.unwrap();
@@ -454,7 +488,44 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         assert_eq!(champ_id, expected_champ); // agyis: no-mutant
     }
 
-    // (d) PLAYER_SVC_CHANGE_MAP / ChangeMap (mapGameId=1615, instanceId=1282927737, compel=true)
+    // (d) PLAYER_SVC_CHANGE_MAP (mapGameId=1615, instanceId=1282927737, is_standalone=false)
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let svc_change_map_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let svc_change_map_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(svc_change_map_flags, 0x0000); // agyis: no-mutant
+    let mut svc_change_map_payload = vec![0u8; svc_change_map_len];
+    stream.read_exact(&mut svc_change_map_payload).await.unwrap();
+    assert_eq!(svc_change_map_payload[0], 0x00); // agyis: no-mutant
+    assert_eq!(&svc_change_map_payload[1..5], &[0x1f, 0x09, 0x90, 0xae]); // agyis: no-mutant
+    let svc_func_id = u32::from_le_bytes([
+        svc_change_map_payload[1], svc_change_map_payload[2], svc_change_map_payload[3], svc_change_map_payload[4],
+    ]); // agyis: no-mutant
+    assert_eq!(svc_func_id, immortal_net::MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP); // agyis: no-mutant
+    assert_eq!(svc_func_id, 0xae90091f); // agyis: no-mutant
+    let svc_total_fields = u16::from_le_bytes([svc_change_map_payload[5], svc_change_map_payload[6]]); // agyis: no-mutant
+    assert_eq!(svc_total_fields, 3); // agyis: no-mutant
+
+    // Group 0x1000: Token 1116 (is_standalone = false)
+    let svc_grp1 = u16::from_le_bytes([svc_change_map_payload[7], svc_change_map_payload[8]]); // agyis: no-mutant
+    assert_eq!(svc_grp1, 0x1001); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([svc_change_map_payload[9], svc_change_map_payload[10]]), 1116); // agyis: no-mutant
+    assert_eq!(svc_change_map_payload[11], 0); // is_standalone = false // agyis: no-mutant
+
+    // Group 0x3000: Token 682 (mapGameId = 1615), Token 11 (mapInstanceId = 1282927737)
+    let svc_grp4 = u16::from_le_bytes([svc_change_map_payload[12], svc_change_map_payload[13]]); // agyis: no-mutant
+    assert_eq!(svc_grp4, 0x3002); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([svc_change_map_payload[14], svc_change_map_payload[15]]), 682); // Token 682 // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([svc_change_map_payload[16], svc_change_map_payload[17]]), 11); // Token 11 // agyis: no-mutant
+    let svc_map_game_id = u32::from_le_bytes([
+        svc_change_map_payload[18], svc_change_map_payload[19], svc_change_map_payload[20], svc_change_map_payload[21],
+    ]); // agyis: no-mutant
+    assert_eq!(svc_map_game_id, immortal_net::MAP_GAME_ID_SHOOTING_RANGE); // agyis: no-mutant
+    let svc_map_instance_id = u32::from_le_bytes([
+        svc_change_map_payload[22], svc_change_map_payload[23], svc_change_map_payload[24], svc_change_map_payload[25],
+    ]); // agyis: no-mutant
+    assert_eq!(svc_map_instance_id, immortal_net::MAP_INSTANCE_ID_SHOOTING_RANGE); // agyis: no-mutant
+
+    // (e) CHANGE_MAP / RECEIVE_CHANGE_MAP (mapGameId=1615, instanceId=1282927737, compel=true)
     stream.read_exact(&mut header_buf).await.unwrap();
     let change_map_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
     let change_map_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
@@ -467,7 +538,6 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         change_map_payload[1], change_map_payload[2], change_map_payload[3], change_map_payload[4],
     ]); // agyis: no-mutant
     assert_eq!(change_map_func_id, immortal_net::MCTS_FUNCTION_ID_CHANGE_MAP); // agyis: no-mutant
-    assert_eq!(change_map_func_id, immortal_net::MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP); // agyis: no-mutant
     assert_eq!(change_map_func_id, immortal_net::MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP); // agyis: no-mutant
     assert_eq!(change_map_func_id, 0x48631f9a); // agyis: no-mutant
     let total_fields = u16::from_le_bytes([change_map_payload[5], change_map_payload[6]]); // agyis: no-mutant
