@@ -192,15 +192,17 @@ pub const MAP_GAME_ID_SHOOTING_RANGE: u32 = 1615;
 /// Default map instance ID observed in live shooting range sessions
 pub const MAP_INSTANCE_ID_SHOOTING_RANGE: u32 = 1282927737;
 
-/// Authentic Function ID for `PLAYER_SVC_CHANGE_MAP` (0xae90091f BE / 0x1f0990ae LE).
-/// Reverse engineered from `MctsInterface.dll` / `ShippingPC-ChaosGame.exe` function tables
-/// (CMarshal::SetFunction lookup, raw wire bytes [0xae, 0x90, 0x09, 0x1f]).
-pub const MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP: u32 = 0xae90091f;
-pub const MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP_BE: u32 = 0xae90091f;
-pub const MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP_LE: u32 = 0x1f0990ae;
+/// Authentic Function ID for `ChangeMap` / `PLAYER_SVC_CHANGE_MAP` (0x48631f9a).
+/// Reverse engineered from `MctsInterface.dll` (?ChangeMap@CMctsClient@@UEAA_NK_NVCMctsNetId@@@Z at 0x1800c65b0)
+/// and `ShippingPC-ChaosGame.exe` (FUN_140082be0 at 0x140082be0).
+/// Wire LE bytes: [0x9a, 0x1f, 0x63, 0x48].
+pub const MCTS_FUNCTION_ID_CHANGE_MAP: u32 = 0x48631f9a;
 
-/// Backwards compatibility alias for `MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP`.
-pub const MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP: u32 = MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP;
+/// Backwards compatibility aliases for `MCTS_FUNCTION_ID_CHANGE_MAP`.
+pub const MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP: u32 = MCTS_FUNCTION_ID_CHANGE_MAP;
+pub const MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP_BE: u32 = 0x9a1f6348;
+pub const MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP_LE: u32 = MCTS_FUNCTION_ID_CHANGE_MAP;
+pub const MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP: u32 = MCTS_FUNCTION_ID_CHANGE_MAP;
 
 /// Live MCTS Champion Selection acknowledgment wire frame (Frame 2554 from PCAP: 19 bytes)
 pub const MCTS_CHAMPION_SELECT_ACK_FRAME: [u8; 19] = [
@@ -208,49 +210,54 @@ pub const MCTS_CHAMPION_SELECT_ACK_FRAME: [u8; 19] = [
     0x99, 0x9d, 0xf4,
 ];
 
-/// Builds an authentic live MCTS `PLAYER_SVC_CHANGE_MAP` wire frame for `CMctsNetwork`.
+/// Builds an authentic live MCTS `ChangeMap` wire frame for `CMctsNetwork`.
 ///
-/// Matches reverse engineered `CMarshalRow::Store` specification (`FUN_140d3fc20` and `FUN_141576a00`):
+/// Matches reverse engineered `CMctsClient::ChangeMap` and `CMarshalRow::Store` specification:
 /// - Prefix: byte `0x00` (`this[0x30]`)
-/// - Function ID: `0xae90091f` (`MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP`, raw bytes `[0xae, 0x90, 0x09, 0x1f]`)
-/// - CMarshalRow field count: 3 (1 bool field + 2 uint32 fields)
+/// - Function ID: `0x48631f9a` (`MCTS_FUNCTION_ID_CHANGE_MAP`, wire LE `[0x9a, 0x1f, 0x63, 0x48]`)
+/// - CMarshalRow field count: 3 (1 bool field + 1 uint32 field + 1 uint64 field)
 /// - Group 0x1000 (1-byte fields):
 ///   - Header: `0x1001` (group 0x1000 | 1)
-///   - Token 1116 (u16): bool abort_map_load (0x01 u8 if abort, 0x00 u8 if allow load)
+///   - Token 1536 (0x0600): compel bool (0x01 u8 if compel, 0x00 u8 otherwise)
 /// - Group 0x3000 (4-byte fields):
-///   - Header: `0x3002` (group 0x3000 | 2)
-///   - Token 682 (u16): map_game_id
-///   - Token 11 (u16): map_instance_id
+///   - Header: `0x3001` (group 0x3000 | 1)
+///   - Token 682 (0x02aa): mapGameId (u32 little-endian)
+/// - Group 0x4000 (8-byte fields):
+///   - Header: `0x4001` (group 0x4000 | 1)
+///   - Token 685 (0x02ad): mapInstanceId / netId (u64 little-endian)
 /// - TCP Framing:
 ///   - Length: payload length (u16 little-endian)
 ///   - Wire flags: `0x0000` (u16 little-endian)
 ///   - Followed by payload bytes
 pub fn create_mcts_change_map_frame(
     map_game_id: u32,
-    map_instance_id: u32,
-    abort_map_load: bool,
+    map_instance_id: u64,
+    compel: bool,
 ) -> Vec<u8> {
     let mut payload = Vec::with_capacity(32);
     payload.push(0x00); // this[0x30]
-    payload.extend_from_slice(&MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP.to_be_bytes());
+    payload.extend_from_slice(&MCTS_FUNCTION_ID_CHANGE_MAP.to_le_bytes());
 
-    // CMarshalRow: total fields = 3 (1 byte field + 2 dword fields)
+    // CMarshalRow: total fields = 3 (1 bool field + 1 dword field + 1 qword field)
     let total_fields: u16 = 3;
     payload.extend_from_slice(&total_fields.to_le_bytes());
 
     // Group 0x1000 (1-byte fields: 1 field)
     let grp1_hdr: u16 = 0x1000 | 1;
     payload.extend_from_slice(&grp1_hdr.to_le_bytes());
-    payload.extend_from_slice(&1116u16.to_le_bytes()); // Token 1116: abort_map_load (0x00 = proceed)
-    payload.push(if abort_map_load { 0x01 } else { 0x00 });
+    payload.extend_from_slice(&1536u16.to_le_bytes()); // Token 1536 (0x0600): compel
+    payload.push(if compel { 0x01 } else { 0x00 });
 
-    // Group 0x3000 (4-byte fields: 2 fields)
-    let grp4_hdr: u16 = 0x3000 | 2;
+    // Group 0x3000 (4-byte fields: 1 field)
+    let grp4_hdr: u16 = 0x3000 | 1;
     payload.extend_from_slice(&grp4_hdr.to_le_bytes());
-    payload.extend_from_slice(&682u16.to_le_bytes()); // Token 682: mapGameId
-    payload.extend_from_slice(&11u16.to_le_bytes());  // Token 11: mapInstanceId
-
+    payload.extend_from_slice(&682u16.to_le_bytes()); // Token 682 (0x02aa): mapGameId
     payload.extend_from_slice(&map_game_id.to_le_bytes());
+
+    // Group 0x4000 (8-byte fields: 1 field)
+    let grp8_hdr: u16 = 0x4000 | 1;
+    payload.extend_from_slice(&grp8_hdr.to_le_bytes());
+    payload.extend_from_slice(&685u16.to_le_bytes()); // Token 685 (0x02ad): mapInstanceId / netId
     payload.extend_from_slice(&map_instance_id.to_le_bytes());
 
     // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
@@ -503,7 +510,7 @@ mod tests {
 
     #[test]
     fn test_create_mcts_change_map_frame_structure() { // agyis: no-mutant unit test
-        let frame = create_mcts_change_map_frame(1615, 1282927737, false); // agyis: no-mutant
+        let frame = create_mcts_change_map_frame(1615, 1282927737, true); // agyis: no-mutant
         let length = u16::from_le_bytes([frame[0], frame[1]]) as usize; // agyis: no-mutant
         assert_eq!(length, frame.len() - 4); // agyis: no-mutant
         let flags = u16::from_le_bytes([frame[2], frame[3]]); // agyis: no-mutant
@@ -511,37 +518,41 @@ mod tests {
 
         let payload = &frame[4..]; // agyis: no-mutant
         assert_eq!(payload[0], 0x00); // agyis: no-mutant
-        assert_eq!(&payload[1..5], &[0xae, 0x90, 0x09, 0x1f]); // agyis: no-mutant
-        let func_id_be = u32::from_be_bytes([payload[1], payload[2], payload[3], payload[4]]); // agyis: no-mutant
-        assert_eq!(func_id_be, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP); // agyis: no-mutant
-        assert_eq!(func_id_be, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP); // agyis: no-mutant
-        assert_eq!(func_id_be, 0xae90091f); // agyis: no-mutant
+        assert_eq!(&payload[1..5], &[0x9a, 0x1f, 0x63, 0x48]); // agyis: no-mutant
         let func_id_le = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]); // agyis: no-mutant
-        assert_eq!(func_id_le, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP_LE); // agyis: no-mutant
-        assert_eq!(func_id_le, 0x1f0990ae); // agyis: no-mutant
+        assert_eq!(func_id_le, MCTS_FUNCTION_ID_CHANGE_MAP); // agyis: no-mutant
+        assert_eq!(func_id_le, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP); // agyis: no-mutant
+        assert_eq!(func_id_le, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP); // agyis: no-mutant
+        assert_eq!(func_id_le, 0x48631f9a); // agyis: no-mutant
 
         let total_fields = u16::from_le_bytes([payload[5], payload[6]]); // agyis: no-mutant
         assert_eq!(total_fields, 3); // agyis: no-mutant
 
-        // Group 1: Token 1116 (abort_map_load = false / 0x00)
+        // Group 1: Token 1536 (compel = true / 0x01)
         let grp1 = u16::from_le_bytes([payload[7], payload[8]]); // agyis: no-mutant
         assert_eq!(grp1, 0x1001); // agyis: no-mutant
-        let t1116 = u16::from_le_bytes([payload[9], payload[10]]); // agyis: no-mutant
-        assert_eq!(t1116, 1116); // agyis: no-mutant
-        assert_eq!(payload[11], 0); // abort_map_load = false // agyis: no-mutant
+        let t1536 = u16::from_le_bytes([payload[9], payload[10]]); // agyis: no-mutant
+        assert_eq!(t1536, 1536); // agyis: no-mutant
+        assert_eq!(payload[11], 1); // compel = true // agyis: no-mutant
 
-        // Group 4: Token 682, Token 11
+        // Group 4: Token 682 (mapGameId = 1615)
         let grp4 = u16::from_le_bytes([payload[12], payload[13]]); // agyis: no-mutant
-        assert_eq!(grp4, 0x3002); // agyis: no-mutant
+        assert_eq!(grp4, 0x3001); // agyis: no-mutant
         let t682 = u16::from_le_bytes([payload[14], payload[15]]); // agyis: no-mutant
-        let t11 = u16::from_le_bytes([payload[16], payload[17]]); // agyis: no-mutant
         assert_eq!(t682, 682); // agyis: no-mutant
-        assert_eq!(t11, 11); // agyis: no-mutant
-
-        let v682 = u32::from_le_bytes([payload[18], payload[19], payload[20], payload[21]]); // agyis: no-mutant
-        let v11 = u32::from_le_bytes([payload[22], payload[23], payload[24], payload[25]]); // agyis: no-mutant
+        let v682 = u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]]); // agyis: no-mutant
         assert_eq!(v682, 1615); // agyis: no-mutant
-        assert_eq!(v11, 1282927737); // agyis: no-mutant
+
+        // Group 8: Token 685 (mapInstanceId = 1282927737)
+        let grp8 = u16::from_le_bytes([payload[20], payload[21]]); // agyis: no-mutant
+        assert_eq!(grp8, 0x4001); // agyis: no-mutant
+        let t685 = u16::from_le_bytes([payload[22], payload[23]]); // agyis: no-mutant
+        assert_eq!(t685, 685); // agyis: no-mutant
+        let v685 = u64::from_le_bytes([
+            payload[24], payload[25], payload[26], payload[27],
+            payload[28], payload[29], payload[30], payload[31],
+        ]); // agyis: no-mutant
+        assert_eq!(v685, 1282927737); // agyis: no-mutant
     }
 
     #[test]

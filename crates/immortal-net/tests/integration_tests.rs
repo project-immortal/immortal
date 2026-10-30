@@ -454,7 +454,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         assert_eq!(champ_id, expected_champ); // agyis: no-mutant
     }
 
-    // (d) PLAYER_SVC_CHANGE_MAP (mapGameId=1615, instanceId=1282927737, abort_map_load=false)
+    // (d) PLAYER_SVC_CHANGE_MAP / ChangeMap (mapGameId=1615, instanceId=1282927737, compel=true)
     stream.read_exact(&mut header_buf).await.unwrap();
     let change_map_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
     let change_map_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
@@ -462,24 +462,41 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     let mut change_map_payload = vec![0u8; change_map_len];
     stream.read_exact(&mut change_map_payload).await.unwrap();
     assert_eq!(change_map_payload[0], 0x00); // agyis: no-mutant
-    assert_eq!(&change_map_payload[1..5], &[0xae, 0x90, 0x09, 0x1f]); // agyis: no-mutant
-    let change_map_func_id = u32::from_be_bytes([
+    assert_eq!(&change_map_payload[1..5], &[0x9a, 0x1f, 0x63, 0x48]); // agyis: no-mutant
+    let change_map_func_id = u32::from_le_bytes([
         change_map_payload[1], change_map_payload[2], change_map_payload[3], change_map_payload[4],
     ]); // agyis: no-mutant
+    assert_eq!(change_map_func_id, immortal_net::MCTS_FUNCTION_ID_CHANGE_MAP); // agyis: no-mutant
     assert_eq!(change_map_func_id, immortal_net::MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP); // agyis: no-mutant
     assert_eq!(change_map_func_id, immortal_net::MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP); // agyis: no-mutant
-    assert_eq!(change_map_func_id, 0xae90091f); // agyis: no-mutant
-    assert_eq!(change_map_payload[11], 0); // Token 1116 = 0x00 (do not abort) // agyis: no-mutant
+    assert_eq!(change_map_func_id, 0x48631f9a); // agyis: no-mutant
+    let total_fields = u16::from_le_bytes([change_map_payload[5], change_map_payload[6]]); // agyis: no-mutant
+    assert_eq!(total_fields, 3); // agyis: no-mutant
+
+    // Group 0x1000: Token 1536 (compel = true)
+    let grp1 = u16::from_le_bytes([change_map_payload[7], change_map_payload[8]]); // agyis: no-mutant
+    assert_eq!(grp1, 0x1001); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([change_map_payload[9], change_map_payload[10]]), 1536); // agyis: no-mutant
+    assert_eq!(change_map_payload[11], 1); // Token 1536 = 0x01 (compel) // agyis: no-mutant
+
+    // Group 0x3000: Token 682 (mapGameId = 1615)
+    let grp4 = u16::from_le_bytes([change_map_payload[12], change_map_payload[13]]); // agyis: no-mutant
+    assert_eq!(grp4, 0x3001); // agyis: no-mutant
     assert_eq!(u16::from_le_bytes([change_map_payload[14], change_map_payload[15]]), 682); // Token 682 // agyis: no-mutant
-    assert_eq!(u16::from_le_bytes([change_map_payload[16], change_map_payload[17]]), 11); // Token 11 // agyis: no-mutant
     let map_game_id = u32::from_le_bytes([
-        change_map_payload[18], change_map_payload[19], change_map_payload[20], change_map_payload[21],
-    ]); // agyis: no-mutant
-    let map_instance_id = u32::from_le_bytes([
-        change_map_payload[22], change_map_payload[23], change_map_payload[24], change_map_payload[25],
+        change_map_payload[16], change_map_payload[17], change_map_payload[18], change_map_payload[19],
     ]); // agyis: no-mutant
     assert_eq!(map_game_id, immortal_net::MAP_GAME_ID_SHOOTING_RANGE); // agyis: no-mutant
-    assert_eq!(map_instance_id, immortal_net::MAP_INSTANCE_ID_SHOOTING_RANGE); // agyis: no-mutant
+
+    // Group 0x4000: Token 685 (mapInstanceId = 1282927737)
+    let grp8 = u16::from_le_bytes([change_map_payload[20], change_map_payload[21]]); // agyis: no-mutant
+    assert_eq!(grp8, 0x4001); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([change_map_payload[22], change_map_payload[23]]), 685); // Token 685 // agyis: no-mutant
+    let map_instance_id = u64::from_le_bytes([
+        change_map_payload[24], change_map_payload[25], change_map_payload[26], change_map_payload[27],
+        change_map_payload[28], change_map_payload[29], change_map_payload[30], change_map_payload[31],
+    ]); // agyis: no-mutant
+    assert_eq!(map_instance_id, immortal_net::MAP_INSTANCE_ID_SHOOTING_RANGE as u64); // agyis: no-mutant
 
     // 5. Step 5: Subsequent post-login frame responds with MCTS_CHAMPION_SELECT_ACK_FRAME
     stream.write_all(&champ_frame).await.unwrap();
