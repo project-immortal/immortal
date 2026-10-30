@@ -107,7 +107,7 @@ pub const MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE: u32 = 0x7a4036ab;
 /// Format matches reverse engineered `CMarshalRow::Store` specification:
 /// - Prefix: byte `0x00` (`this[0x30]`)
 /// - Function ID: `0x7a4036ab` (`MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE`) in little-endian u32
-/// - CMarshalRow field count: 6 (u16 little-endian)
+/// - CMarshalRow field count: 7 (u16 little-endian)
 /// - Group 0x1000 (1-byte fields):
 ///   - Header: `0x1001` (group 0x1000 | 1)
 ///   - Token 2 (u16): bool true (0x01 u8)
@@ -116,7 +116,8 @@ pub const MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE: u32 = 0x7a4036ab;
 ///   - Tokens: 3, 739 (u16 each)
 ///   - Values: 0, 60 (u32 each, little-endian)
 /// - Group 0x4000 (8-byte fields):
-///   - Header: `0x4001` (group 0x4000 | 1)
+///   - Header: `0x4002` (group 0x4000 | 2)
+///   - Token 11 (u16): player_id / local NetId (u64 little-endian)
 ///   - Token 26 (u16): account_id (u64 little-endian)
 /// - Group 0xa000 (UTF-8 string fields, count 1 each):
 ///   - Header: `0xa001`
@@ -139,8 +140,8 @@ pub fn create_mcts_login_response_frame(
     payload.push(0x00); // this[0x30]
     payload.extend_from_slice(&MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE.to_le_bytes());
 
-    // CMarshalRow: total fields = 6 (1 byte field + 2 dword fields + 1 qword field + 2 string fields)
-    let total_fields: u16 = 6;
+    // CMarshalRow: total fields = 7 (1 byte field + 2 dword fields + 2 qword fields + 2 string fields)
+    let total_fields: u16 = 7;
     payload.extend_from_slice(&total_fields.to_le_bytes());
 
     // Group 0x1000 (1-byte fields: 1 field)
@@ -158,11 +159,14 @@ pub fn create_mcts_login_response_frame(
     payload.extend_from_slice(&0u32.to_le_bytes());  // Token 3 = 0
     payload.extend_from_slice(&60u32.to_le_bytes()); // Token 739 = 60
 
-    // Group 0x4000 (8-byte fields: 1 field)
-    let grp8_hdr: u16 = 0x4000 | 1;
+    // Group 0x4000 (8-byte fields: 2 fields)
+    let grp8_hdr: u16 = 0x4000 | 2;
     payload.extend_from_slice(&grp8_hdr.to_le_bytes());
+    payload.extend_from_slice(&11u16.to_le_bytes()); // Token 11: MCTS_TOKEN_PLAYER_ID (local NetId)
     payload.extend_from_slice(&26u16.to_le_bytes()); // Token 26: ACCOUNT_ID
-    payload.extend_from_slice(&account_id.to_le_bytes()); // account_id as u64
+
+    payload.extend_from_slice(&account_id.to_le_bytes()); // Token 11 value (u64 player NetId)
+    payload.extend_from_slice(&account_id.to_le_bytes()); // Token 26 value (u64 account ID)
 
     // String field 7: session_token
     payload.extend_from_slice(&0xa001u16.to_le_bytes());
@@ -848,7 +852,7 @@ mod tests {
     #[test]
     fn test_create_mcts_login_response_frame_structure() {
         let frame = create_mcts_login_response_frame(10001, "Fernando", "IMMORTAL_SESSION_001");
-        assert_eq!(frame.len(), 82);
+        assert_eq!(frame.len(), 92);
 
         // Header check: 4 bytes [length: u16, flags: u16]
         let length = u16::from_le_bytes([frame[0], frame[1]]);
@@ -864,7 +868,7 @@ mod tests {
         assert_eq!(func_id, 0x7a4036ab);
 
         let total_fields = u16::from_le_bytes([payload[5], payload[6]]);
-        assert_eq!(total_fields, 6);
+        assert_eq!(total_fields, 7);
 
         // Group 0x1000 check
         let grp1 = u16::from_le_bytes([payload[7], payload[8]]);
@@ -886,28 +890,35 @@ mod tests {
         assert_eq!(v3, 0);
         assert_eq!(v739, 60);
 
-        // Group 0x4000 check
+        // Group 0x4000 check: 2 fields (Token 11 and Token 26)
         let grp8 = u16::from_le_bytes([payload[26], payload[27]]);
-        assert_eq!(grp8, 0x4001);
-        let t26 = u16::from_le_bytes([payload[28], payload[29]]);
+        assert_eq!(grp8, 0x4002);
+        let t11 = u16::from_le_bytes([payload[28], payload[29]]);
+        let t26 = u16::from_le_bytes([payload[30], payload[31]]);
+        assert_eq!(t11, 11);
         assert_eq!(t26, 26);
-        let v26 = u64::from_le_bytes([
-            payload[30], payload[31], payload[32], payload[33],
-            payload[34], payload[35], payload[36], payload[37],
+        let v11 = u64::from_le_bytes([
+            payload[32], payload[33], payload[34], payload[35],
+            payload[36], payload[37], payload[38], payload[39],
         ]);
+        let v26 = u64::from_le_bytes([
+            payload[40], payload[41], payload[42], payload[43],
+            payload[44], payload[45], payload[46], payload[47],
+        ]);
+        assert_eq!(v11, 10001);
         assert_eq!(v26, 10001);
 
         // String 1 check: Token 7
-        let str1_grp = u16::from_le_bytes([payload[38], payload[39]]);
+        let str1_grp = u16::from_le_bytes([payload[48], payload[49]]);
         assert_eq!(str1_grp, 0xa001);
-        let str1_token = u16::from_le_bytes([payload[40], payload[41]]);
+        let str1_token = u16::from_le_bytes([payload[50], payload[51]]);
         assert_eq!(str1_token, 7);
-        let str1_len = u16::from_le_bytes([payload[42], payload[43]]) as usize;
-        let str1_val = std::str::from_utf8(&payload[44..44 + str1_len]).unwrap();
+        let str1_len = u16::from_le_bytes([payload[52], payload[53]]) as usize;
+        let str1_val = std::str::from_utf8(&payload[54..54 + str1_len]).unwrap();
         assert_eq!(str1_val, "IMMORTAL_SESSION_001");
 
         // String 2 check: Token 758
-        let pos = 44 + str1_len;
+        let pos = 54 + str1_len;
         let str2_grp = u16::from_le_bytes([payload[pos], payload[pos + 1]]);
         assert_eq!(str2_grp, 0xa001);
         let str2_token = u16::from_le_bytes([payload[pos + 2], payload[pos + 3]]);
@@ -925,20 +936,25 @@ mod tests {
         assert_eq!(length, frame.len() - 4);
         let payload = &frame[4..];
 
-        // Verify account_id
-        let v26 = u64::from_le_bytes([
-            payload[30], payload[31], payload[32], payload[33],
-            payload[34], payload[35], payload[36], payload[37],
+        // Verify local NetId (Token 11) and account_id (Token 26)
+        let v11 = u64::from_le_bytes([
+            payload[32], payload[33], payload[34], payload[35],
+            payload[36], payload[37], payload[38], payload[39],
         ]);
+        let v26 = u64::from_le_bytes([
+            payload[40], payload[41], payload[42], payload[43],
+            payload[44], payload[45], payload[46], payload[47],
+        ]);
+        assert_eq!(v11, 8302401);
         assert_eq!(v26, 8302401);
 
         // Verify session_token
-        let str1_len = u16::from_le_bytes([payload[42], payload[43]]) as usize;
-        let str1_val = std::str::from_utf8(&payload[44..44 + str1_len]).unwrap();
+        let str1_len = u16::from_le_bytes([payload[52], payload[53]]) as usize;
+        let str1_val = std::str::from_utf8(&payload[54..54 + str1_len]).unwrap();
         assert_eq!(str1_val, "DEV_TOKEN_42");
 
         // Verify player_name
-        let pos = 44 + str1_len;
+        let pos = 54 + str1_len;
         let str2_token = u16::from_le_bytes([payload[pos + 2], payload[pos + 3]]);
         assert_eq!(str2_token, 758);
         let str2_len = u16::from_le_bytes([payload[pos + 4], payload[pos + 5]]) as usize;

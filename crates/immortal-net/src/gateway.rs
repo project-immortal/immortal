@@ -328,18 +328,18 @@ async fn handle_connection(
                 &config.session_token,
             );
             stream.write_all(&login_frame).await?;
-            stream.flush().await?;
-            info!(
-                "Sent Live MCTS Chunk 2 ACK, Chunk 3 Session, and OnLoginResponse (account_id={}, player_name={}) to {}",
-                config.account_id, config.player_name, peer_addr
-            );
 
             // Emit OnMatchStatus frame declaring initial lobby state (queue_id 0, match_id 0, match_lobby_state 0, launch_seconds 0, player_lobby_state 0, player_queue_state 0)
-            let match_status_frame = create_mcts_match_status_frame(0, 0, 0, 0, 0, 0);
-            stream.write_all(&match_status_frame).await?;
+            let initial_status_frame = create_mcts_match_status_frame(0, 0, 0, 0, 0, 0);
+            stream.write_all(&initial_status_frame).await?;
+
+            // Emit initial champion roster frame granting playable champions
+            let initial_champion_roster =
+                create_mcts_champion_roster_frame(&[1026, 1024, 1025, 1027, BOT_ID_FERNANDO]);
+            stream.write_all(&initial_champion_roster).await?;
             stream.flush().await?;
-            info!( // agyis: no-mutant logging
-                "Sent Live MCTS OnMatchStatus initial lobby frame (0, 0, 0, 0, 0, 0) to {}",
+            info!(
+                "Sent Live MCTS Chunk 2 ACK, Chunk 3 Session, OnLoginResponse, OnMatchStatus, and Initial Champion Roster to {}",
                 peer_addr
             );
             login_completed = true;

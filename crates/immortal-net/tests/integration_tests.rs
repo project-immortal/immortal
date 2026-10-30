@@ -275,7 +275,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(func_id, 0x7a4036ab);
 
     let field_count = u16::from_le_bytes([payload[5], payload[6]]);
-    assert_eq!(field_count, 6);
+    assert_eq!(field_count, 7);
 
     // Group 0x1000: Field 2 (bool true)
     let grp1 = u16::from_le_bytes([payload[7], payload[8]]);
@@ -291,25 +291,31 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(u32::from_le_bytes([payload[18], payload[19], payload[20], payload[21]]), 0); // Token 3 = 0
     assert_eq!(u32::from_le_bytes([payload[22], payload[23], payload[24], payload[25]]), 60); // Token 739 = 60
 
-    // Group 0x4000: Field 26 (account_id as u64)
+    // Group 0x4000: Field 11 (MCTS_TOKEN_PLAYER_ID) and Field 26 (ACCOUNT_ID)
     let grp8 = u16::from_le_bytes([payload[26], payload[27]]);
-    assert_eq!(grp8, 0x4001);
-    assert_eq!(u16::from_le_bytes([payload[28], payload[29]]), 26);
-    let v26 = u64::from_le_bytes([
-        payload[30], payload[31], payload[32], payload[33],
-        payload[34], payload[35], payload[36], payload[37],
+    assert_eq!(grp8, 0x4002);
+    assert_eq!(u16::from_le_bytes([payload[28], payload[29]]), 11);
+    assert_eq!(u16::from_le_bytes([payload[30], payload[31]]), 26);
+    let v11 = u64::from_le_bytes([
+        payload[32], payload[33], payload[34], payload[35],
+        payload[36], payload[37], payload[38], payload[39],
     ]);
+    let v26 = u64::from_le_bytes([
+        payload[40], payload[41], payload[42], payload[43],
+        payload[44], payload[45], payload[46], payload[47],
+    ]);
+    assert_eq!(v11, 8302401);
     assert_eq!(v26, 8302401);
 
     // String 1: Token 7 (session_token)
-    assert_eq!(u16::from_le_bytes([payload[38], payload[39]]), 0xa001);
-    assert_eq!(u16::from_le_bytes([payload[40], payload[41]]), 7);
-    let s1_len = u16::from_le_bytes([payload[42], payload[43]]) as usize;
-    let s1_str = std::str::from_utf8(&payload[44..44 + s1_len]).unwrap();
+    assert_eq!(u16::from_le_bytes([payload[48], payload[49]]), 0xa001);
+    assert_eq!(u16::from_le_bytes([payload[50], payload[51]]), 7);
+    let s1_len = u16::from_le_bytes([payload[52], payload[53]]) as usize;
+    let s1_str = std::str::from_utf8(&payload[54..54 + s1_len]).unwrap();
     assert_eq!(s1_str, "IMMORTAL-DEV-SESSION-TICKET");
 
     // String 2: Token 758 (player_name)
-    let p2 = 44 + s1_len;
+    let p2 = 54 + s1_len;
     assert_eq!(u16::from_le_bytes([payload[p2], payload[p2 + 1]]), 0xa001);
     assert_eq!(u16::from_le_bytes([payload[p2 + 2], payload[p2 + 3]]), 758);
     let s2_len = u16::from_le_bytes([payload[p2 + 4], payload[p2 + 5]]) as usize;
@@ -362,6 +368,23 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     ]);
     assert_eq!(v700, 0); // match_id = 0
     assert_eq!(v703, 0); // queue_id = 0
+
+    // Step 3b: Expect authentic Live MCTS CHAMPION_ROSTER wire frame (Table 249, 5 champions: [1026, 1024, 1025, 1027, BOT_ID_FERNANDO])
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let roster_frame_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let roster_wire_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(roster_wire_flags, 0x0000);
+
+    let mut roster_payload = vec![0u8; roster_frame_len];
+    stream.read_exact(&mut roster_payload).await.unwrap();
+    assert_eq!(roster_payload[0], 0x00);
+    let roster_func_id = u32::from_le_bytes([roster_payload[1], roster_payload[2], roster_payload[3], roster_payload[4]]);
+    assert_eq!(roster_func_id, immortal_net::MCTS_FUNCTION_ID_CHAMPION_ROSTER);
+    assert_eq!(roster_func_id, 0xdb15d3d7);
+    assert_eq!(u16::from_le_bytes([roster_payload[5], roster_payload[6]]), 1); // 1 table field
+    assert_eq!(u16::from_le_bytes([roster_payload[7], roster_payload[8]]), 0x6001); // Group 0x6000 | 1
+    assert_eq!(u16::from_le_bytes([roster_payload[9], roster_payload[10]]), 249); // Table 249
+    assert_eq!(u16::from_le_bytes([roster_payload[11], roster_payload[12]]), 5); // 5 rows
 
     // 4. Step 4: Client sends first post-login frame (e.g. champion select or queue request)
     let mut champ_frame = Vec::new();
