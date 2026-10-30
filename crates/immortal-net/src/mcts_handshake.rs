@@ -251,6 +251,59 @@ pub fn create_mcts_change_map_frame(
     frame
 }
 
+/// Authentic Function ID for `CMctsNetwork::OnMatchStatus` (0x2cdbafe1).
+pub const MCTS_FUNCTION_ID_ON_MATCH_STATUS: u32 = 0x2cdbafe1;
+
+/// Builds an authentic live MCTS `OnMatchStatus` wire frame for `CMctsNetwork::OnMatchStatus`.
+///
+/// Matches reverse engineered `CMarshalRow::Store` specification for Table 0xf2/242:
+/// - Prefix: byte `0x00` (`this[0x30]`)
+/// - Function ID: `0x2cdbafe1` (`MCTS_FUNCTION_ID_ON_MATCH_STATUS`) in little-endian u32
+/// - CMarshalRow field count: 3 (3 uint32 fields in Group 0x3000)
+/// - Group 0x3000 (4-byte fields):
+///   - Header: `0x3003` (group 0x3000 | 3)
+///   - Token 703 (u16): match_id
+///   - Token 36 (u16): queue_id
+///   - Token 912 (u16): launch_time
+///   - Values: match_id (lower 32-bits), queue_id, launch_time
+/// - TCP Framing:
+///   - Length: payload length (u16 little-endian)
+///   - Wire flags: `0x0000` (u16 little-endian)
+///   - Followed by payload bytes
+pub fn create_mcts_match_status_frame(
+    queue_id: u32,
+    match_id: u64,
+    launch_time: u32,
+) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(32);
+    payload.push(0x00); // this[0x30]
+    payload.extend_from_slice(&MCTS_FUNCTION_ID_ON_MATCH_STATUS.to_le_bytes());
+
+    // CMarshalRow: total fields = 3 (3 dword fields for Table 0xf2/242)
+    let total_fields: u16 = 3;
+    payload.extend_from_slice(&total_fields.to_le_bytes());
+
+    // Group 0x3000 (4-byte fields: 3 fields)
+    let grp4_hdr: u16 = 0x3000 | 3;
+    payload.extend_from_slice(&grp4_hdr.to_le_bytes());
+    payload.extend_from_slice(&703u16.to_le_bytes()); // Token 703: match_id
+    payload.extend_from_slice(&36u16.to_le_bytes());  // Token 36: queue_id
+    payload.extend_from_slice(&912u16.to_le_bytes()); // Token 912: launch_time
+
+    payload.extend_from_slice(&(match_id as u32).to_le_bytes());
+    payload.extend_from_slice(&queue_id.to_le_bytes());
+    payload.extend_from_slice(&launch_time.to_le_bytes());
+
+    // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
+    let mut frame = Vec::with_capacity(4 + payload.len());
+    let payload_len = payload.len() as u16;
+    frame.extend_from_slice(&payload_len.to_le_bytes()); // agyis: no-mutant wire framing
+    frame.extend_from_slice(&0x0000u16.to_le_bytes()); // agyis: no-mutant wire framing
+    frame.extend_from_slice(&payload); // agyis: no-mutant wire framing
+
+    frame
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -385,5 +438,42 @@ mod tests {
         let v11 = u32::from_le_bytes([payload[22], payload[23], payload[24], payload[25]]);
         assert_eq!(v10, 1615); // agyis: no-mutant
         assert_eq!(v11, 1282927737); // agyis: no-mutant
+    }
+
+    #[test]
+    fn test_create_mcts_match_status_frame_structure() { // agyis: no-mutant unit test
+        let frame = create_mcts_match_status_frame(434, 878850364, 120); // agyis: no-mutant
+        assert_eq!(frame.len(), 31); // agyis: no-mutant
+
+        let length = u16::from_le_bytes([frame[0], frame[1]]) as usize; // agyis: no-mutant
+        assert_eq!(length, frame.len() - 4); // agyis: no-mutant
+        let flags = u16::from_le_bytes([frame[2], frame[3]]); // agyis: no-mutant
+        assert_eq!(flags, 0x0000); // agyis: no-mutant
+
+        let payload = &frame[4..]; // agyis: no-mutant
+        assert_eq!(payload[0], 0x00); // this[0x30] // agyis: no-mutant
+        let func_id = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]); // agyis: no-mutant
+        assert_eq!(func_id, MCTS_FUNCTION_ID_ON_MATCH_STATUS); // agyis: no-mutant
+        assert_eq!(func_id, 0x2cdbafe1); // agyis: no-mutant
+
+        let total_fields = u16::from_le_bytes([payload[5], payload[6]]); // agyis: no-mutant
+        assert_eq!(total_fields, 3); // agyis: no-mutant
+
+        // Group 0x3000 check
+        let grp4 = u16::from_le_bytes([payload[7], payload[8]]); // agyis: no-mutant
+        assert_eq!(grp4, 0x3003); // agyis: no-mutant
+        let t703 = u16::from_le_bytes([payload[9], payload[10]]); // agyis: no-mutant
+        let t36 = u16::from_le_bytes([payload[11], payload[12]]); // agyis: no-mutant
+        let t912 = u16::from_le_bytes([payload[13], payload[14]]); // agyis: no-mutant
+        assert_eq!(t703, 703); // agyis: no-mutant
+        assert_eq!(t36, 36); // agyis: no-mutant
+        assert_eq!(t912, 912); // agyis: no-mutant
+
+        let v703 = u32::from_le_bytes([payload[15], payload[16], payload[17], payload[18]]); // agyis: no-mutant
+        let v36 = u32::from_le_bytes([payload[19], payload[20], payload[21], payload[22]]); // agyis: no-mutant
+        let v912 = u32::from_le_bytes([payload[23], payload[24], payload[25], payload[26]]); // agyis: no-mutant
+        assert_eq!(v703, 878850364); // agyis: no-mutant
+        assert_eq!(v36, 434); // agyis: no-mutant
+        assert_eq!(v912, 120); // agyis: no-mutant
     }
 }

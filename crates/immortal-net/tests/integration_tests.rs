@@ -308,23 +308,31 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     let s2_str = std::str::from_utf8(&payload[p2 + 6..p2 + 6 + s2_len]).unwrap();
     assert_eq!(s2_str, "Fernando");
 
-    // 3. Step 3: Expect ReceiveChangeMap wire frame (mapGameId 1615, mapInstanceId 1282927737)
+    // 3. Step 3: Expect authentic Live MCTS OnMatchStatus wire frame (0x2cdbafe1, queue_id 0, match_id 0, launch_time 0)
     stream.read_exact(&mut header_buf).await.unwrap();
-    let map_frame_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
-    let map_wire_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
-    assert_eq!(map_wire_flags, 0x0000);
+    let status_frame_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let status_wire_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(status_wire_flags, 0x0000);
 
-    let mut map_payload = vec![0u8; map_frame_len];
-    stream.read_exact(&mut map_payload).await.unwrap();
-    assert_eq!(map_payload[0], 0x00);
-    let map_func_id = u32::from_le_bytes([map_payload[1], map_payload[2], map_payload[3], map_payload[4]]);
-    assert_eq!(map_func_id, immortal_net::MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP);
-    let map_game_id = u32::from_le_bytes([map_payload[18], map_payload[19], map_payload[20], map_payload[21]]);
-    let map_inst_id = u32::from_le_bytes([map_payload[22], map_payload[23], map_payload[24], map_payload[25]]);
-    assert_eq!(map_game_id, immortal_net::MAP_GAME_ID_SHOOTING_RANGE);
-    assert_eq!(map_game_id, 1615);
-    assert_eq!(map_inst_id, immortal_net::MAP_INSTANCE_ID_SHOOTING_RANGE);
-    assert_eq!(map_payload[11], 1); // is_standalone == true
+    let mut status_payload = vec![0u8; status_frame_len];
+    stream.read_exact(&mut status_payload).await.unwrap();
+    assert_eq!(status_payload[0], 0x00);
+    let status_func_id = u32::from_le_bytes([status_payload[1], status_payload[2], status_payload[3], status_payload[4]]);
+    assert_eq!(status_func_id, immortal_net::MCTS_FUNCTION_ID_ON_MATCH_STATUS);
+    assert_eq!(status_func_id, 0x2cdbafe1);
+    let field_count = u16::from_le_bytes([status_payload[5], status_payload[6]]);
+    assert_eq!(field_count, 3);
+    let grp4 = u16::from_le_bytes([status_payload[7], status_payload[8]]);
+    assert_eq!(grp4, 0x3003);
+    assert_eq!(u16::from_le_bytes([status_payload[9], status_payload[10]]), 703);
+    assert_eq!(u16::from_le_bytes([status_payload[11], status_payload[12]]), 36);
+    assert_eq!(u16::from_le_bytes([status_payload[13], status_payload[14]]), 912);
+    let v703 = u32::from_le_bytes([status_payload[15], status_payload[16], status_payload[17], status_payload[18]]);
+    let v36 = u32::from_le_bytes([status_payload[19], status_payload[20], status_payload[21], status_payload[22]]);
+    let v912 = u32::from_le_bytes([status_payload[23], status_payload[24], status_payload[25], status_payload[26]]);
+    assert_eq!(v703, 0); // match_id = 0
+    assert_eq!(v36, 0);  // queue_id = 0
+    assert_eq!(v912, 0); // launch_time = 0
 
     // 4. Step 4: Client sends champion select frame for Fernando (ID 2203 / 0x089b)
     let mut champ_frame = Vec::new();
