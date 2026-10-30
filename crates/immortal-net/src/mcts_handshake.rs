@@ -473,6 +473,10 @@ pub fn create_mcts_match_status_frame(
 /// Reverse engineered from `MctsInterface.dll` / `ShippingPC-ChaosGame.exe` (`FUN_1414df220`, `FUN_1414e8610`).
 pub const MCTS_TOKEN_MEMBERS: u16 = 312;
 
+/// Authentic Bot Template ID for Fernando in live shooting range sessions (2285).
+/// Grounded in `live_paladins_launch.log:1095` and cleanroom disassembly of `ShippingPC-ChaosGame.exe: FUN_1414df220`.
+pub const BOT_ID_FERNANDO: u32 = 2285;
+
 /// Builds an authentic live MCTS `MATCH_STATUS` wire frame including the `DATA_SET_MEMBERS` (Token 312) table.
 ///
 /// Matches reverse engineered `CMarshalRow::Store` and `CMarshalRowSet::Store` specification:
@@ -503,9 +507,9 @@ pub const MCTS_TOKEN_MEMBERS: u16 = 312;
 ///     - Group 0x3000 (4-byte fields):
 ///       - Header: `0x3003` (group 0x3000 | 3)
 ///       - Token 855 (u16): PROFILE_ID (`account_id as u32`)
-///       - Token 122 (u16): BOT_ID / CHAMPION_ID (`champion_id`)
+///       - Token 122 (u16): BOT_ID / CHAMPION_ID (`bot_id`)
 ///       - Token 1344 (u16): PLAYER_LOBBY_STATE (`player_lobby_state`)
-///       - Values: `(account_id as u32)`, `champion_id`, `player_lobby_state`
+///       - Values: `(account_id as u32)`, `bot_id`, `player_lobby_state`
 ///     - Group 0x4000 (8-byte fields):
 ///       - Header: `0x4001` (group 0x4000 | 1)
 ///       - Token 11 (u16): PLAYER_ID (`account_id` as u64)
@@ -523,7 +527,7 @@ pub fn create_mcts_match_status_with_members_frame(
     player_lobby_state: u32,
     player_queue_state: u32,
     account_id: u64,
-    champion_id: u32,
+    bot_id: u32,
 ) -> Vec<u8> {
     let mut payload = Vec::with_capacity(128);
     payload.push(0x00); // this[0x30]
@@ -582,7 +586,7 @@ pub fn create_mcts_match_status_with_members_frame(
     payload.extend_from_slice(&1344u16.to_le_bytes()); // Token 1344: PLAYER_LOBBY_STATE
 
     payload.extend_from_slice(&(account_id as u32).to_le_bytes());
-    payload.extend_from_slice(&champion_id.to_le_bytes());
+    payload.extend_from_slice(&bot_id.to_le_bytes());
     payload.extend_from_slice(&player_lobby_state.to_le_bytes());
 
     // Row Group 0x4000 (8-byte fields: 1 field)
@@ -904,6 +908,11 @@ mod tests {
     }
 
     #[test]
+    fn test_bot_id_fernando_constant() { // agyis: no-mutant unit test
+        assert_eq!(BOT_ID_FERNANDO, 2285); // agyis: no-mutant
+    }
+
+    #[test]
     fn test_create_mcts_match_status_with_members_frame_structure() { // agyis: no-mutant unit test
         let frame = create_mcts_match_status_with_members_frame(
             0,
@@ -913,7 +922,7 @@ mod tests {
             5,
             7,
             8302401,
-            1026,
+            BOT_ID_FERNANDO,
         ); // agyis: no-mutant
         assert_eq!(frame.len(), 104); // agyis: no-mutant
 
@@ -1007,7 +1016,8 @@ mod tests {
         let v122 = u32::from_le_bytes([payload[80], payload[81], payload[82], payload[83]]); // agyis: no-mutant
         let v1344_row = u32::from_le_bytes([payload[84], payload[85], payload[86], payload[87]]); // agyis: no-mutant
         assert_eq!(v855, 8302401); // agyis: no-mutant
-        assert_eq!(v122, 1026); // agyis: no-mutant
+        assert_eq!(v122, BOT_ID_FERNANDO); // agyis: no-mutant
+        assert_eq!(v122, 2285); // agyis: no-mutant
         assert_eq!(v1344_row, 5); // agyis: no-mutant
 
         // Row Group 0x4000: Token 11 (account_id as u64)

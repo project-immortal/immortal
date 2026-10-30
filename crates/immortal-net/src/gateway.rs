@@ -145,7 +145,7 @@ pub use crate::mcts_handshake::{
     create_mcts_change_map_frame, create_mcts_champion_roster_frame,
     create_mcts_login_response_frame, create_mcts_match_status_frame,
     create_mcts_match_status_with_members_frame,
-    create_mcts_player_svc_change_map_frame, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION,
+    create_mcts_player_svc_change_map_frame, BOT_ID_FERNANDO, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION,
     MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME,
     MCTS_CLIENT_AUTH_REQUEST_FLAGS, MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS,
     MCTS_CLIENT_CRYPTO_TICKET_LEN, MCTS_FUNCTION_ID_CHAMPION_ROSTER, MCTS_FUNCTION_ID_CHANGE_MAP,
@@ -203,7 +203,16 @@ async fn handle_connection(
             post_login_count += 1;
             if post_login_count == 1 || has_shooting_range_req {
                 // Emit Shooting Range transition: MATCH_STATUS state 8 -> Champion Roster -> MATCH_STATUS state 10 with members table -> PlayerSvcChangeMap -> ChangeMap
-                let match_status_8 = create_mcts_match_status_frame(434, 878850364, 8, 0, 0, 0);
+                let match_status_8 = create_mcts_match_status_with_members_frame(
+                    0,
+                    878850364,
+                    8,
+                    0,
+                    5,
+                    4,
+                    config.account_id as u64,
+                    BOT_ID_FERNANDO,
+                );
                 stream.write_all(&match_status_8).await?;
 
                 let champion_roster_frame =
@@ -218,7 +227,7 @@ async fn handle_connection(
                     5,
                     7,
                     config.account_id as u64,
-                    1026,
+                    BOT_ID_FERNANDO,
                 );
                 stream.write_all(&match_status_10).await?;
 
@@ -237,8 +246,8 @@ async fn handle_connection(
                 stream.write_all(&change_map_frame).await?;
                 stream.flush().await?;
                 info!(
-                    "Sent Live MCTS Shooting Range transition (status 8, champion roster, status 10 with members table [lock:5, queue:7, account_id={}, champion:1026], player_svc_change_map, change_map mapGameId={}, instanceId={}) to {}",
-                    config.account_id, MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, peer_addr
+                    "Sent Live MCTS Shooting Range transition (status 8 [lock:5, queue:4], champion roster, status 10 with members table [lock:5, queue:7, account_id={}, bot_id={}], player_svc_change_map, change_map mapGameId={}, instanceId={}) to {}",
+                    config.account_id, BOT_ID_FERNANDO, MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, peer_addr
                 );
             } else {
                 // Reply with champion select acknowledgment frame (Frame 2554)
