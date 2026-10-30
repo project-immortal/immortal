@@ -670,7 +670,7 @@ pub const BOT_ID_FERNANDO: u32 = 2285;
 ///     - Field count: 5 (u16)
 ///     - Group 0x1000 (1-byte fields):
 ///       - Header: `0x1001` (group 0x1000 | 1)
-///       - Token 2143 (u16): bool true (0x01 u8)
+///       - Token 2143 (u16): bool false (0x00 u8)
 ///     - Group 0x3000 (4-byte fields):
 ///       - Header: `0x3004` (group 0x3000 | 4)
 ///       - Token 11 (u16): PLAYER_ID (`account_id as u32`)
@@ -739,8 +739,8 @@ pub fn create_mcts_match_status_with_members_frame(
     // Row Group 0x1000 (1-byte fields: 1 field)
     let row_grp1_hdr: u16 = 0x1000 | 1;
     payload.extend_from_slice(&row_grp1_hdr.to_le_bytes());
-    payload.extend_from_slice(&2143u16.to_le_bytes()); // Token 2143: bool true
-    payload.push(0x01);
+    payload.extend_from_slice(&2143u16.to_le_bytes()); // Token 2143: bool false (bIsBot = false)
+    payload.push(0x00);
 
     // Row Group 0x3000 (4-byte fields: 4 fields)
     let row_grp4_hdr: u16 = 0x3000 | 4;
@@ -1231,12 +1231,12 @@ mod tests {
         let row_field_count = u16::from_le_bytes([payload[61], payload[62]]); // agyis: no-mutant
         assert_eq!(row_field_count, 5); // agyis: no-mutant
 
-        // Row Group 0x1000: Token 2143 (bool true = 1)
+        // Row Group 0x1000: Token 2143 (bool false = 0)
         let row_grp1 = u16::from_le_bytes([payload[63], payload[64]]); // agyis: no-mutant
         assert_eq!(row_grp1, 0x1001); // agyis: no-mutant
         let t2143 = u16::from_le_bytes([payload[65], payload[66]]); // agyis: no-mutant
         assert_eq!(t2143, 2143); // agyis: no-mutant
-        assert_eq!(payload[67], 1); // bool true // agyis: no-mutant
+        assert_eq!(payload[67], 0); // bool false (bIsBot = false) // agyis: no-mutant
 
         // Row Group 0x3000: Tokens 11, 122, 855, 1344
         let row_grp4 = u16::from_le_bytes([payload[68], payload[69]]); // agyis: no-mutant

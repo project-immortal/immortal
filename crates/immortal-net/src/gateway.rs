@@ -209,7 +209,7 @@ async fn handle_connection(
             if post_login_count == 1 || has_shooting_range_req {
                 // Emit Shooting Range transition: MATCH_STATUS invited (queue 434, match 878850364, queue_state 3 MQ_INVITED)
                 // -> MATCH_INVITATION (queue 434, match 878850364, timeout 30s, Table 1619 account_id)
-                // -> MATCH_STATUS state 8 (queue 0, match 878850364, queue_state 4 MQ_ACCEPTED)
+                // -> MATCH_STATUS state 8 with members table (queue 0, match 878850364, queue_state 4 MQ_ACCEPTED)
                 // -> Champion Roster
                 // -> MATCH_STATUS state 10 with members table (queue 0, match 878850364, queue_state 7 MQ_LAUNCHING)
                 // -> Map Transition
@@ -230,7 +230,16 @@ async fn handle_connection(
                 // transitioning internal m_QueueState from 3 (MQ_INVITED) to 4 (MQ_ACCEPTED).
                 tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
 
-                let match_status_8 = create_mcts_match_status_frame(0, 878850364, 8, 0, 5, 4);
+                let match_status_8 = create_mcts_match_status_with_members_frame(
+                    0,
+                    878850364,
+                    8,
+                    0,
+                    5,
+                    4,
+                    config.account_id as u64,
+                    BOT_ID_FERNANDO,
+                );
                 stream.write_all(&match_status_8).await?;
 
                 let champion_roster_frame =
@@ -257,8 +266,8 @@ async fn handle_connection(
                 stream.write_all(&map_transition_frame).await?;
                 stream.flush().await?;
                 info!(
-                    "Sent Live MCTS Shooting Range transition (invited status, match_invitation, status 8 [queue:0, lock:5, queue:4], champion roster, status 10 with members table [queue:0, lock:5, queue:7, account_id={}, bot_id={}], map_transition mapGameId={}, instanceId={}) to {}",
-                    config.account_id, BOT_ID_FERNANDO, MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, peer_addr
+                    "Sent Live MCTS Shooting Range transition (invited status, match_invitation, status 8 with members table [queue:0, lock:5, queue:4, account_id={}, bot_id={}], champion roster, status 10 with members table [queue:0, lock:5, queue:7, account_id={}, bot_id={}], map_transition mapGameId={}, instanceId={}) to {}",
+                    config.account_id, BOT_ID_FERNANDO, config.account_id, BOT_ID_FERNANDO, MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, peer_addr
                 );
             } else if has_fernando || payload_len == 37 || payload_len == 19 {
                 // Reply with champion select acknowledgment frame (Frame 2554)
