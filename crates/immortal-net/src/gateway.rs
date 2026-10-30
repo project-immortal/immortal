@@ -29,6 +29,10 @@ pub struct AuthGatewayConfig {
     pub session_token: String,
     pub match_ticket_str: String,
     pub compress_response: bool,
+    pub post_login_settle_delay_ms: u64,
+    pub post_login_invite_delay_ms: u64,
+    pub post_login_accept_delay_ms: u64,
+    pub post_login_launch_delay_ms: u64,
 }
 
 impl Default for AuthGatewayConfig {
@@ -42,6 +46,10 @@ impl Default for AuthGatewayConfig {
             session_token: "IMMORTAL-DEV-SESSION-TICKET".to_string(),
             match_ticket_str: "IMMORTAL-MATCH-TICKET-7777".to_string(),
             compress_response: false,
+            post_login_settle_delay_ms: 3500,
+            post_login_invite_delay_ms: 100,
+            post_login_accept_delay_ms: 500,
+            post_login_launch_delay_ms: 500,
         }
     }
 }
@@ -207,6 +215,14 @@ async fn handle_connection(
 
             post_login_count += 1;
             if post_login_count == 1 || has_shooting_range_req {
+                // Calibrated settling cadence: give client HUD time to finish scene and vendor loading before match launch
+                if config.post_login_settle_delay_ms > 0 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(
+                        config.post_login_settle_delay_ms,
+                    ))
+                    .await;
+                }
+
                 // Emit Shooting Range transition: MATCH_STATUS queued (queue 434, match 0, queue_state 2 MQ_QUEUED)
                 // -> MATCH_STATUS invited (queue 0, match 878850364, queue_state 3 MQ_INVITED)
                 // -> MATCH_INVITATION (queue 434, match 878850364, timeout 30s, Table 1619 account_id)
@@ -219,7 +235,12 @@ async fn handle_connection(
                 stream.write_all(&match_status_queued).await?;
                 stream.flush().await?;
 
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                if config.post_login_invite_delay_ms > 0 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(
+                        config.post_login_invite_delay_ms,
+                    ))
+                    .await;
+                }
 
                 let match_status_invited =
                     create_mcts_match_status_frame(0, 878850364, 0, 30, 0, 3);
@@ -236,7 +257,12 @@ async fn handle_connection(
 
                 // Cadence: allow client thread time to process OnMatchInvite and auto-accept,
                 // transitioning internal m_QueueState from 3 (MQ_INVITED) to 4 (MQ_ACCEPTED).
-                tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+                if config.post_login_accept_delay_ms > 0 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(
+                        config.post_login_accept_delay_ms,
+                    ))
+                    .await;
+                }
 
                 let match_status_8 = create_mcts_match_status_with_members_frame(
                     0,
@@ -253,6 +279,14 @@ async fn handle_connection(
                 let champion_roster_frame =
                     create_mcts_champion_roster_frame(&[1026, 1024, 1025, 1027]);
                 stream.write_all(&champion_roster_frame).await?;
+                stream.flush().await?;
+
+                if config.post_login_launch_delay_ms > 0 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(
+                        config.post_login_launch_delay_ms,
+                    ))
+                    .await;
+                }
 
                 let match_status_10 = create_mcts_match_status_with_members_frame(
                     0,
@@ -277,7 +311,7 @@ async fn handle_connection(
                     "Sent Live MCTS Shooting Range transition (queued status [queue:434, match:0, state:2], invited status [queue:0, match:878850364, state:3], match_invitation, status 8 with members table [queue:0, lock:5, queue:4, account_id={}, bot_id={}], champion roster, status 10 with members table [queue:0, lock:5, queue:7, account_id={}, bot_id={}], map_transition mapGameId={}, instanceId={}) to {}",
                     config.account_id, BOT_ID_FERNANDO, config.account_id, BOT_ID_FERNANDO, MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, peer_addr
                 );
-            } else if has_fernando || payload_len == 37 || payload_len == 19 {
+            } else if has_fernando {
                 // Reply with champion select acknowledgment frame (Frame 2554)
                 stream.write_all(&MCTS_CHAMPION_SELECT_ACK_FRAME).await?;
                 stream.flush().await?;
@@ -401,4 +435,18 @@ async fn handle_connection(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_auth_gateway_config_default_cadence() {
+        let config = AuthGatewayConfig::default();
+        assert_eq!(config.post_login_settle_delay_ms, 3500);
+        assert_eq!(config.post_login_invite_delay_ms, 100);
+        assert_eq!(config.post_login_accept_delay_ms, 500);
+        assert_eq!(config.post_login_launch_delay_ms, 500);
+    }
 }

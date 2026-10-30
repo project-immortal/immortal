@@ -205,7 +205,15 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     let start = Instant::now();
 
     let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let gateway = AuthGateway::bind(bind_addr)
+    let config = AuthGatewayConfig {
+        bind_addr,
+        post_login_settle_delay_ms: 0,
+        post_login_invite_delay_ms: 0,
+        post_login_accept_delay_ms: 0,
+        post_login_launch_delay_ms: 0,
+        ..Default::default()
+    };
+    let gateway = AuthGateway::bind_with_config(config)
         .await
         .expect("Failed to bind AuthGateway");
     let handle = gateway.spawn().expect("Failed to spawn AuthGateway");
@@ -797,17 +805,13 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     stream.read_exact(&mut ack_buf2).await.unwrap();
     assert_eq!(&ack_buf2[..], &immortal_net::MCTS_CHAMPION_SELECT_ACK_FRAME[..]);
 
-    // 7. Step 7: Verify payload_len == 19 and payload_len == 37 trigger MCTS_CHAMPION_SELECT_ACK_FRAME without fernando
+    // 7. Step 7: Verify payload_len == 19 and payload_len == 37 (vendor query) do NOT trigger bogus MCTS_CHAMPION_SELECT_ACK_FRAME without fernando
     let mut frame_19 = Vec::new();
     frame_19.extend_from_slice(&19u16.to_le_bytes());
     frame_19.extend_from_slice(&0x0000u16.to_le_bytes());
     frame_19.extend_from_slice(&vec![0x11u8; 19]);
     stream.write_all(&frame_19).await.unwrap();
     stream.flush().await.unwrap();
-
-    let mut ack_buf3 = [0u8; 19];
-    stream.read_exact(&mut ack_buf3).await.unwrap();
-    assert_eq!(&ack_buf3[..], &immortal_net::MCTS_CHAMPION_SELECT_ACK_FRAME[..]);
 
     let mut frame_37 = Vec::new();
     frame_37.extend_from_slice(&37u16.to_le_bytes());
@@ -816,9 +820,25 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     stream.write_all(&frame_37).await.unwrap();
     stream.flush().await.unwrap();
 
-    let mut ack_buf4 = [0u8; 19];
-    stream.read_exact(&mut ack_buf4).await.unwrap();
-    assert_eq!(&ack_buf4[..], &immortal_net::MCTS_CHAMPION_SELECT_ACK_FRAME[..]);
+    // Verify neither frame triggered a bogus ACK by asserting no bytes are pending on stream
+    let mut probe_buf = [0u8; 1];
+    let probe_res = tokio::time::timeout(
+        std::time::Duration::from_millis(50),
+        stream.read(&mut probe_buf),
+    )
+    .await;
+    assert!(
+        probe_res.is_err(),
+        "Server must not respond to 19-byte or 37-byte vendor query frames with bogus ACK"
+    );
+
+    // Verify subsequent champion select frame with Fernando DOES trigger ACK
+    stream.write_all(&champ_frame).await.unwrap();
+    stream.flush().await.unwrap();
+
+    let mut ack_buf3 = [0u8; 19];
+    stream.read_exact(&mut ack_buf3).await.unwrap();
+    assert_eq!(&ack_buf3[..], &immortal_net::MCTS_CHAMPION_SELECT_ACK_FRAME[..]);
 
     handle.shutdown().await.unwrap();
 
