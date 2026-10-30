@@ -142,14 +142,15 @@ impl AuthGateway {
 }
 
 pub use crate::mcts_handshake::{
-    create_mcts_change_map_frame, create_mcts_login_response_frame, create_mcts_match_status_frame,
+    create_mcts_change_map_frame, create_mcts_champion_roster_frame,
+    create_mcts_login_response_frame, create_mcts_match_status_frame,
     CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MAP_GAME_ID_SHOOTING_RANGE,
     MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
     MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
-    MCTS_FUNCTION_ID_MATCH_STATUS, MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE,
-    MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP, MCTS_HANDSHAKE_CHUNK1, MCTS_HANDSHAKE_CHUNK2_ACK,
-    MCTS_HANDSHAKE_CHUNK3_SESSION, MCTS_HELLO_RESPONSE_FRAME, MCTS_HELLO_RESPONSE_PAYLOAD,
-    MCTS_WIRE_FLAG_CHUNK,
+    MCTS_FUNCTION_ID_CHAMPION_ROSTER, MCTS_FUNCTION_ID_MATCH_STATUS,
+    MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP, MCTS_HANDSHAKE_CHUNK1,
+    MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION, MCTS_HELLO_RESPONSE_FRAME,
+    MCTS_HELLO_RESPONSE_PAYLOAD, MCTS_WIRE_FLAG_CHUNK,
 };
 
 async fn handle_connection(
@@ -260,22 +261,26 @@ async fn handle_connection(
 
             post_login_count += 1;
             if post_login_count == 1 || has_shooting_range_req {
-                // Emit Shooting Range transition: MATCH_STATUS state 8 -> MATCH_STATUS state 10 -> ReceiveChangeMap
+                // Emit Shooting Range transition: MATCH_STATUS state 8 -> MATCH_STATUS state 10 -> Champion Roster -> ReceiveChangeMap
                 let match_status_8 = create_mcts_match_status_frame(434, 878850364, 8, 0);
                 stream.write_all(&match_status_8).await?;
 
                 let match_status_10 = create_mcts_match_status_frame(434, 878850364, 10, 0);
                 stream.write_all(&match_status_10).await?;
 
+                let champion_roster_frame =
+                    create_mcts_champion_roster_frame(&[1026, 1024, 1025, 1027]);
+                stream.write_all(&champion_roster_frame).await?;
+
                 let change_map_frame = create_mcts_change_map_frame(
                     MAP_GAME_ID_SHOOTING_RANGE,
                     MAP_INSTANCE_ID_SHOOTING_RANGE,
-                    true,
+                    false,
                 );
                 stream.write_all(&change_map_frame).await?;
                 stream.flush().await?;
                 info!(
-                    "Sent Live MCTS Shooting Range transition (status 8, status 10, mapGameId={}, instanceId={}) to {}",
+                    "Sent Live MCTS Shooting Range transition (status 8, status 10, champion roster, mapGameId={}, instanceId={}) to {}",
                     MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, peer_addr
                 );
             } else {

@@ -423,27 +423,60 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(s10_match_id, 878850364);
     assert_eq!(s10_queue_id, 434);
 
-    // (c) ReceiveChangeMap (mapGameId=1615, instanceId=1282927737, is_standalone=true)
+    // (c) Champion Roster (Function ID 0xdb15d3d7, Table 249, Token 122)
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let roster_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let roster_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(roster_flags, 0x0000); // agyis: no-mutant
+    let mut roster_payload = vec![0u8; roster_len];
+    stream.read_exact(&mut roster_payload).await.unwrap();
+    assert_eq!(roster_payload[0], 0x00); // agyis: no-mutant
+    assert_eq!(
+        u32::from_le_bytes([roster_payload[1], roster_payload[2], roster_payload[3], roster_payload[4]]),
+        immortal_net::MCTS_FUNCTION_ID_CHAMPION_ROSTER
+    ); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([roster_payload[5], roster_payload[6]]), 1); // agyis: no-mutant (1 table field)
+    assert_eq!(u16::from_le_bytes([roster_payload[7], roster_payload[8]]), 0x6001); // agyis: no-mutant (Group 0x6001)
+    assert_eq!(u16::from_le_bytes([roster_payload[9], roster_payload[10]]), 249); // agyis: no-mutant (Table 249)
+    assert_eq!(u16::from_le_bytes([roster_payload[11], roster_payload[12]]), 4); // agyis: no-mutant (4 champions)
+    let expected_champs = [1026, 1024, 1025, 1027];
+    for (i, &expected_champ) in expected_champs.iter().enumerate() {
+        let offset = 13 + i * 10;
+        assert_eq!(u16::from_le_bytes([roster_payload[offset], roster_payload[offset + 1]]), 1); // agyis: no-mutant
+        assert_eq!(u16::from_le_bytes([roster_payload[offset + 2], roster_payload[offset + 3]]), 0x3001); // agyis: no-mutant
+        assert_eq!(u16::from_le_bytes([roster_payload[offset + 4], roster_payload[offset + 5]]), 122); // agyis: no-mutant
+        let champ_id = u32::from_le_bytes([
+            roster_payload[offset + 6],
+            roster_payload[offset + 7],
+            roster_payload[offset + 8],
+            roster_payload[offset + 9],
+        ]); // agyis: no-mutant
+        assert_eq!(champ_id, expected_champ); // agyis: no-mutant
+    }
+
+    // (d) ReceiveChangeMap (mapGameId=1615, instanceId=1282927737, abort_map_load=false)
     stream.read_exact(&mut header_buf).await.unwrap();
     let change_map_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
     let change_map_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
-    assert_eq!(change_map_flags, 0x0000);
+    assert_eq!(change_map_flags, 0x0000); // agyis: no-mutant
     let mut change_map_payload = vec![0u8; change_map_len];
     stream.read_exact(&mut change_map_payload).await.unwrap();
-    assert_eq!(change_map_payload[0], 0x00);
+    assert_eq!(change_map_payload[0], 0x00); // agyis: no-mutant
     assert_eq!(
         u32::from_le_bytes([change_map_payload[1], change_map_payload[2], change_map_payload[3], change_map_payload[4]]),
         immortal_net::MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP
-    );
-    assert_eq!(change_map_payload[11], 1); // is_standalone = true
+    ); // agyis: no-mutant
+    assert_eq!(change_map_payload[11], 0); // Token 1116 = 0x00 (do not abort) // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([change_map_payload[14], change_map_payload[15]]), 682); // Token 682 // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([change_map_payload[16], change_map_payload[17]]), 11); // Token 11 // agyis: no-mutant
     let map_game_id = u32::from_le_bytes([
         change_map_payload[18], change_map_payload[19], change_map_payload[20], change_map_payload[21],
-    ]);
+    ]); // agyis: no-mutant
     let map_instance_id = u32::from_le_bytes([
         change_map_payload[22], change_map_payload[23], change_map_payload[24], change_map_payload[25],
-    ]);
-    assert_eq!(map_game_id, immortal_net::MAP_GAME_ID_SHOOTING_RANGE);
-    assert_eq!(map_instance_id, immortal_net::MAP_INSTANCE_ID_SHOOTING_RANGE);
+    ]); // agyis: no-mutant
+    assert_eq!(map_game_id, immortal_net::MAP_GAME_ID_SHOOTING_RANGE); // agyis: no-mutant
+    assert_eq!(map_instance_id, immortal_net::MAP_INSTANCE_ID_SHOOTING_RANGE); // agyis: no-mutant
 
     // 5. Step 5: Subsequent post-login frame responds with MCTS_CHAMPION_SELECT_ACK_FRAME
     stream.write_all(&champ_frame).await.unwrap();
