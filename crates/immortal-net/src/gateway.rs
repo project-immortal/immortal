@@ -224,6 +224,11 @@ async fn handle_connection(
                     config.account_id as u32,
                 );
                 stream.write_all(&match_invite_frame).await?;
+                stream.flush().await?;
+
+                // Cadence: allow client thread time to process OnMatchInvite and auto-accept,
+                // transitioning internal m_QueueState from 3 (MQ_INVITED) to 4 (MQ_ACCEPTED).
+                tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
 
                 let match_status_8 = create_mcts_match_status_frame(0, 878850364, 8, 0, 5, 4);
                 stream.write_all(&match_status_8).await?;
