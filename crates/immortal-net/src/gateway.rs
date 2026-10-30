@@ -148,7 +148,8 @@ pub use crate::mcts_handshake::{
     MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
     MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
     MCTS_FUNCTION_ID_CHAMPION_ROSTER, MCTS_FUNCTION_ID_MATCH_STATUS,
-    MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP, MCTS_HANDSHAKE_CHUNK1,
+    MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP,
+    MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP, MCTS_HANDSHAKE_CHUNK1,
     MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION, MCTS_HELLO_RESPONSE_FRAME,
     MCTS_HELLO_RESPONSE_PAYLOAD, MCTS_WIRE_FLAG_CHUNK,
 };
@@ -160,6 +161,7 @@ async fn handle_connection(
 ) -> Result<(), NetError> {
     debug!("Accepted incoming MCTS TCP connection from {}", peer_addr);
     let mut post_login_count: usize = 0;
+    let mut login_completed = false;
 
     loop {
         let mut header = [0u8; HEADER_LEN];
@@ -180,7 +182,54 @@ async fn handle_connection(
         let field0 = u16::from_le_bytes([header[0], header[1]]);
         let field1 = u16::from_le_bytes([header[2], header[3]]);
 
-        if field0 == MCTS_CLIENT_AUTH_REQUEST_LEN && field1 == MCTS_CLIENT_AUTH_REQUEST_FLAGS {
+        if login_completed {
+            let payload_len = field0 as usize;
+            let flags = field1;
+            let mut payload = vec![0u8; payload_len];
+            if payload_len > 0 {
+                stream.read_exact(&mut payload).await?;
+            }
+
+            let has_fernando = payload.windows(2).any(|w| w == [0x9b, 0x08] || w == [0x08, 0x9b]) // agyis: no-mutant diagnostic logging
+                || payload.windows(2).any(|w| w == 2203u16.to_le_bytes() || w == 2203u16.to_be_bytes()); // agyis: no-mutant diagnostic logging
+            let has_shooting_range_req = payload.windows(2).any(|w| w == 434u16.to_le_bytes())
+                || payload.windows(4).any(|w| w == MAP_GAME_ID_SHOOTING_RANGE.to_le_bytes());
+            info!( // agyis: no-mutant logging
+                "Received Live MCTS post-login/queue/champion select frame ({} bytes, flags 0x{:04x}, fernando={}, shooting_range={}) from {}",
+                payload_len, flags, has_fernando, has_shooting_range_req, peer_addr
+            );
+
+            post_login_count += 1;
+            if post_login_count == 1 || has_shooting_range_req {
+                // Emit Shooting Range transition: MATCH_STATUS state 8 -> MATCH_STATUS state 10 -> Champion Roster -> ReceiveChangeMap
+                let match_status_8 = create_mcts_match_status_frame(434, 878850364, 8, 0);
+                stream.write_all(&match_status_8).await?;
+
+                let match_status_10 = create_mcts_match_status_frame(434, 878850364, 10, 0);
+                stream.write_all(&match_status_10).await?;
+
+                let champion_roster_frame =
+                    create_mcts_champion_roster_frame(&[1026, 1024, 1025, 1027]);
+                stream.write_all(&champion_roster_frame).await?;
+
+                let change_map_frame = create_mcts_change_map_frame(
+                    MAP_GAME_ID_SHOOTING_RANGE,
+                    MAP_INSTANCE_ID_SHOOTING_RANGE,
+                    false,
+                );
+                stream.write_all(&change_map_frame).await?;
+                stream.flush().await?;
+                info!(
+                    "Sent Live MCTS Shooting Range transition (status 8, status 10, champion roster, mapGameId={}, instanceId={}) to {}",
+                    MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, peer_addr
+                );
+            } else {
+                // Reply with champion select acknowledgment frame (Frame 2554)
+                stream.write_all(&MCTS_CHAMPION_SELECT_ACK_FRAME).await?;
+                stream.flush().await?;
+                info!("Sent Live MCTS champion select acknowledgment frame (19 bytes) to {}", peer_addr); // agyis: no-mutant logging
+            }
+        } else if field0 == MCTS_CLIENT_AUTH_REQUEST_LEN && field1 == MCTS_CLIENT_AUTH_REQUEST_FLAGS {
             // Live MCTS Step 1: Client Auth Request / Hello (405 bytes, flags 0x0000)
             let mut payload = vec![0u8; MCTS_CLIENT_AUTH_REQUEST_LEN as usize];
             stream.read_exact(&mut payload).await?;
@@ -247,48 +296,7 @@ async fn handle_connection(
                 "Sent Live MCTS OnMatchStatus initial lobby frame (0, 0, 0, 0) to {}",
                 peer_addr
             );
-        } else if field0 == 37 || field0 == 19 || field0 == 33 || field0 == 15 || field1 == 0x0108 {
-            let mut payload = vec![0u8; field0 as usize];
-            stream.read_exact(&mut payload).await?;
-            let has_fernando = payload.windows(2).any(|w| w == [0x9b, 0x08] || w == [0x08, 0x9b]) // agyis: no-mutant diagnostic logging
-                || payload.windows(2).any(|w| w == 2203u16.to_le_bytes() || w == 2203u16.to_be_bytes()); // agyis: no-mutant diagnostic logging
-            let has_shooting_range_req = payload.windows(2).any(|w| w == 434u16.to_le_bytes())
-                || payload.windows(4).any(|w| w == MAP_GAME_ID_SHOOTING_RANGE.to_le_bytes());
-            info!( // agyis: no-mutant logging
-                "Received Live MCTS post-login/queue/champion select frame ({} bytes, flags 0x{:04x}, fernando={}, shooting_range={}) from {}",
-                field0, field1, has_fernando, has_shooting_range_req, peer_addr
-            );
-
-            post_login_count += 1;
-            if post_login_count == 1 || has_shooting_range_req {
-                // Emit Shooting Range transition: MATCH_STATUS state 8 -> MATCH_STATUS state 10 -> Champion Roster -> ReceiveChangeMap
-                let match_status_8 = create_mcts_match_status_frame(434, 878850364, 8, 0);
-                stream.write_all(&match_status_8).await?;
-
-                let match_status_10 = create_mcts_match_status_frame(434, 878850364, 10, 0);
-                stream.write_all(&match_status_10).await?;
-
-                let champion_roster_frame =
-                    create_mcts_champion_roster_frame(&[1026, 1024, 1025, 1027]);
-                stream.write_all(&champion_roster_frame).await?;
-
-                let change_map_frame = create_mcts_change_map_frame(
-                    MAP_GAME_ID_SHOOTING_RANGE,
-                    MAP_INSTANCE_ID_SHOOTING_RANGE,
-                    false,
-                );
-                stream.write_all(&change_map_frame).await?;
-                stream.flush().await?;
-                info!(
-                    "Sent Live MCTS Shooting Range transition (status 8, status 10, champion roster, mapGameId={}, instanceId={}) to {}",
-                    MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, peer_addr
-                );
-            } else {
-                // Reply with champion select acknowledgment frame (Frame 2554)
-                stream.write_all(&MCTS_CHAMPION_SELECT_ACK_FRAME).await?;
-                stream.flush().await?;
-                info!("Sent Live MCTS champion select acknowledgment frame (19 bytes) to {}", peer_addr); // agyis: no-mutant logging
-            }
+            login_completed = true;
         } else {
             // Synthetic / standard CPackFrame flow
             let magic = MagicToken::from_u16(field0)?;

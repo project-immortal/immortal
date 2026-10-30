@@ -192,8 +192,15 @@ pub const MAP_GAME_ID_SHOOTING_RANGE: u32 = 1615;
 /// Default map instance ID observed in live shooting range sessions
 pub const MAP_INSTANCE_ID_SHOOTING_RANGE: u32 = 1282927737;
 
-/// Authentic Function ID for `CMctsNetwork::ReceiveChangeMap` (0x6e76839e).
-pub const MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP: u32 = 0x6e76839e;
+/// Authentic Function ID for `PLAYER_SVC_CHANGE_MAP` (0xae90091f BE / 0x1f0990ae LE).
+/// Reverse engineered from `MctsInterface.dll` / `ShippingPC-ChaosGame.exe` function tables
+/// (CMarshal::SetFunction lookup, raw wire bytes [0xae, 0x90, 0x09, 0x1f]).
+pub const MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP: u32 = 0xae90091f;
+pub const MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP_BE: u32 = 0xae90091f;
+pub const MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP_LE: u32 = 0x1f0990ae;
+
+/// Backwards compatibility alias for `MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP`.
+pub const MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP: u32 = MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP;
 
 /// Live MCTS Champion Selection acknowledgment wire frame (Frame 2554 from PCAP: 19 bytes)
 pub const MCTS_CHAMPION_SELECT_ACK_FRAME: [u8; 19] = [
@@ -201,11 +208,11 @@ pub const MCTS_CHAMPION_SELECT_ACK_FRAME: [u8; 19] = [
     0x99, 0x9d, 0xf4,
 ];
 
-/// Builds an authentic live MCTS `ReceiveChangeMap` wire frame for `CMctsNetwork::ReceiveChangeMap`.
+/// Builds an authentic live MCTS `PLAYER_SVC_CHANGE_MAP` wire frame for `CMctsNetwork`.
 ///
 /// Matches reverse engineered `CMarshalRow::Store` specification (`FUN_140d3fc20` and `FUN_141576a00`):
 /// - Prefix: byte `0x00` (`this[0x30]`)
-/// - Function ID: `0x6e76839e` (`MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP`) in little-endian u32
+/// - Function ID: `0xae90091f` (`MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP`, raw bytes `[0xae, 0x90, 0x09, 0x1f]`)
 /// - CMarshalRow field count: 3 (1 bool field + 2 uint32 fields)
 /// - Group 0x1000 (1-byte fields):
 ///   - Header: `0x1001` (group 0x1000 | 1)
@@ -225,7 +232,7 @@ pub fn create_mcts_change_map_frame(
 ) -> Vec<u8> {
     let mut payload = Vec::with_capacity(32);
     payload.push(0x00); // this[0x30]
-    payload.extend_from_slice(&MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP.to_le_bytes());
+    payload.extend_from_slice(&MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP.to_be_bytes());
 
     // CMarshalRow: total fields = 3 (1 byte field + 2 dword fields)
     let total_fields: u16 = 3;
@@ -504,8 +511,14 @@ mod tests {
 
         let payload = &frame[4..]; // agyis: no-mutant
         assert_eq!(payload[0], 0x00); // agyis: no-mutant
-        let func_id = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]); // agyis: no-mutant
-        assert_eq!(func_id, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP); // agyis: no-mutant
+        assert_eq!(&payload[1..5], &[0xae, 0x90, 0x09, 0x1f]); // agyis: no-mutant
+        let func_id_be = u32::from_be_bytes([payload[1], payload[2], payload[3], payload[4]]); // agyis: no-mutant
+        assert_eq!(func_id_be, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP); // agyis: no-mutant
+        assert_eq!(func_id_be, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP); // agyis: no-mutant
+        assert_eq!(func_id_be, 0xae90091f); // agyis: no-mutant
+        let func_id_le = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]); // agyis: no-mutant
+        assert_eq!(func_id_le, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP_LE); // agyis: no-mutant
+        assert_eq!(func_id_le, 0x1f0990ae); // agyis: no-mutant
 
         let total_fields = u16::from_le_bytes([payload[5], payload[6]]); // agyis: no-mutant
         assert_eq!(total_fields, 3); // agyis: no-mutant

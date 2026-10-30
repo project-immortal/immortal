@@ -454,7 +454,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         assert_eq!(champ_id, expected_champ); // agyis: no-mutant
     }
 
-    // (d) ReceiveChangeMap (mapGameId=1615, instanceId=1282927737, abort_map_load=false)
+    // (d) PLAYER_SVC_CHANGE_MAP (mapGameId=1615, instanceId=1282927737, abort_map_load=false)
     stream.read_exact(&mut header_buf).await.unwrap();
     let change_map_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
     let change_map_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
@@ -462,10 +462,13 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     let mut change_map_payload = vec![0u8; change_map_len];
     stream.read_exact(&mut change_map_payload).await.unwrap();
     assert_eq!(change_map_payload[0], 0x00); // agyis: no-mutant
-    assert_eq!(
-        u32::from_le_bytes([change_map_payload[1], change_map_payload[2], change_map_payload[3], change_map_payload[4]]),
-        immortal_net::MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP
-    ); // agyis: no-mutant
+    assert_eq!(&change_map_payload[1..5], &[0xae, 0x90, 0x09, 0x1f]); // agyis: no-mutant
+    let change_map_func_id = u32::from_be_bytes([
+        change_map_payload[1], change_map_payload[2], change_map_payload[3], change_map_payload[4],
+    ]); // agyis: no-mutant
+    assert_eq!(change_map_func_id, immortal_net::MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP); // agyis: no-mutant
+    assert_eq!(change_map_func_id, immortal_net::MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP); // agyis: no-mutant
+    assert_eq!(change_map_func_id, 0xae90091f); // agyis: no-mutant
     assert_eq!(change_map_payload[11], 0); // Token 1116 = 0x00 (do not abort) // agyis: no-mutant
     assert_eq!(u16::from_le_bytes([change_map_payload[14], change_map_payload[15]]), 682); // Token 682 // agyis: no-mutant
     assert_eq!(u16::from_le_bytes([change_map_payload[16], change_map_payload[17]]), 11); // Token 11 // agyis: no-mutant
@@ -485,6 +488,18 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     let mut ack_buf = [0u8; 19];
     stream.read_exact(&mut ack_buf).await.unwrap();
     assert_eq!(&ack_buf[..], &immortal_net::MCTS_CHAMPION_SELECT_ACK_FRAME[..]);
+
+    // 6. Step 6: Verify arbitrary post-login frame length does not drop connection with InvalidMagic
+    let mut arb_frame = Vec::new();
+    arb_frame.extend_from_slice(&25u16.to_le_bytes()); // Length 25 (not in legacy [37, 19, 33, 15])
+    arb_frame.extend_from_slice(&0x0000u16.to_le_bytes()); // Flags 0x0000 (not 0x0108)
+    arb_frame.extend_from_slice(&vec![0x77u8; 25]);
+    stream.write_all(&arb_frame).await.unwrap();
+    stream.flush().await.unwrap();
+
+    let mut ack_buf2 = [0u8; 19];
+    stream.read_exact(&mut ack_buf2).await.unwrap();
+    assert_eq!(&ack_buf2[..], &immortal_net::MCTS_CHAMPION_SELECT_ACK_FRAME[..]);
 
     handle.shutdown().await.unwrap();
 
