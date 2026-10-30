@@ -333,8 +333,16 @@ pub fn create_mcts_player_svc_change_map_frame(
 pub const MCTS_FUNCTION_ID_MAP_TRANSITION: u32 = 0xe621824e;
 
 /// Authentic Function ID for match invitation wire frame (0x423b389a).
-/// Dispatched at 0x140d39eb6 in `ShippingPC-ChaosGame.exe` to cache match composition and session ID.
+/// Dispatched at 0x140d39eb6 in `ShippingPC-ChaosGame.exe` to trigger `TgClient::OnMatchInvite`
+/// and transition client queue state to `MQ_INVITED` (3).
 pub const MCTS_FUNCTION_ID_MATCH_INVITATION: u32 = 0x423b389a;
+
+/// Authentic Table Token for Invited Members (1619, 0x0653).
+/// Reverse engineered from `MctsInterface.dll: FUN_1800ec640`.
+pub const MCTS_TOKEN_INVITED_MEMBERS: u16 = 1619;
+
+/// Authentic Token ID for Account ID (682, 0x02aa).
+pub const MCTS_TOKEN_ACCOUNT_ID: u16 = 682;
 
 /// Builds an authentic live MCTS map transition wire frame (0xe621824e).
 ///
@@ -396,46 +404,79 @@ pub fn create_mcts_map_transition_frame(
     frame
 }
 
-/// Builds an authentic live MCTS match invitation / composition frame (0x423b389a).
+/// Builds an authentic live MCTS match invitation wire frame (0x423b389a) with Table 1619.
 ///
-/// Matches reverse engineered `ShippingPC-ChaosGame.exe` dispatch at 0x140d39eb6:
+/// Matches reverse engineered `MctsInterface.dll: FUN_1800ec640` specification:
 /// - Prefix: byte `0x00` (`this[0x30]`)
 /// - Function ID: `0x423b389a` (`MCTS_FUNCTION_ID_MATCH_INVITATION`, wire LE `[0x9a, 0x38, 0x3b, 0x42]`)
-/// - CMarshalRow field count: 2 (1 uint64 field + 1 string field)
-/// - Group 0x4000 (8-byte fields: 1 field):
-///   - Header: `0x4001` (group 0x4000 | 1)
-///   - Token 1583 (0x062f): composition_flags (u64 little-endian)
-/// - Group 0xa000 (UTF-8 string fields: 1 field):
-///   - Header: `0xa001`
-///   - Token 2287 (0x08ef): session_id (u16 length + UTF-8 bytes)
+/// - CMarshalRow field count: 5 (2 uint32 fields + 2 uint64 fields + 1 table)
+/// - Group 0x3000 (4-byte fields: 2 fields):
+///   - Header: `0x3002` (group 0x3000 | 2)
+///   - Token 1342 (0x053e, MATCH_LOBBY_STATE) = 0u32
+///   - Token 1690 (0x069a, LAUNCH_SECONDS) = timeout_seconds
+/// - Group 0x4000 (8-byte fields: 2 fields):
+///   - Header: `0x4002` (group 0x4000 | 2)
+///   - Token 700 (0x02bc, MATCH_ID) = match_id
+///   - Token 703 (0x02bf, MATCH_QUEUE_ID) = queue_id
+/// - Group 0x6000 (Table field: 1 table):
+///   - Header: `0x6001` (group 0x6000 | 1)
+///   - Table Token: 1619 (0x0653, MCTS_TOKEN_INVITED_MEMBERS)
+///   - Row count: 1u16
+///   - Row total fields: 1u16
+///   - Row Group 0x3000 (1 field, hdr 0x3001):
+///     - Token 682 (0x02aa, MCTS_TOKEN_ACCOUNT_ID) = account_id
 /// - TCP Framing:
 ///   - Length: payload length (u16 little-endian)
 ///   - Wire flags: `0x0000` (u16 little-endian)
 ///   - Followed by payload bytes
 pub fn create_mcts_match_invitation_frame(
-    composition_flags: u64,
-    session_id: &str,
+    queue_id: u64,
+    match_id: u64,
+    timeout_seconds: u32,
+    account_id: u32,
 ) -> Vec<u8> {
-    let session_bytes = session_id.as_bytes();
-    let mut payload = Vec::with_capacity(32 + session_bytes.len());
+    let mut payload = Vec::with_capacity(64);
     payload.push(0x00); // this[0x30]
     payload.extend_from_slice(&MCTS_FUNCTION_ID_MATCH_INVITATION.to_le_bytes());
 
-    // CMarshalRow: total fields = 2 (1 qword field + 1 string field)
-    let total_fields: u16 = 2;
+    // CMarshalRow: total fields = 5 (2 dwords + 2 qwords + 1 table)
+    let total_fields: u16 = 5;
     payload.extend_from_slice(&total_fields.to_le_bytes());
 
-    // Group 0x4000 (8-byte fields: 1 field)
-    let grp8_hdr: u16 = 0x4000 | 1;
-    payload.extend_from_slice(&grp8_hdr.to_le_bytes());
-    payload.extend_from_slice(&1583u16.to_le_bytes()); // Token 1583 (0x062f): composition_flags
-    payload.extend_from_slice(&composition_flags.to_le_bytes());
+    // Group 0x3000 (4-byte fields: 2 fields)
+    let grp4_hdr: u16 = 0x3000 | 2;
+    payload.extend_from_slice(&grp4_hdr.to_le_bytes());
+    payload.extend_from_slice(&1342u16.to_le_bytes()); // Token 1342: MATCH_LOBBY_STATE
+    payload.extend_from_slice(&1690u16.to_le_bytes()); // Token 1690: LAUNCH_SECONDS
+    payload.extend_from_slice(&0u32.to_le_bytes()); // MATCH_LOBBY_STATE = 0
+    payload.extend_from_slice(&timeout_seconds.to_le_bytes());
 
-    // Group 0xa000 (UTF-8 string field: 1 field)
-    payload.extend_from_slice(&0xa001u16.to_le_bytes());
-    payload.extend_from_slice(&2287u16.to_le_bytes()); // Token 2287 (0x08ef): session_id
-    payload.extend_from_slice(&(session_bytes.len() as u16).to_le_bytes());
-    payload.extend_from_slice(session_bytes);
+    // Group 0x4000 (8-byte fields: 2 fields)
+    let grp8_hdr: u16 = 0x4000 | 2;
+    payload.extend_from_slice(&grp8_hdr.to_le_bytes());
+    payload.extend_from_slice(&700u16.to_le_bytes()); // Token 700: MATCH_ID
+    payload.extend_from_slice(&703u16.to_le_bytes()); // Token 703: MATCH_QUEUE_ID
+    payload.extend_from_slice(&match_id.to_le_bytes());
+    payload.extend_from_slice(&queue_id.to_le_bytes());
+
+    // Group 0x6000 (Table field: 1 table)
+    let grp_table_hdr: u16 = 0x6001;
+    payload.extend_from_slice(&grp_table_hdr.to_le_bytes());
+    payload.extend_from_slice(&MCTS_TOKEN_INVITED_MEMBERS.to_le_bytes()); // Table 1619: MCTS_TOKEN_INVITED_MEMBERS
+
+    // CMarshalRowSet: row count = 1
+    let row_count: u16 = 1;
+    payload.extend_from_slice(&row_count.to_le_bytes());
+
+    // Row 0: CMarshalRow with 1 field
+    let row_fields: u16 = 1;
+    payload.extend_from_slice(&row_fields.to_le_bytes());
+
+    // Row Group 0x3000 (4-byte fields: 1 field)
+    let row_grp4_hdr: u16 = 0x3000 | 1;
+    payload.extend_from_slice(&row_grp4_hdr.to_le_bytes());
+    payload.extend_from_slice(&MCTS_TOKEN_ACCOUNT_ID.to_le_bytes()); // Token 682: MCTS_TOKEN_ACCOUNT_ID
+    payload.extend_from_slice(&account_id.to_le_bytes());
 
     // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
     let mut frame = Vec::with_capacity(4 + payload.len());
@@ -724,15 +765,16 @@ pub fn create_mcts_match_status_with_members_frame(
     frame
 }
 
-/// Authentic Function ID for `CMctsNetwork::ON_MATCH_INVITE` (0x1ad4a846).
+/// Authentic Function ID for `CMctsNetwork::ON_MATCH_INVITE` (0x1ad4a846, MATCH_EXPIRED_INVITE).
 /// Reverse engineered from `ShippingPC-ChaosGame.exe` (0x14157081c, 0x1400d333c, 0x1400cba10, 0x14163acb0)
 /// and `MctsInterface.dll` (0x1800f616c, 0x1800ee440). Wire LE: [0x46, 0xa8, 0xd4, 0x1a].
+#[deprecated(note = "0x1ad4a846 is MATCH_EXPIRED_INVITE; use create_mcts_match_invitation_frame instead")]
 pub const MCTS_FUNCTION_ID_ON_MATCH_INVITE: u32 = 0x1ad4a846;
 
 /// Authentic Token ID for timeout warning boolean (847).
 pub const MCTS_TOKEN_TIMEOUT_WARNING: u16 = 847;
 
-/// Builds an authentic live MCTS `ON_MATCH_INVITE` wire frame (0x1ad4a846).
+/// Builds a legacy MCTS `ON_MATCH_INVITE` (MATCH_EXPIRED_INVITE) wire frame (0x1ad4a846).
 ///
 /// Matches reverse engineered `CMarshalRow::Store` specification:
 /// - Prefix: byte `0x00` (`this[0x30]`)
@@ -752,6 +794,8 @@ pub const MCTS_TOKEN_TIMEOUT_WARNING: u16 = 847;
 ///   - Length: payload length (u16 little-endian)
 ///   - Wire flags: `0x0000` (u16 little-endian)
 ///   - Followed by payload bytes
+#[deprecated(note = "0x1ad4a846 is MATCH_EXPIRED_INVITE; use create_mcts_match_invitation_frame instead")]
+#[allow(deprecated)]
 pub fn create_mcts_on_match_invite_frame(
     queue_id: u64,
     match_id: u64,
@@ -1274,13 +1318,12 @@ mod tests {
 
     #[test]
     fn test_create_mcts_match_invitation_frame_structure() { // agyis: no-mutant unit test
-        let frame = create_mcts_match_invitation_frame(1282927737, "IMMORTAL-SESSION-6761"); // agyis: no-mutant
-        let session_bytes = b"IMMORTAL-SESSION-6761";
-        assert_eq!(frame.len(), 4 + 1 + 4 + 2 + (2 + 2 + 8) + (2 + 2 + 2 + session_bytes.len())); // agyis: no-mutant
-        assert_eq!(frame.len(), 50); // agyis: no-mutant
+        let frame = create_mcts_match_invitation_frame(434, 878850364, 30, 8302401); // agyis: no-mutant
+        assert_eq!(frame.len(), 63); // agyis: no-mutant
 
         let length = u16::from_le_bytes([frame[0], frame[1]]) as usize; // agyis: no-mutant
         assert_eq!(length, frame.len() - 4); // agyis: no-mutant
+        assert_eq!(length, 59); // agyis: no-mutant
         let flags = u16::from_le_bytes([frame[2], frame[3]]); // agyis: no-mutant
         assert_eq!(flags, 0x0000); // agyis: no-mutant
 
@@ -1292,30 +1335,61 @@ mod tests {
         assert_eq!(func_id_le, 0x423b389a); // agyis: no-mutant
 
         let total_fields = u16::from_le_bytes([payload[5], payload[6]]); // agyis: no-mutant
-        assert_eq!(total_fields, 2); // agyis: no-mutant
+        assert_eq!(total_fields, 5); // agyis: no-mutant
 
-        // Group 8: Token 1583 (composition_flags = 1282927737)
-        let grp8 = u16::from_le_bytes([payload[7], payload[8]]); // agyis: no-mutant
-        assert_eq!(grp8, 0x4001); // agyis: no-mutant
-        let t1583 = u16::from_le_bytes([payload[9], payload[10]]); // agyis: no-mutant
-        assert_eq!(t1583, 1583); // agyis: no-mutant
-        let v1583 = u64::from_le_bytes([
-            payload[11], payload[12], payload[13], payload[14],
-            payload[15], payload[16], payload[17], payload[18],
+        // Group 0x3000: Tokens 1342 (match_lobby_state = 0), 1690 (launch_seconds = 30)
+        let grp4 = u16::from_le_bytes([payload[7], payload[8]]); // agyis: no-mutant
+        assert_eq!(grp4, 0x3002); // agyis: no-mutant
+        let t1342 = u16::from_le_bytes([payload[9], payload[10]]); // agyis: no-mutant
+        let t1690 = u16::from_le_bytes([payload[11], payload[12]]); // agyis: no-mutant
+        assert_eq!(t1342, 1342); // agyis: no-mutant
+        assert_eq!(t1690, 1690); // agyis: no-mutant
+        let v1342 = u32::from_le_bytes([payload[13], payload[14], payload[15], payload[16]]); // agyis: no-mutant
+        let v1690 = u32::from_le_bytes([payload[17], payload[18], payload[19], payload[20]]); // agyis: no-mutant
+        assert_eq!(v1342, 0); // agyis: no-mutant
+        assert_eq!(v1690, 30); // agyis: no-mutant
+
+        // Group 0x4000: Tokens 700 (match_id), 703 (queue_id)
+        let grp8 = u16::from_le_bytes([payload[21], payload[22]]); // agyis: no-mutant
+        assert_eq!(grp8, 0x4002); // agyis: no-mutant
+        let t700 = u16::from_le_bytes([payload[23], payload[24]]); // agyis: no-mutant
+        let t703 = u16::from_le_bytes([payload[25], payload[26]]); // agyis: no-mutant
+        assert_eq!(t700, 700); // agyis: no-mutant
+        assert_eq!(t703, 703); // agyis: no-mutant
+        let v700 = u64::from_le_bytes([
+            payload[27], payload[28], payload[29], payload[30],
+            payload[31], payload[32], payload[33], payload[34],
         ]); // agyis: no-mutant
-        assert_eq!(v1583, 1282927737); // agyis: no-mutant
+        let v703 = u64::from_le_bytes([
+            payload[35], payload[36], payload[37], payload[38],
+            payload[39], payload[40], payload[41], payload[42],
+        ]); // agyis: no-mutant
+        assert_eq!(v700, 878850364); // agyis: no-mutant
+        assert_eq!(v703, 434); // agyis: no-mutant
 
-        // Group 0xa000: Token 2287 (session_id)
-        let grp_str = u16::from_le_bytes([payload[19], payload[20]]); // agyis: no-mutant
-        assert_eq!(grp_str, 0xa001); // agyis: no-mutant
-        let t2287 = u16::from_le_bytes([payload[21], payload[22]]); // agyis: no-mutant
-        assert_eq!(t2287, 2287); // agyis: no-mutant
-        let str_len = u16::from_le_bytes([payload[23], payload[24]]) as usize; // agyis: no-mutant
-        assert_eq!(str_len, session_bytes.len()); // agyis: no-mutant
-        assert_eq!(&payload[25..25 + str_len], session_bytes); // agyis: no-mutant
+        // Group 0x6000: Table 1619 (MCTS_TOKEN_INVITED_MEMBERS)
+        let grp_tbl = u16::from_le_bytes([payload[43], payload[44]]); // agyis: no-mutant
+        assert_eq!(grp_tbl, 0x6001); // agyis: no-mutant
+        let tbl_tok = u16::from_le_bytes([payload[45], payload[46]]); // agyis: no-mutant
+        assert_eq!(tbl_tok, MCTS_TOKEN_INVITED_MEMBERS); // agyis: no-mutant
+        assert_eq!(tbl_tok, 1619); // agyis: no-mutant
+        let row_count = u16::from_le_bytes([payload[47], payload[48]]); // agyis: no-mutant
+        assert_eq!(row_count, 1); // agyis: no-mutant
+
+        // Row 0: 1 field
+        let row_fields = u16::from_le_bytes([payload[49], payload[50]]); // agyis: no-mutant
+        assert_eq!(row_fields, 1); // agyis: no-mutant
+        let row_grp4 = u16::from_le_bytes([payload[51], payload[52]]); // agyis: no-mutant
+        assert_eq!(row_grp4, 0x3001); // agyis: no-mutant
+        let row_tok = u16::from_le_bytes([payload[53], payload[54]]); // agyis: no-mutant
+        assert_eq!(row_tok, MCTS_TOKEN_ACCOUNT_ID); // agyis: no-mutant
+        assert_eq!(row_tok, 682); // agyis: no-mutant
+        let row_val = u32::from_le_bytes([payload[55], payload[56], payload[57], payload[58]]); // agyis: no-mutant
+        assert_eq!(row_val, 8302401); // agyis: no-mutant
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_create_mcts_on_match_invite_frame_structure() { // agyis: no-mutant unit test
         let frame = create_mcts_on_match_invite_frame(434, 878850364, 30, false); // agyis: no-mutant
         assert_eq!(frame.len(), 46); // agyis: no-mutant
