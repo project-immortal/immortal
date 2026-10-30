@@ -357,7 +357,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(v700, 0); // match_id = 0
     assert_eq!(v703, 0); // queue_id = 0
 
-    // 4. Step 4: Client sends champion select frame for Fernando (ID 2203 / 0x089b)
+    // 4. Step 4: Client sends first post-login frame (e.g. champion select or queue request)
     let mut champ_frame = Vec::new();
     champ_frame.extend_from_slice(&15u16.to_le_bytes());
     champ_frame.extend_from_slice(&0x0000u16.to_le_bytes());
@@ -368,7 +368,87 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     stream.write_all(&champ_frame).await.unwrap();
     stream.flush().await.unwrap();
 
-    // Expect champion select ack frame (19 bytes)
+    // Expect automatic Shooting Range transition sequence:
+    // (a) MATCH_STATUS state 8
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let status8_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let status8_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(status8_flags, 0x0000);
+    let mut status8_payload = vec![0u8; status8_len];
+    stream.read_exact(&mut status8_payload).await.unwrap();
+    assert_eq!(status8_payload[0], 0x00);
+    assert_eq!(
+        u32::from_le_bytes([status8_payload[1], status8_payload[2], status8_payload[3], status8_payload[4]]),
+        immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS
+    );
+    let s8_state = u32::from_le_bytes([status8_payload[13], status8_payload[14], status8_payload[15], status8_payload[16]]);
+    let s8_launch = u32::from_le_bytes([status8_payload[17], status8_payload[18], status8_payload[19], status8_payload[20]]);
+    assert_eq!(s8_state, 8);
+    assert_eq!(s8_launch, 0);
+    let s8_match_id = u64::from_le_bytes([
+        status8_payload[27], status8_payload[28], status8_payload[29], status8_payload[30],
+        status8_payload[31], status8_payload[32], status8_payload[33], status8_payload[34],
+    ]);
+    let s8_queue_id = u64::from_le_bytes([
+        status8_payload[35], status8_payload[36], status8_payload[37], status8_payload[38],
+        status8_payload[39], status8_payload[40], status8_payload[41], status8_payload[42],
+    ]);
+    assert_eq!(s8_match_id, 878850364);
+    assert_eq!(s8_queue_id, 434);
+
+    // (b) MATCH_STATUS state 10
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let status10_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let status10_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(status10_flags, 0x0000);
+    let mut status10_payload = vec![0u8; status10_len];
+    stream.read_exact(&mut status10_payload).await.unwrap();
+    assert_eq!(status10_payload[0], 0x00);
+    assert_eq!(
+        u32::from_le_bytes([status10_payload[1], status10_payload[2], status10_payload[3], status10_payload[4]]),
+        immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS
+    );
+    let s10_state = u32::from_le_bytes([status10_payload[13], status10_payload[14], status10_payload[15], status10_payload[16]]);
+    let s10_launch = u32::from_le_bytes([status10_payload[17], status10_payload[18], status10_payload[19], status10_payload[20]]);
+    assert_eq!(s10_state, 10);
+    assert_eq!(s10_launch, 0);
+    let s10_match_id = u64::from_le_bytes([
+        status10_payload[27], status10_payload[28], status10_payload[29], status10_payload[30],
+        status10_payload[31], status10_payload[32], status10_payload[33], status10_payload[34],
+    ]);
+    let s10_queue_id = u64::from_le_bytes([
+        status10_payload[35], status10_payload[36], status10_payload[37], status10_payload[38],
+        status10_payload[39], status10_payload[40], status10_payload[41], status10_payload[42],
+    ]);
+    assert_eq!(s10_match_id, 878850364);
+    assert_eq!(s10_queue_id, 434);
+
+    // (c) ReceiveChangeMap (mapGameId=1615, instanceId=1282927737, is_standalone=true)
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let change_map_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let change_map_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(change_map_flags, 0x0000);
+    let mut change_map_payload = vec![0u8; change_map_len];
+    stream.read_exact(&mut change_map_payload).await.unwrap();
+    assert_eq!(change_map_payload[0], 0x00);
+    assert_eq!(
+        u32::from_le_bytes([change_map_payload[1], change_map_payload[2], change_map_payload[3], change_map_payload[4]]),
+        immortal_net::MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP
+    );
+    assert_eq!(change_map_payload[11], 1); // is_standalone = true
+    let map_game_id = u32::from_le_bytes([
+        change_map_payload[18], change_map_payload[19], change_map_payload[20], change_map_payload[21],
+    ]);
+    let map_instance_id = u32::from_le_bytes([
+        change_map_payload[22], change_map_payload[23], change_map_payload[24], change_map_payload[25],
+    ]);
+    assert_eq!(map_game_id, immortal_net::MAP_GAME_ID_SHOOTING_RANGE);
+    assert_eq!(map_instance_id, immortal_net::MAP_INSTANCE_ID_SHOOTING_RANGE);
+
+    // 5. Step 5: Subsequent post-login frame responds with MCTS_CHAMPION_SELECT_ACK_FRAME
+    stream.write_all(&champ_frame).await.unwrap();
+    stream.flush().await.unwrap();
+
     let mut ack_buf = [0u8; 19];
     stream.read_exact(&mut ack_buf).await.unwrap();
     assert_eq!(&ack_buf[..], &immortal_net::MCTS_CHAMPION_SELECT_ACK_FRAME[..]);

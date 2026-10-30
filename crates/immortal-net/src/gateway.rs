@@ -158,6 +158,7 @@ async fn handle_connection(
     config: Arc<AuthGatewayConfig>,
 ) -> Result<(), NetError> {
     debug!("Accepted incoming MCTS TCP connection from {}", peer_addr);
+    let mut post_login_count: usize = 0;
 
     loop {
         let mut header = [0u8; HEADER_LEN];
@@ -257,17 +258,24 @@ async fn handle_connection(
                 field0, field1, has_fernando, has_shooting_range_req, peer_addr
             );
 
-            if has_shooting_range_req {
-                // Respond to queue/play request with ChangeMap to Shooting Range
+            post_login_count += 1;
+            if post_login_count == 1 || has_shooting_range_req {
+                // Emit Shooting Range transition: MATCH_STATUS state 8 -> MATCH_STATUS state 10 -> ReceiveChangeMap
+                let match_status_8 = create_mcts_match_status_frame(434, 878850364, 8, 0);
+                stream.write_all(&match_status_8).await?;
+
+                let match_status_10 = create_mcts_match_status_frame(434, 878850364, 10, 0);
+                stream.write_all(&match_status_10).await?;
+
                 let change_map_frame = create_mcts_change_map_frame(
                     MAP_GAME_ID_SHOOTING_RANGE,
                     MAP_INSTANCE_ID_SHOOTING_RANGE,
-                    true, // agyis: no-mutant standalone boolean
+                    true,
                 );
                 stream.write_all(&change_map_frame).await?;
                 stream.flush().await?;
                 info!(
-                    "Sent Live MCTS ReceiveChangeMap frame (mapGameId={}, instanceId={}) to {}",
+                    "Sent Live MCTS Shooting Range transition (status 8, status 10, mapGameId={}, instanceId={}) to {}",
                     MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, peer_addr
                 );
             } else {
