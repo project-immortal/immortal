@@ -441,30 +441,47 @@ def cmd_game(args):
             print(proc.stdout)
         else:
             print(f"[*] Log file not found: {log_file}")
-    elif action == "start":
+    elif action in ("start", "client"):
         repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
         server_bin = os.path.join(repo_root, "target/release/immortal-server")
         if not os.path.isfile(server_bin):
             server_bin = os.path.join(repo_root, "target/debug/immortal-server")
 
-        # 1. Ensure immortal-server is running
-        proc = subprocess.run(["pgrep", "-f", "immortal-server"], stdout=subprocess.PIPE, text=True)
-        if not proc.stdout.strip():
-            if os.path.isfile(server_bin):
-                server_log = os.path.join(DIRTYROOM_ROOT, "logs", "server.log")
-                os.makedirs(os.path.dirname(server_log), exist_ok=True)
-                senv = os.environ.copy()
-                senv["RUST_LOG"] = "info,immortal_net=debug,immortal_server=debug"
-                slog = open(server_log, "a")
-                subprocess.Popen([server_bin], env=senv, stdout=slog, stderr=subprocess.STDOUT, start_new_session=True)
-                print(f"[*] immortal-server daemon started (logging to {server_log}).")
-                time.sleep(0.5)
+        if action == "start":
+            # 1. Ensure immortal-server is running
+            proc = subprocess.run(["pgrep", "-f", "immortal-server"], stdout=subprocess.PIPE, text=True)
+            if not proc.stdout.strip():
+                if os.path.isfile(server_bin):
+                    server_log = os.path.join(DIRTYROOM_ROOT, "logs", "server.log")
+                    os.makedirs(os.path.dirname(server_log), exist_ok=True)
+                    senv = os.environ.copy()
+                    senv["RUST_LOG"] = "info,immortal_net=debug,immortal_server=debug"
+                    slog = open(server_log, "a")
+                    subprocess.Popen([server_bin], env=senv, stdout=slog, stderr=subprocess.STDOUT, start_new_session=True)
+                    print(f"[*] immortal-server daemon started (logging to {server_log}).")
+                    time.sleep(0.5)
+                else:
+                    print(f"[!] Warning: immortal-server binary not found at {server_bin}.")
             else:
-                print(f"[!] Warning: immortal-server binary not found at {server_bin}.")
-        else:
-            print("[*] immortal-server is already running.")
+                print("[*] immortal-server is already running.")
 
-        print("[*] Launching game client in online flow...")
+        default_map_url = (
+            "Shootingrange_P?game=TgGame.TgGame_Paladins_ShootingRange"
+            "?GameState=OGS_NoSession?GameMode=0?name=Player"
+            "?map_instance_id=1282927737?Team=255"
+        )
+        map_arg = getattr(args, "map", None)
+        if not map_arg and getattr(args, "target", None) and args.target not in ("client", "server"):
+            map_arg = args.target
+
+        chosen_map = default_map_url
+        if map_arg:
+            if map_arg in ("Shootingrange_P", "shootingrange", "ShootingRange"):
+                chosen_map = default_map_url
+            else:
+                chosen_map = map_arg
+
+        print(f"[*] Launching game client ({action} mode with map: {chosen_map})...")
         client_path = "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/Binaries/Win64/ShippingPC-ChaosGame.exe"
         proton_bin = os.path.expanduser("~/.local/share/Steam/compatibilitytools.d/GE-Proton9-15/proton")
         env = os.environ.copy()
@@ -473,18 +490,22 @@ def cmd_game(args):
         env["STEAM_COMPAT_APP_ID"] = "444090"
         env["SteamAppId"] = "444090"
         env["SteamGameId"] = "444090"
-        args = [
+        cmd_args = [
             proton_bin, "run", client_path,
+        ]
+        if action == "client" or map_arg:
+            cmd_args.append(chosen_map)
+        cmd_args.extend([
             "-steam", "-NoEAC", "-nomovie",
             "-hostx=127.0.0.1:9000",
             "-tcp=1",
             "-dumpmar", "-dumpallmar",
             "-seekfreeloadingPCConsole"
-        ]
+        ])
         log_path = os.path.join(DIRTYROOM_ROOT, "logs", "client.log")
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
         log_file = open(log_path, "w")
-        subprocess.Popen(args, env=env, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
+        subprocess.Popen(cmd_args, env=env, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
         print(f"[*] Paladins client process dispatched (logging to {log_path}).")
 
 def main():
@@ -549,8 +570,9 @@ def main():
     p_shot.set_defaults(func=cmd_screenshot)
 
     p_game = sub.add_parser("game", help="Control and inspect Paladins game and server processes")
-    p_game.add_argument("action", choices=["status", "kill", "start", "logs"], help="Action to perform")
-    p_game.add_argument("target", nargs="?", default="client", choices=["client", "server"], help="Target log to view for 'logs'")
+    p_game.add_argument("action", choices=["status", "kill", "start", "client", "logs"], help="Action to perform")
+    p_game.add_argument("target", nargs="?", default="client", help="Target log to view for 'logs' or target map")
+    p_game.add_argument("--map", default=None, help="Map URL or name to load in client")
     p_game.set_defaults(func=cmd_game)
 
     args = parser.parse_args()

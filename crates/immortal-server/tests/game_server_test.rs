@@ -117,7 +117,7 @@ async fn test_game_server_loopback_integration() {
     match welcome {
         ControlMessage::Welcome { level_url, .. } => {
             assert_eq!(level_url, immortal_net::DEFAULT_SHOOTING_RANGE_MAP);
-            assert!(level_url.contains("Team=0"));
+            assert!(level_url.contains("Team=255"));
         }
         other => panic!("Expected Welcome message, found {:?}", other),
     }
@@ -254,7 +254,7 @@ async fn test_game_server_pcom_driver_loopback_integration() {
     let welcome_msg = ControlMessage::decode(&welcome_bunch.data).expect("Decode welcome message");
     match welcome_msg {
         ControlMessage::Welcome { level_url, .. } => {
-            assert!(level_url.contains("Team=0"));
+            assert!(level_url.contains("Team=255"));
             assert_eq!(level_url, immortal_net::DEFAULT_SHOOTING_RANGE_MAP);
         }
         other => panic!("Expected Welcome message, found {:?}", other),

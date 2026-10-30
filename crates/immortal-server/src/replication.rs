@@ -21,7 +21,7 @@ pub const FERNANDO_SPAWN_Y: f32 = 0.0;
 pub const FERNANDO_SPAWN_Z: f32 = 100.0;
 pub const FERNANDO_BASE_HEALTH: f32 = 4600.0;
 pub const DEVICE_FERNANDO_FLAME_LANCE: u32 = 10774;
-pub const FERNANDO_DEFAULT_TEAM: u8 = 0;
+pub const FERNANDO_DEFAULT_TEAM: u8 = 1;
 
 // Replication Message Sub-Opcodes
 pub const REP_OP_OPEN_CHANNEL: u8 = 0x01;
@@ -201,7 +201,7 @@ impl ReplicationSession {
     }
 
     /// Spawns and replicates Fernando pawn (`TgPawn_Fernando`, `ChampionId::Fernando = 1026`)
-    /// with Weapon Device ID 10774 (`DEVICE_FERNANDO_FLAME_LANCE`) and Team 0
+    /// with Weapon Device ID 10774 (`DEVICE_FERNANDO_FLAME_LANCE`) and Team 1
     /// at spawn coordinates `(0.0, 0.0, 100.0)`.
     pub fn spawn_fernando(&mut self) -> Bunch {
         self.pawn_spawned = true;
@@ -375,7 +375,7 @@ mod tests {
         assert_eq!(FERNANDO_SPAWN_Z, 100.0);
         assert_eq!(FERNANDO_BASE_HEALTH, 4600.0);
         assert_eq!(DEVICE_FERNANDO_FLAME_LANCE, 10774);
-        assert_eq!(FERNANDO_DEFAULT_TEAM, 0);
+        assert_eq!(FERNANDO_DEFAULT_TEAM, 1);
     }
 
     #[test]
@@ -425,7 +425,7 @@ mod tests {
                 assert_eq!(actor_id, 100);
                 assert_eq!(champion_id, ChampionId::Fernando);
                 assert_eq!(weapon_device_id, 10774);
-                assert_eq!(team, 0);
+                assert_eq!(team, 1);
                 assert_eq!(class_name, "TgPawn_Fernando");
                 assert_eq!(location.x, 0.0);
                 assert_eq!(location.y, 0.0);

@@ -536,7 +536,7 @@ mod tests {
         match welcome_msg {
             ControlMessage::Welcome { level_url, .. } => {
                 assert_eq!(level_url, DEFAULT_SHOOTING_RANGE_MAP);
-                assert!(level_url.contains("Team=0"));
+                assert!(level_url.contains("Team=255"));
             }
             other => panic!("Expected welcome message, found {:?}", other),
         }
@@ -562,7 +562,7 @@ mod tests {
             } => {
                 assert_eq!(champion_id, immortal_core::ChampionId::Fernando);
                 assert_eq!(weapon_device_id, 10774);
-                assert_eq!(team, 0);
+                assert_eq!(team, 1);
                 assert_eq!(class_name, "TgPawn_Fernando");
                 assert_eq!(location.x, 0.0);
                 assert_eq!(location.y, 0.0);
@@ -630,7 +630,7 @@ mod tests {
         let welcome_msg = ControlMessage::decode(&welcome_bunch.data).unwrap();
         match welcome_msg {
             ControlMessage::Welcome { level_url, .. } => {
-                assert!(level_url.contains("Team=0"));
+                assert!(level_url.contains("Team=255"));
                 assert_eq!(level_url, DEFAULT_SHOOTING_RANGE_MAP);
             }
             other => panic!("Expected Welcome message, found {:?}", other),
@@ -668,7 +668,7 @@ mod tests {
             } => {
                 assert_eq!(champion_id, immortal_core::ChampionId::Fernando);
                 assert_eq!(weapon_device_id, 10774);
-                assert_eq!(team, 0);
+                assert_eq!(team, 1);
                 assert_eq!(class_name, "TgPawn_Fernando");
                 assert_eq!(location.x, 0.0);
                 assert_eq!(location.y, 0.0);

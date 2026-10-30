@@ -213,6 +213,58 @@ Look up 32-bit FNV-1a / CRC hashes and token dispatch routines:
 ./scripts/dirtyroom/dirty mcts 0x2c123032
 ```
 
+### Native Disassembly (`disasm`)
+Disassemble exact instructions at any virtual address or symbol using native `objdump`:
+```bash
+# Disassemble 128 bytes at entry point or function address
+./scripts/dirtyroom/dirty disasm 0x140b36586 --bytes 64 --limit 20
+
+# Disassemble with specific binary
+./scripts/dirtyroom/dirty disasm 0x18004e4e0 --binary MctsInterface.dll
+```
+
+### PE Section Cross-Reference Probing (`xrefs`)
+Scan binary sections (.text, .rdata, .data) for references to an address or pointer:
+```bash
+./scripts/dirtyroom/dirty xrefs 0x18004e4e0 --binary MctsInterface.dll
+```
+
+### Network Packet Capture Inspection (`pcap`)
+Quickly query dirty-room PCAP traces with Wireshark/TShark filters:
+```bash
+# Inspect MCTS TCP 9000 packets
+./scripts/dirtyroom/dirty pcap mcts_only.pcap --filter "tcp.port==9000" --limit 15
+
+# Inspect UDP game packets in live session
+./scripts/dirtyroom/dirty pcap paladins_live_session.pcap --filter "udp.port==7777" --fields "frame.number,ip.src,ip.dst,udp.length"
+```
+
+### Window & Screen Capture (`screenshot`)
+Capture the running game window or workstation screen to the artifact directory:
+```bash
+./scripts/dirtyroom/dirty screenshot
+```
+
+### Game & Server Process Control (`game` & `client`)
+Launch and manage the local test matrix:
+```bash
+# Start server daemon and launch client into online flow
+./scripts/dirtyroom/dirty game start
+
+# Check active process status
+./scripts/dirtyroom/dirty game status
+
+# Tail client or server runtime logs
+./scripts/dirtyroom/dirty game logs client
+./scripts/dirtyroom/dirty game logs server
+
+# Terminate all running game and server instances
+./scripts/dirtyroom/dirty game kill
+
+# Launch client with custom direct connect / travel URL
+./scripts/dirtyroom/dirty client --connect "127.0.0.1:7777?Name=Fernando?Team=1"
+```
+
 ---
 
 ## 6. Cleanroom Handoff Protocol

@@ -14,7 +14,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Cursor, Read};
 
 pub const DEFAULT_SHOOTING_RANGE_MAP: &str =
-    "Shootingrange_P?game=TgGame.TgGame_Paladins_ShootingRange?GameState=OGS_NoSession?GameMode=0?Team=0";
+    "Shootingrange_P?game=TgGame.TgGame_Paladins_ShootingRange?GameState=OGS_NoSession?GameMode=0?name=Player?map_instance_id=1282927737?Team=255";
 pub const DEFAULT_GAME_CLASS: &str = "TgGame.TgGame_Paladins_ShootingRange";
 pub const DEFAULT_NET_SPEED: u32 = 24000;
 pub const MAX_FSTRING_LEN: usize = 4096;

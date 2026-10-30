@@ -308,6 +308,40 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     let s2_str = std::str::from_utf8(&payload[p2 + 6..p2 + 6 + s2_len]).unwrap();
     assert_eq!(s2_str, "Fernando");
 
+    // 3. Step 3: Expect ReceiveChangeMap wire frame (mapGameId 1615, mapInstanceId 1282927737)
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let map_frame_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let map_wire_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(map_wire_flags, 0x0000);
+
+    let mut map_payload = vec![0u8; map_frame_len];
+    stream.read_exact(&mut map_payload).await.unwrap();
+    assert_eq!(map_payload[0], 0x00);
+    let map_func_id = u32::from_le_bytes([map_payload[1], map_payload[2], map_payload[3], map_payload[4]]);
+    assert_eq!(map_func_id, immortal_net::MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP);
+    let map_game_id = u32::from_le_bytes([map_payload[18], map_payload[19], map_payload[20], map_payload[21]]);
+    let map_inst_id = u32::from_le_bytes([map_payload[22], map_payload[23], map_payload[24], map_payload[25]]);
+    assert_eq!(map_game_id, immortal_net::MAP_GAME_ID_SHOOTING_RANGE);
+    assert_eq!(map_game_id, 1615);
+    assert_eq!(map_inst_id, immortal_net::MAP_INSTANCE_ID_SHOOTING_RANGE);
+    assert_eq!(map_payload[11], 1); // is_standalone == true
+
+    // 4. Step 4: Client sends champion select frame for Fernando (ID 2203 / 0x089b)
+    let mut champ_frame = Vec::new();
+    champ_frame.extend_from_slice(&15u16.to_le_bytes());
+    champ_frame.extend_from_slice(&0x0000u16.to_le_bytes());
+    let mut champ_payload = vec![0u8; 15];
+    champ_payload[6] = 0x9b;
+    champ_payload[7] = 0x08; // 2203 (Fernando)
+    champ_frame.extend_from_slice(&champ_payload);
+    stream.write_all(&champ_frame).await.unwrap();
+    stream.flush().await.unwrap();
+
+    // Expect champion select ack frame (19 bytes)
+    let mut ack_buf = [0u8; 19];
+    stream.read_exact(&mut ack_buf).await.unwrap();
+    assert_eq!(&ack_buf[..], &immortal_net::MCTS_CHAMPION_SELECT_ACK_FRAME[..]);
+
     handle.shutdown().await.unwrap();
 
     let elapsed = start.elapsed();

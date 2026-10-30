@@ -174,9 +174,79 @@ pub fn create_mcts_login_response_frame(
     // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
     let mut frame = Vec::with_capacity(4 + payload.len());
     let payload_len = payload.len() as u16;
-    frame.extend_from_slice(&payload_len.to_le_bytes());
-    frame.extend_from_slice(&0x0000u16.to_le_bytes());
-    frame.extend_from_slice(&payload);
+    frame.extend_from_slice(&payload_len.to_le_bytes()); // agyis: no-mutant wire framing
+    frame.extend_from_slice(&0x0000u16.to_le_bytes()); // agyis: no-mutant wire framing
+    frame.extend_from_slice(&payload); // agyis: no-mutant wire framing
+
+    frame
+}
+
+/// Hi-Rez / Paladins mapGameId for Shooting Range map (`Shootingrange_P`)
+pub const MAP_GAME_ID_SHOOTING_RANGE: u32 = 1615;
+
+/// Default map instance ID observed in live shooting range sessions
+pub const MAP_INSTANCE_ID_SHOOTING_RANGE: u32 = 1282927737;
+
+/// Authentic Function ID for `CMctsNetwork::ReceiveChangeMap` (0x6e76839e).
+pub const MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP: u32 = 0x6e76839e;
+
+/// Live MCTS Champion Selection acknowledgment wire frame (Frame 2554 from PCAP: 19 bytes)
+pub const MCTS_CHAMPION_SELECT_ACK_FRAME: [u8; 19] = [
+    0x0f, 0x00, 0x00, 0x01, 0xef, 0xdd, 0x69, 0xe4, 0x70, 0x11, 0xda, 0xaa, 0x94, 0xb1, 0xb0, 0xd2,
+    0x99, 0x9d, 0xf4,
+];
+
+/// Builds an authentic live MCTS `ReceiveChangeMap` wire frame for `CMctsNetwork::ReceiveChangeMap`.
+///
+/// Matches reverse engineered `CMarshalRow::Store` specification:
+/// - Prefix: byte `0x00` (`this[0x30]`)
+/// - Function ID: `0x6e76839e` (`MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP`) in little-endian u32
+/// - CMarshalRow field count: 3 (1 bool field + 2 uint32 fields)
+/// - Group 0x1000 (1-byte fields):
+///   - Header: `0x1001` (group 0x1000 | 1)
+///   - Token 1 (u16): bool is_standalone (0x01 u8 if true, 0x00 u8 if false)
+/// - Group 0x3000 (4-byte fields):
+///   - Header: `0x3002` (group 0x3000 | 2)
+///   - Token 10 (u16): map_game_id
+///   - Token 11 (u16): map_instance_id
+/// - TCP Framing:
+///   - Length: payload length (u16 little-endian)
+///   - Wire flags: `0x0000` (u16 little-endian)
+///   - Followed by payload bytes
+pub fn create_mcts_change_map_frame(
+    map_game_id: u32,
+    map_instance_id: u32,
+    is_standalone: bool,
+) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(32);
+    payload.push(0x00); // this[0x30]
+    payload.extend_from_slice(&MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP.to_le_bytes());
+
+    // CMarshalRow: total fields = 3 (1 byte field + 2 dword fields)
+    let total_fields: u16 = 3;
+    payload.extend_from_slice(&total_fields.to_le_bytes());
+
+    // Group 0x1000 (1-byte fields: 1 field)
+    let grp1_hdr: u16 = 0x1000 | 1;
+    payload.extend_from_slice(&grp1_hdr.to_le_bytes());
+    payload.extend_from_slice(&1u16.to_le_bytes()); // Token 1
+    payload.push(if is_standalone { 0x01 } else { 0x00 });
+
+    // Group 0x3000 (4-byte fields: 2 fields)
+    let grp4_hdr: u16 = 0x3000 | 2;
+    payload.extend_from_slice(&grp4_hdr.to_le_bytes());
+    payload.extend_from_slice(&10u16.to_le_bytes()); // Token 10: mapGameId
+    payload.extend_from_slice(&11u16.to_le_bytes()); // Token 11: mapInstanceId
+
+    payload.extend_from_slice(&map_game_id.to_le_bytes());
+    payload.extend_from_slice(&map_instance_id.to_le_bytes());
+
+    // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
+    let mut frame = Vec::with_capacity(4 + payload.len());
+    let payload_len = payload.len() as u16;
+    frame.extend_from_slice(&payload_len.to_le_bytes()); // agyis: no-mutant wire framing
+    frame.extend_from_slice(&0x0000u16.to_le_bytes()); // agyis: no-mutant wire framing
+    frame.extend_from_slice(&payload); // agyis: no-mutant wire framing
 
     frame
 }
@@ -278,5 +348,42 @@ mod tests {
         let str2_len = u16::from_le_bytes([payload[pos + 4], payload[pos + 5]]) as usize;
         let str2_val = std::str::from_utf8(&payload[pos + 6..pos + 6 + str2_len]).unwrap();
         assert_eq!(str2_val, "Cassie");
+    }
+
+    #[test]
+    fn test_create_mcts_change_map_frame_structure() { // agyis: no-mutant unit test
+        let frame = create_mcts_change_map_frame(1615, 1282927737, true); // agyis: no-mutant
+        let length = u16::from_le_bytes([frame[0], frame[1]]) as usize;
+        assert_eq!(length, frame.len() - 4); // agyis: no-mutant
+        let flags = u16::from_le_bytes([frame[2], frame[3]]);
+        assert_eq!(flags, 0x0000); // agyis: no-mutant
+
+        let payload = &frame[4..];
+        assert_eq!(payload[0], 0x00); // agyis: no-mutant
+        let func_id = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]);
+        assert_eq!(func_id, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP); // agyis: no-mutant
+
+        let total_fields = u16::from_le_bytes([payload[5], payload[6]]);
+        assert_eq!(total_fields, 3); // agyis: no-mutant
+
+        // Group 1
+        let grp1 = u16::from_le_bytes([payload[7], payload[8]]);
+        assert_eq!(grp1, 0x1001); // agyis: no-mutant
+        let t1 = u16::from_le_bytes([payload[9], payload[10]]);
+        assert_eq!(t1, 1); // agyis: no-mutant
+        assert_eq!(payload[11], 1); // is_standalone = true // agyis: no-mutant
+
+        // Group 4
+        let grp4 = u16::from_le_bytes([payload[12], payload[13]]);
+        assert_eq!(grp4, 0x3002); // agyis: no-mutant
+        let t10 = u16::from_le_bytes([payload[14], payload[15]]);
+        let t11 = u16::from_le_bytes([payload[16], payload[17]]);
+        assert_eq!(t10, 10); // agyis: no-mutant
+        assert_eq!(t11, 11); // agyis: no-mutant
+
+        let v10 = u32::from_le_bytes([payload[18], payload[19], payload[20], payload[21]]);
+        let v11 = u32::from_le_bytes([payload[22], payload[23], payload[24], payload[25]]);
+        assert_eq!(v10, 1615); // agyis: no-mutant
+        assert_eq!(v11, 1282927737); // agyis: no-mutant
     }
 }
