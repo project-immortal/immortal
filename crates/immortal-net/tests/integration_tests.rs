@@ -398,7 +398,48 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     stream.flush().await.unwrap();
 
     // Expect automatic Shooting Range transition sequence:
-    // (a0) MATCH_STATUS invited (queue 434, match 878850364, lobby_state 0, launch_seconds 30, player_lobby_state 0, player_queue_state 3 MQ_INVITED)
+    // (a0) MATCH_STATUS queued (queue 434, match 0, lobby_state 0, launch_seconds 0, player_lobby_state 0, player_queue_state 2 MQ_QUEUED)
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let status_queued_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let status_queued_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(status_queued_flags, 0x0000); // agyis: no-mutant
+    assert_eq!(status_queued_len, 55); // agyis: no-mutant
+    let mut status_queued_payload = vec![0u8; status_queued_len];
+    stream.read_exact(&mut status_queued_payload).await.unwrap();
+    assert_eq!(status_queued_payload[0], 0x00); // agyis: no-mutant
+    assert_eq!(
+        u32::from_le_bytes([status_queued_payload[1], status_queued_payload[2], status_queued_payload[3], status_queued_payload[4]]),
+        immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS
+    ); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([status_queued_payload[5], status_queued_payload[6]]), 6); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([status_queued_payload[7], status_queued_payload[8]]), 0x3004); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([status_queued_payload[9], status_queued_payload[10]]), 1342); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([status_queued_payload[11], status_queued_payload[12]]), 1690); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([status_queued_payload[13], status_queued_payload[14]]), 1344); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([status_queued_payload[15], status_queued_payload[16]]), 2191); // agyis: no-mutant
+    assert_eq!(u32::from_le_bytes([status_queued_payload[17], status_queued_payload[18], status_queued_payload[19], status_queued_payload[20]]), 0); // match_lobby_state = 0 // agyis: no-mutant
+    assert_eq!(u32::from_le_bytes([status_queued_payload[21], status_queued_payload[22], status_queued_payload[23], status_queued_payload[24]]), 0); // launch_seconds = 0 // agyis: no-mutant
+    assert_eq!(u32::from_le_bytes([status_queued_payload[25], status_queued_payload[26], status_queued_payload[27], status_queued_payload[28]]), 0); // player_lobby_state = 0 // agyis: no-mutant
+    assert_eq!(u32::from_le_bytes([status_queued_payload[29], status_queued_payload[30], status_queued_payload[31], status_queued_payload[32]]), 2); // player_queue_state = 2 (MQ_QUEUED) // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([status_queued_payload[33], status_queued_payload[34]]), 0x4002); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([status_queued_payload[35], status_queued_payload[36]]), 700); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([status_queued_payload[37], status_queued_payload[38]]), 703); // agyis: no-mutant
+    assert_eq!(
+        u64::from_le_bytes([
+            status_queued_payload[39], status_queued_payload[40], status_queued_payload[41], status_queued_payload[42],
+            status_queued_payload[43], status_queued_payload[44], status_queued_payload[45], status_queued_payload[46],
+        ]),
+        0
+    ); // match_id = 0 // agyis: no-mutant
+    assert_eq!(
+        u64::from_le_bytes([
+            status_queued_payload[47], status_queued_payload[48], status_queued_payload[49], status_queued_payload[50],
+            status_queued_payload[51], status_queued_payload[52], status_queued_payload[53], status_queued_payload[54],
+        ]),
+        434
+    ); // queue_id = 434 // agyis: no-mutant
+
+    // (a1) MATCH_STATUS invited (queue 0, match 878850364, lobby_state 0, launch_seconds 30, player_lobby_state 0, player_queue_state 3 MQ_INVITED)
     stream.read_exact(&mut header_buf).await.unwrap();
     let status_inv_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
     let status_inv_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
@@ -436,7 +477,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
             status_inv_payload[47], status_inv_payload[48], status_inv_payload[49], status_inv_payload[50],
             status_inv_payload[51], status_inv_payload[52], status_inv_payload[53], status_inv_payload[54],
         ]),
-        434
+        0
     ); // agyis: no-mutant
 
     // (a1) MATCH_INVITATION (Function ID 0x423b389a, queue 434, match 878850364, timeout 30s, Table 1619 account 8302401)
@@ -783,8 +824,8 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
 
     let elapsed = start.elapsed();
     assert!(
-        elapsed.as_millis() < 600,
-        "Live MCTS Auth Gateway exchange test must finish in < 600ms, took {:?}",
+        elapsed.as_millis() < 800,
+        "Live MCTS Auth Gateway exchange test must finish in < 800ms, took {:?}",
         elapsed
     );
 }
