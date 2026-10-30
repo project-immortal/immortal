@@ -647,6 +647,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(&ack_buf[..], &immortal_net::MCTS_CHAMPION_SELECT_ACK_FRAME[..]);
 
     // 6. Step 6: Verify arbitrary post-login frame length does not drop connection with InvalidMagic
+    // and telemetry frame does not emit spurious ACK.
     let mut arb_frame = Vec::new();
     arb_frame.extend_from_slice(&25u16.to_le_bytes()); // Length 25 (not in legacy [37, 19, 33, 15])
     arb_frame.extend_from_slice(&0x0000u16.to_le_bytes()); // Flags 0x0000 (not 0x0108)
@@ -654,9 +655,36 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     stream.write_all(&arb_frame).await.unwrap();
     stream.flush().await.unwrap();
 
+    // Verify connection remains active and subsequent champion select frame responds with ACK
+    stream.write_all(&champ_frame).await.unwrap();
+    stream.flush().await.unwrap();
+
     let mut ack_buf2 = [0u8; 19];
     stream.read_exact(&mut ack_buf2).await.unwrap();
     assert_eq!(&ack_buf2[..], &immortal_net::MCTS_CHAMPION_SELECT_ACK_FRAME[..]);
+
+    // 7. Step 7: Verify payload_len == 19 and payload_len == 37 trigger MCTS_CHAMPION_SELECT_ACK_FRAME without fernando
+    let mut frame_19 = Vec::new();
+    frame_19.extend_from_slice(&19u16.to_le_bytes());
+    frame_19.extend_from_slice(&0x0000u16.to_le_bytes());
+    frame_19.extend_from_slice(&vec![0x11u8; 19]);
+    stream.write_all(&frame_19).await.unwrap();
+    stream.flush().await.unwrap();
+
+    let mut ack_buf3 = [0u8; 19];
+    stream.read_exact(&mut ack_buf3).await.unwrap();
+    assert_eq!(&ack_buf3[..], &immortal_net::MCTS_CHAMPION_SELECT_ACK_FRAME[..]);
+
+    let mut frame_37 = Vec::new();
+    frame_37.extend_from_slice(&37u16.to_le_bytes());
+    frame_37.extend_from_slice(&0x0000u16.to_le_bytes());
+    frame_37.extend_from_slice(&vec![0x22u8; 37]);
+    stream.write_all(&frame_37).await.unwrap();
+    stream.flush().await.unwrap();
+
+    let mut ack_buf4 = [0u8; 19];
+    stream.read_exact(&mut ack_buf4).await.unwrap();
+    assert_eq!(&ack_buf4[..], &immortal_net::MCTS_CHAMPION_SELECT_ACK_FRAME[..]);
 
     handle.shutdown().await.unwrap();
 

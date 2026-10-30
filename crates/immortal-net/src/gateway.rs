@@ -250,7 +250,7 @@ async fn handle_connection(
                     "Sent Live MCTS Shooting Range transition (status 8 [lock:5, queue:4], champion roster, status 10 with members table [lock:5, queue:7, account_id={}, bot_id={}], match_invitation composition_flags={}, map_transition mapGameId={}, instanceId={}) to {}",
                     config.account_id, BOT_ID_FERNANDO, MAP_INSTANCE_ID_SHOOTING_RANGE, MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, peer_addr
                 );
-            } else {
+            } else if has_fernando || payload_len == 37 || payload_len == 19 {
                 // Reply with champion select acknowledgment frame (Frame 2554)
                 stream.write_all(&MCTS_CHAMPION_SELECT_ACK_FRAME).await?;
                 stream.flush().await?;
