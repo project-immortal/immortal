@@ -469,6 +469,138 @@ pub fn create_mcts_match_status_frame(
     frame
 }
 
+/// Authentic Token ID for `DATA_SET_MEMBERS` (312).
+/// Reverse engineered from `MctsInterface.dll` / `ShippingPC-ChaosGame.exe` (`FUN_1414df220`, `FUN_1414e8610`).
+pub const MCTS_TOKEN_MEMBERS: u16 = 312;
+
+/// Builds an authentic live MCTS `MATCH_STATUS` wire frame including the `DATA_SET_MEMBERS` (Token 312) table.
+///
+/// Matches reverse engineered `CMarshalRow::Store` and `CMarshalRowSet::Store` specification:
+/// - Prefix: byte `0x00` (`this[0x30]`)
+/// - Function ID: `0x392dcda5` (`MCTS_FUNCTION_ID_MATCH_STATUS`) in little-endian u32
+/// - CMarshalRow field count: 7 (4 uint32 fields in Group 0x3000 + 2 uint64 fields in Group 0x4000 + 1 table in Group 0x6000)
+/// - Group 0x3000 (4-byte fields):
+///   - Header: `0x3004` (group 0x3000 | 4)
+///   - Token 1342 (u16): match_lobby_state
+///   - Token 1690 (u16): launch_seconds
+///   - Token 1344 (u16): player_lobby_state
+///   - Token 2191 (u16): player_queue_state
+///   - Values: match_lobby_state, launch_seconds, player_lobby_state, player_queue_state
+/// - Group 0x4000 (8-byte fields):
+///   - Header: `0x4002` (group 0x4000 | 2)
+///   - Token 700 (u16): match_id
+///   - Token 703 (u16): queue_id
+///   - Values: match_id, queue_id
+/// - Group 0x6000 (Table / Rowset fields):
+///   - Header: `0x6001` (group 0x6000 | 1)
+///   - Table Token: 312 (`MCTS_TOKEN_MEMBERS`)
+///   - Row count: 1 (u16)
+///   - Row 0 (CMarshalRow):
+///     - Field count: 5 (u16)
+///     - Group 0x1000 (1-byte fields):
+///       - Header: `0x1001` (group 0x1000 | 1)
+///       - Token 2143 (u16): bool true (0x01 u8)
+///     - Group 0x3000 (4-byte fields):
+///       - Header: `0x3003` (group 0x3000 | 3)
+///       - Token 855 (u16): PROFILE_ID (`account_id as u32`)
+///       - Token 122 (u16): BOT_ID / CHAMPION_ID (`champion_id`)
+///       - Token 1344 (u16): PLAYER_LOBBY_STATE (`player_lobby_state`)
+///       - Values: `(account_id as u32)`, `champion_id`, `player_lobby_state`
+///     - Group 0x4000 (8-byte fields):
+///       - Header: `0x4001` (group 0x4000 | 1)
+///       - Token 11 (u16): PLAYER_ID (`account_id` as u64)
+///       - Value: `account_id` (u64)
+/// - TCP Framing:
+///   - Length: payload length (u16 little-endian)
+///   - Wire flags: `0x0000` (u16 little-endian)
+///   - Followed by payload bytes
+#[allow(clippy::too_many_arguments)]
+pub fn create_mcts_match_status_with_members_frame(
+    queue_id: u64,
+    match_id: u64,
+    match_lobby_state: u32,
+    launch_seconds: u32,
+    player_lobby_state: u32,
+    player_queue_state: u32,
+    account_id: u64,
+    champion_id: u32,
+) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(128);
+    payload.push(0x00); // this[0x30]
+    payload.extend_from_slice(&MCTS_FUNCTION_ID_MATCH_STATUS.to_le_bytes());
+
+    // CMarshalRow: total fields = 7 (4 dwords in 0x3000 + 2 qwords in 0x4000 + 1 table in 0x6000)
+    let total_fields: u16 = 7;
+    payload.extend_from_slice(&total_fields.to_le_bytes());
+
+    // Group 0x3000 (4-byte fields: 4 fields)
+    let grp4_hdr: u16 = 0x3000 | 4;
+    payload.extend_from_slice(&grp4_hdr.to_le_bytes());
+    payload.extend_from_slice(&1342u16.to_le_bytes()); // Token 1342: MATCH_LOBBY_STATE
+    payload.extend_from_slice(&1690u16.to_le_bytes()); // Token 1690: LAUNCH_SECONDS
+    payload.extend_from_slice(&1344u16.to_le_bytes()); // Token 1344: PLAYER_LOBBY_STATE
+    payload.extend_from_slice(&2191u16.to_le_bytes()); // Token 2191: PLAYER_QUEUE_STATE
+
+    payload.extend_from_slice(&match_lobby_state.to_le_bytes());
+    payload.extend_from_slice(&launch_seconds.to_le_bytes());
+    payload.extend_from_slice(&player_lobby_state.to_le_bytes());
+    payload.extend_from_slice(&player_queue_state.to_le_bytes());
+
+    // Group 0x4000 (8-byte fields: 2 fields)
+    let grp8_hdr: u16 = 0x4000 | 2;
+    payload.extend_from_slice(&grp8_hdr.to_le_bytes());
+    payload.extend_from_slice(&700u16.to_le_bytes()); // Token 700: MATCH_ID
+    payload.extend_from_slice(&703u16.to_le_bytes()); // Token 703: MATCH_QUEUE_ID
+
+    payload.extend_from_slice(&match_id.to_le_bytes());
+    payload.extend_from_slice(&queue_id.to_le_bytes());
+
+    // Group 0x6000 (Table field: 1 table)
+    let grp_table_hdr: u16 = 0x6001;
+    payload.extend_from_slice(&grp_table_hdr.to_le_bytes());
+    payload.extend_from_slice(&MCTS_TOKEN_MEMBERS.to_le_bytes()); // Table 312: DATA_SET_MEMBERS
+
+    // CMarshalRowSet: row count = 1
+    let row_count: u16 = 1;
+    payload.extend_from_slice(&row_count.to_le_bytes());
+
+    // Row 0: CMarshalRow with 5 fields (1 bool + 3 dwords + 1 qword)
+    let row_fields: u16 = 5;
+    payload.extend_from_slice(&row_fields.to_le_bytes());
+
+    // Row Group 0x1000 (1-byte fields: 1 field)
+    let row_grp1_hdr: u16 = 0x1000 | 1;
+    payload.extend_from_slice(&row_grp1_hdr.to_le_bytes());
+    payload.extend_from_slice(&2143u16.to_le_bytes()); // Token 2143: bool true
+    payload.push(0x01);
+
+    // Row Group 0x3000 (4-byte fields: 3 fields)
+    let row_grp4_hdr: u16 = 0x3000 | 3;
+    payload.extend_from_slice(&row_grp4_hdr.to_le_bytes());
+    payload.extend_from_slice(&855u16.to_le_bytes());  // Token 855: PROFILE_ID
+    payload.extend_from_slice(&122u16.to_le_bytes());  // Token 122: BOT_ID / CHAMPION_ID
+    payload.extend_from_slice(&1344u16.to_le_bytes()); // Token 1344: PLAYER_LOBBY_STATE
+
+    payload.extend_from_slice(&(account_id as u32).to_le_bytes());
+    payload.extend_from_slice(&champion_id.to_le_bytes());
+    payload.extend_from_slice(&player_lobby_state.to_le_bytes());
+
+    // Row Group 0x4000 (8-byte fields: 1 field)
+    let row_grp8_hdr: u16 = 0x4000 | 1;
+    payload.extend_from_slice(&row_grp8_hdr.to_le_bytes());
+    payload.extend_from_slice(&11u16.to_le_bytes()); // Token 11: PLAYER_ID
+    payload.extend_from_slice(&account_id.to_le_bytes());
+
+    // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
+    let mut frame = Vec::with_capacity(4 + payload.len());
+    let payload_len = payload.len() as u16;
+    frame.extend_from_slice(&payload_len.to_le_bytes()); // agyis: no-mutant wire framing
+    frame.extend_from_slice(&0x0000u16.to_le_bytes()); // agyis: no-mutant wire framing
+    frame.extend_from_slice(&payload); // agyis: no-mutant wire framing
+
+    frame
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -769,5 +901,125 @@ mod tests {
         ]); // agyis: no-mutant
         assert_eq!(v700, 878850364); // agyis: no-mutant
         assert_eq!(v703, 434); // agyis: no-mutant
+    }
+
+    #[test]
+    fn test_create_mcts_match_status_with_members_frame_structure() { // agyis: no-mutant unit test
+        let frame = create_mcts_match_status_with_members_frame(
+            0,
+            878850364,
+            10,
+            0,
+            5,
+            7,
+            8302401,
+            1026,
+        ); // agyis: no-mutant
+        assert_eq!(frame.len(), 104); // agyis: no-mutant
+
+        let length = u16::from_le_bytes([frame[0], frame[1]]) as usize; // agyis: no-mutant
+        assert_eq!(length, frame.len() - 4); // agyis: no-mutant
+        assert_eq!(length, 100); // agyis: no-mutant
+        let flags = u16::from_le_bytes([frame[2], frame[3]]); // agyis: no-mutant
+        assert_eq!(flags, 0x0000); // agyis: no-mutant
+
+        let payload = &frame[4..]; // agyis: no-mutant
+        assert_eq!(payload[0], 0x00); // this[0x30] // agyis: no-mutant
+        let func_id = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]); // agyis: no-mutant
+        assert_eq!(func_id, MCTS_FUNCTION_ID_MATCH_STATUS); // agyis: no-mutant
+        assert_eq!(func_id, 0x392dcda5); // agyis: no-mutant
+
+        let total_fields = u16::from_le_bytes([payload[5], payload[6]]); // agyis: no-mutant
+        assert_eq!(total_fields, 7); // agyis: no-mutant
+
+        // Group 0x3000 check (4 fields)
+        let grp4 = u16::from_le_bytes([payload[7], payload[8]]); // agyis: no-mutant
+        assert_eq!(grp4, 0x3004); // agyis: no-mutant
+        let t1342 = u16::from_le_bytes([payload[9], payload[10]]); // agyis: no-mutant
+        let t1690 = u16::from_le_bytes([payload[11], payload[12]]); // agyis: no-mutant
+        let t1344 = u16::from_le_bytes([payload[13], payload[14]]); // agyis: no-mutant
+        let t2191 = u16::from_le_bytes([payload[15], payload[16]]); // agyis: no-mutant
+        assert_eq!(t1342, 1342); // agyis: no-mutant
+        assert_eq!(t1690, 1690); // agyis: no-mutant
+        assert_eq!(t1344, 1344); // agyis: no-mutant
+        assert_eq!(t2191, 2191); // agyis: no-mutant
+
+        let v1342 = u32::from_le_bytes([payload[17], payload[18], payload[19], payload[20]]); // agyis: no-mutant
+        let v1690 = u32::from_le_bytes([payload[21], payload[22], payload[23], payload[24]]); // agyis: no-mutant
+        let v1344 = u32::from_le_bytes([payload[25], payload[26], payload[27], payload[28]]); // agyis: no-mutant
+        let v2191 = u32::from_le_bytes([payload[29], payload[30], payload[31], payload[32]]); // agyis: no-mutant
+        assert_eq!(v1342, 10); // agyis: no-mutant
+        assert_eq!(v1690, 0); // agyis: no-mutant
+        assert_eq!(v1344, 5); // agyis: no-mutant
+        assert_eq!(v2191, 7); // agyis: no-mutant
+
+        // Group 0x4000 check (2 fields)
+        let grp8 = u16::from_le_bytes([payload[33], payload[34]]); // agyis: no-mutant
+        assert_eq!(grp8, 0x4002); // agyis: no-mutant
+        let t700 = u16::from_le_bytes([payload[35], payload[36]]); // agyis: no-mutant
+        let t703 = u16::from_le_bytes([payload[37], payload[38]]); // agyis: no-mutant
+        assert_eq!(t700, 700); // agyis: no-mutant
+        assert_eq!(t703, 703); // agyis: no-mutant
+
+        let v700 = u64::from_le_bytes([
+            payload[39], payload[40], payload[41], payload[42],
+            payload[43], payload[44], payload[45], payload[46],
+        ]); // agyis: no-mutant
+        let v703 = u64::from_le_bytes([
+            payload[47], payload[48], payload[49], payload[50],
+            payload[51], payload[52], payload[53], payload[54],
+        ]); // agyis: no-mutant
+        assert_eq!(v700, 878850364); // agyis: no-mutant
+        assert_eq!(v703, 0); // agyis: no-mutant
+
+        // Group 0x6000 check (Table 312 / DATA_SET_MEMBERS)
+        let grp_tbl = u16::from_le_bytes([payload[55], payload[56]]); // agyis: no-mutant
+        assert_eq!(grp_tbl, 0x6001); // agyis: no-mutant
+        let tbl_token = u16::from_le_bytes([payload[57], payload[58]]); // agyis: no-mutant
+        assert_eq!(tbl_token, MCTS_TOKEN_MEMBERS); // agyis: no-mutant
+        assert_eq!(tbl_token, 312); // agyis: no-mutant
+
+        let row_count = u16::from_le_bytes([payload[59], payload[60]]); // agyis: no-mutant
+        assert_eq!(row_count, 1); // agyis: no-mutant
+
+        // Row 0 check: field count 5
+        let row_field_count = u16::from_le_bytes([payload[61], payload[62]]); // agyis: no-mutant
+        assert_eq!(row_field_count, 5); // agyis: no-mutant
+
+        // Row Group 0x1000: Token 2143 (bool true = 1)
+        let row_grp1 = u16::from_le_bytes([payload[63], payload[64]]); // agyis: no-mutant
+        assert_eq!(row_grp1, 0x1001); // agyis: no-mutant
+        let t2143 = u16::from_le_bytes([payload[65], payload[66]]); // agyis: no-mutant
+        assert_eq!(t2143, 2143); // agyis: no-mutant
+        assert_eq!(payload[67], 1); // bool true // agyis: no-mutant
+
+        // Row Group 0x3000: Tokens 855, 122, 1344
+        let row_grp4 = u16::from_le_bytes([payload[68], payload[69]]); // agyis: no-mutant
+        assert_eq!(row_grp4, 0x3003); // agyis: no-mutant
+        let t855 = u16::from_le_bytes([payload[70], payload[71]]); // agyis: no-mutant
+        let t122 = u16::from_le_bytes([payload[72], payload[73]]); // agyis: no-mutant
+        let t1344_row = u16::from_le_bytes([payload[74], payload[75]]); // agyis: no-mutant
+        assert_eq!(t855, 855); // agyis: no-mutant
+        assert_eq!(t122, 122); // agyis: no-mutant
+        assert_eq!(t1344_row, 1344); // agyis: no-mutant
+
+        let v855 = u32::from_le_bytes([payload[76], payload[77], payload[78], payload[79]]); // agyis: no-mutant
+        let v122 = u32::from_le_bytes([payload[80], payload[81], payload[82], payload[83]]); // agyis: no-mutant
+        let v1344_row = u32::from_le_bytes([payload[84], payload[85], payload[86], payload[87]]); // agyis: no-mutant
+        assert_eq!(v855, 8302401); // agyis: no-mutant
+        assert_eq!(v122, 1026); // agyis: no-mutant
+        assert_eq!(v1344_row, 5); // agyis: no-mutant
+
+        // Row Group 0x4000: Token 11 (account_id as u64)
+        let row_grp8 = u16::from_le_bytes([payload[88], payload[89]]); // agyis: no-mutant
+        assert_eq!(row_grp8, 0x4001); // agyis: no-mutant
+        let t11 = u16::from_le_bytes([payload[90], payload[91]]); // agyis: no-mutant
+        assert_eq!(t11, 11); // agyis: no-mutant
+
+        let v11 = u64::from_le_bytes([
+            payload[92], payload[93], payload[94], payload[95],
+            payload[96], payload[97], payload[98], payload[99],
+        ]); // agyis: no-mutant
+        assert_eq!(v11, 8302401); // agyis: no-mutant
     }
 }
