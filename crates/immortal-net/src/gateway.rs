@@ -46,7 +46,7 @@ impl Default for AuthGatewayConfig {
             session_token: "IMMORTAL-DEV-SESSION-TICKET".to_string(),
             match_ticket_str: "IMMORTAL-MATCH-TICKET-7777".to_string(),
             compress_response: false,
-            post_login_settle_delay_ms: 3500,
+            post_login_settle_delay_ms: 16000,
             post_login_invite_delay_ms: 100,
             post_login_accept_delay_ms: 500,
             post_login_launch_delay_ms: 500,
@@ -444,7 +444,7 @@ mod tests {
     #[test]
     fn test_auth_gateway_config_default_cadence() {
         let config = AuthGatewayConfig::default();
-        assert_eq!(config.post_login_settle_delay_ms, 3500);
+        assert_eq!(config.post_login_settle_delay_ms, 16000);
         assert_eq!(config.post_login_invite_delay_ms, 100);
         assert_eq!(config.post_login_accept_delay_ms, 500);
         assert_eq!(config.post_login_launch_delay_ms, 500);
