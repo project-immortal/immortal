@@ -34,12 +34,14 @@ pub use marshal::{
 };
 pub use mcts_handshake::{
     create_mcts_change_map_frame, create_mcts_champion_roster_frame,
-    create_mcts_login_response_frame, create_mcts_match_status_frame,
+    create_mcts_login_response_frame, create_mcts_map_transition_frame,
+    create_mcts_match_invitation_frame, create_mcts_match_status_frame,
     create_mcts_match_status_with_members_frame,
     create_mcts_player_svc_change_map_frame, BOT_ID_FERNANDO, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION,
     MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME,
     MCTS_CLIENT_AUTH_REQUEST_FLAGS, MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS,
     MCTS_CLIENT_CRYPTO_TICKET_LEN, MCTS_FUNCTION_ID_CHAMPION_ROSTER, MCTS_FUNCTION_ID_CHANGE_MAP,
+    MCTS_FUNCTION_ID_MAP_TRANSITION, MCTS_FUNCTION_ID_MATCH_INVITATION,
     MCTS_FUNCTION_ID_MATCH_STATUS, MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE,
     MCTS_FUNCTION_ID_ON_MATCH_STATUS, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP,
     MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP_BE, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP_LE,
