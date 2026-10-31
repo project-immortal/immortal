@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
 // Copyright (c) 2026 Arafat Zahan (@kuasha420)
 // Governed by: Cleanroom Preservation Standard & ICARO-42/b Ordinance
-// Governed by: ICARO-42/b Ordinance (Company-Supported Personal IP Framework)
 
 //! Programmatic Cleanroom MCTS TCP 9000 Handshake Codecs and Constants
 //!
@@ -332,7 +331,9 @@ pub fn create_mcts_player_svc_change_map_frame(
     frame
 }
 
-/// Authentic Function ID for map transition wire frame (0xe621824e).
+/// Protocol Notice (OBL-MCTS-023): Function ID 0xe621824e represents a server-directed connection termination command, not a match transition packet. DO NOT TRANSMIT during match transition.
+///
+/// Authentic Function ID previously thought to be map transition wire frame (0xe621824e).
 /// Dispatched at 0x140d3a0a0 in `ShippingPC-ChaosGame.exe` to trigger `ReceiveChangeMap`.
 pub const MCTS_FUNCTION_ID_MAP_TRANSITION: u32 = 0xe621824e;
 
@@ -352,6 +353,8 @@ pub const MCTS_TOKEN_ACCOUNT_ID: u16 = 682;
 /// Reverse engineered from `MctsInterface.dll: FUN_1800ec640 / CMarshalEntry::GetField((CTgNetId*)&local_3a0)`.
 pub const MCTS_TOKEN_PLAYER_ID: u16 = 11;
 
+/// Protocol Notice (OBL-MCTS-023): Function ID 0xe621824e represents a server-directed connection termination command, not a match transition packet. DO NOT TRANSMIT during match transition.
+///
 /// Builds an authentic live MCTS map transition wire frame (0xe621824e).
 ///
 /// Matches reverse engineered `ShippingPC-ChaosGame.exe` dispatch at 0x140d3a0a0 / 0x140d39d60:
@@ -371,6 +374,7 @@ pub const MCTS_TOKEN_PLAYER_ID: u16 = 11;
 ///   - Length: payload length (u16 little-endian)
 ///   - Wire flags: `0x0000` (u16 little-endian)
 ///   - Followed by payload bytes
+#[deprecated(note = "0xe621824e drops connection; client transitions automatically")]
 pub fn create_mcts_map_transition_frame(
     map_game_id: u32,
     map_instance_id: u64,
@@ -1419,6 +1423,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_create_mcts_map_transition_frame_structure() {
         // agyis: no-mutant unit test
         let frame = create_mcts_map_transition_frame(1615, 1282927737, false); // agyis: no-mutant

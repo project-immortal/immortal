@@ -1369,77 +1369,9 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     ]); // agyis: no-mutant
     assert_eq!(s10_player_id, 8302401); // agyis: no-mutant
 
-    // (e) MAP_TRANSITION (mapGameId=1615, instanceId=1282927737, is_standalone=false)
-    stream.read_exact(&mut header_buf).await.unwrap();
-    let map_trans_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
-    let map_trans_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
-    assert_eq!(map_trans_flags, 0x0000); // agyis: no-mutant
-    let mut map_trans_payload = vec![0u8; map_trans_len];
-    stream.read_exact(&mut map_trans_payload).await.unwrap();
-    assert_eq!(map_trans_payload[0], 0x00); // agyis: no-mutant
-    assert_eq!(&map_trans_payload[1..5], &[0x4e, 0x82, 0x21, 0xe6]); // agyis: no-mutant
-    let map_trans_func_id = u32::from_le_bytes([
-        map_trans_payload[1],
-        map_trans_payload[2],
-        map_trans_payload[3],
-        map_trans_payload[4],
-    ]); // agyis: no-mutant
-    assert_eq!(
-        map_trans_func_id,
-        immortal_net::MCTS_FUNCTION_ID_MAP_TRANSITION
-    ); // agyis: no-mutant
-    assert_eq!(map_trans_func_id, 0xe621824e); // agyis: no-mutant
-    let total_fields = u16::from_le_bytes([map_trans_payload[5], map_trans_payload[6]]); // agyis: no-mutant
-    assert_eq!(total_fields, 3); // agyis: no-mutant
-
-    // Group 0x1000: Token 1116 (is_standalone = false)
-    let grp1 = u16::from_le_bytes([map_trans_payload[7], map_trans_payload[8]]); // agyis: no-mutant
-    assert_eq!(grp1, 0x1001); // agyis: no-mutant
-    assert_eq!(
-        u16::from_le_bytes([map_trans_payload[9], map_trans_payload[10]]),
-        1116
-    ); // agyis: no-mutant
-    assert_eq!(map_trans_payload[11], 0); // Token 1116 = 0x00 (is_standalone = false) // agyis: no-mutant
-
-    // Group 0x3000: Token 682 (mapGameId = 1615)
-    let grp4 = u16::from_le_bytes([map_trans_payload[12], map_trans_payload[13]]); // agyis: no-mutant
-    assert_eq!(grp4, 0x3001); // agyis: no-mutant
-    assert_eq!(
-        u16::from_le_bytes([map_trans_payload[14], map_trans_payload[15]]),
-        682
-    ); // Token 682 // agyis: no-mutant
-    let map_game_id = u32::from_le_bytes([
-        map_trans_payload[16],
-        map_trans_payload[17],
-        map_trans_payload[18],
-        map_trans_payload[19],
-    ]); // agyis: no-mutant
-    assert_eq!(map_game_id, immortal_net::MAP_GAME_ID_SHOOTING_RANGE); // agyis: no-mutant
-
-    // Group 0x4000: Token 685 (mapInstanceId = 1282927737)
-    let grp8 = u16::from_le_bytes([map_trans_payload[20], map_trans_payload[21]]); // agyis: no-mutant
-    assert_eq!(grp8, 0x4001); // agyis: no-mutant
-    assert_eq!(
-        u16::from_le_bytes([map_trans_payload[22], map_trans_payload[23]]),
-        685
-    ); // Token 685 // agyis: no-mutant
-    let map_instance_id = u64::from_le_bytes([
-        map_trans_payload[24],
-        map_trans_payload[25],
-        map_trans_payload[26],
-        map_trans_payload[27],
-        map_trans_payload[28],
-        map_trans_payload[29],
-        map_trans_payload[30],
-        map_trans_payload[31],
-    ]); // agyis: no-mutant
-    assert_eq!(
-        map_instance_id,
-        immortal_net::MAP_INSTANCE_ID_SHOOTING_RANGE as u64
-    ); // agyis: no-mutant
-
-    // 5. Step 5: Subsequent post-login frame (champion select with Fernando) is drained by decoupled reader
-    // without emitting bogus encrypted ciphertext ACK.
+    // 5. Step 5: Live sequence completes at MATCH_STATUS 10 without bogus disconnect frame (0xe621824e).
+    // Subsequent post-login frame (champion select with Fernando) is drained by decoupled reader
+    // without emitting bogus encrypted ciphertext ACK and stream remains connected.
     stream.write_all(&champ_frame).await.unwrap();
     stream.flush().await.unwrap();
 
