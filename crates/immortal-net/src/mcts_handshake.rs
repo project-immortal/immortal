@@ -570,12 +570,12 @@ pub const MCTS_FUNCTION_ID_MATCH_STATUS: u32 = 0x392dcda5;
 /// Backwards compatibility alias for `MCTS_FUNCTION_ID_MATCH_STATUS`.
 pub const MCTS_FUNCTION_ID_ON_MATCH_STATUS: u32 = MCTS_FUNCTION_ID_MATCH_STATUS;
 
-/// Builds an authentic live MCTS `MATCH_STATUS` wire frame for `CMctsNetwork::MATCH_STATUS`.
+/// Builds an authentic live MCTS `MATCH_STATUS` wire frame for `CMctsNetwork`.
 ///
-/// Matches reverse engineered `CMarshalRow::Store` specification:
+/// Matches reverse engineered `CMctsMatchMaking::OnMatchStatus` and `CMarshalRow::Store` specification:
 /// - Prefix: byte `0x00` (`this[0x30]`)
 /// - Function ID: `0x392dcda5` (`MCTS_FUNCTION_ID_MATCH_STATUS`) in little-endian u32
-/// - CMarshalRow field count: 6 (4 uint32 fields in Group 0x3000 + 2 uint64 fields in Group 0x4000)
+/// - CMarshalRow field count: 7 (4 uint32 fields in Group 0x3000 + 2 uint64 fields in Group 0x4000 + 1 table in Group 0x6000)
 /// - Group 0x3000 (4-byte fields):
 ///   - Header: `0x3004` (group 0x3000 | 4)
 ///   - Token 1342 (u16): match_lobby_state
@@ -588,6 +588,18 @@ pub const MCTS_FUNCTION_ID_ON_MATCH_STATUS: u32 = MCTS_FUNCTION_ID_MATCH_STATUS;
 ///   - Token 700 (u16): match_id
 ///   - Token 703 (u16): queue_id
 ///   - Values: match_id, queue_id
+/// - Group 0x6000 (Table / Rowset fields):
+///   - Header: `0x6001` (group 0x6000 | 1)
+///   - Table Token: 242 (`MCTS_TOKEN_QUEUE_STATUS`)
+///     - Row count: 1 (u16)
+///     - Row 0 (CMarshalRow):
+///       - Field count: 3 (u16)
+///       - Group 0x1000 (1-byte fields: 1 field, header `0x1001`):
+///         - Token 36 (u16): ACTIVE_FLAG (`0x01` bool)
+///       - Group 0x3000 (4-byte fields: 1 field, header `0x3001`):
+///         - Token 912 (u16): TIMESTAMP (`launch_seconds`)
+///       - Group 0x4000 (8-byte fields: 1 field, header `0x4001`):
+///         - Token 703 (u16): MATCH_QUEUE_ID (`queue_id`)
 /// - TCP Framing:
 ///   - Length: payload length (u16 little-endian)
 ///   - Wire flags: `0x0000` (u16 little-endian)
@@ -600,12 +612,12 @@ pub fn create_mcts_match_status_frame(
     player_lobby_state: u32,
     player_queue_state: u32,
 ) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(64);
+    let mut payload = Vec::with_capacity(96);
     payload.push(0x00); // this[0x30]
     payload.extend_from_slice(&MCTS_FUNCTION_ID_MATCH_STATUS.to_le_bytes());
 
-    // CMarshalRow: total fields = 6 (4 dword fields + 2 qword fields)
-    let total_fields: u16 = 6;
+    // CMarshalRow: total fields = 7 (4 dwords in 0x3000 + 2 qwords in 0x4000 + 1 table in 0x6000)
+    let total_fields: u16 = 7;
     payload.extend_from_slice(&total_fields.to_le_bytes());
 
     // Group 0x3000 (4-byte fields: 4 fields)
@@ -628,6 +640,35 @@ pub fn create_mcts_match_status_frame(
     payload.extend_from_slice(&703u16.to_le_bytes()); // Token 703: MATCH_QUEUE_ID
 
     payload.extend_from_slice(&match_id.to_le_bytes());
+    payload.extend_from_slice(&queue_id.to_le_bytes());
+
+    // Group 0x6000 (Table field: 1 table - Table 242 QUEUE_STATUS)
+    let grp_table_hdr: u16 = 0x6001;
+    payload.extend_from_slice(&grp_table_hdr.to_le_bytes());
+
+    // Table 242: MCTS_TOKEN_QUEUE_STATUS
+    payload.extend_from_slice(&MCTS_TOKEN_QUEUE_STATUS.to_le_bytes());
+    let queue_row_count: u16 = 1;
+    payload.extend_from_slice(&queue_row_count.to_le_bytes());
+    let queue_row_fields: u16 = 3;
+    payload.extend_from_slice(&queue_row_fields.to_le_bytes());
+
+    // Row Group 0x1000 (1 field: Token 36 ACTIVE_FLAG bool true)
+    let queue_grp1_hdr: u16 = 0x1000 | 1;
+    payload.extend_from_slice(&queue_grp1_hdr.to_le_bytes());
+    payload.extend_from_slice(&MCTS_TOKEN_QUEUE_STATE.to_le_bytes()); // Token 36: ACTIVE_FLAG
+    payload.push(0x01); // active = true
+
+    // Row Group 0x3000 (1 field: Token 912 TIMESTAMP)
+    let queue_grp4_hdr: u16 = 0x3000 | 1;
+    payload.extend_from_slice(&queue_grp4_hdr.to_le_bytes());
+    payload.extend_from_slice(&MCTS_TOKEN_TIMESTAMP.to_le_bytes()); // Token 912: MFIELD_TIMESTAMP
+    payload.extend_from_slice(&launch_seconds.to_le_bytes());
+
+    // Row Group 0x4000 (1 field: Token 703 MATCH_QUEUE_ID)
+    let queue_grp8_hdr: u16 = 0x4000 | 1;
+    payload.extend_from_slice(&queue_grp8_hdr.to_le_bytes());
+    payload.extend_from_slice(&703u16.to_le_bytes()); // Token 703: MATCH_QUEUE_ID
     payload.extend_from_slice(&queue_id.to_le_bytes());
 
     // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
@@ -1195,7 +1236,7 @@ mod tests {
     #[test]
     fn test_create_mcts_match_status_frame_structure() { // agyis: no-mutant unit test
         let frame = create_mcts_match_status_frame(434, 878850364, 1, 120, 5, 7); // agyis: no-mutant
-        assert_eq!(frame.len(), 59); // agyis: no-mutant
+        assert_eq!(frame.len(), 92); // agyis: no-mutant
 
         let length = u16::from_le_bytes([frame[0], frame[1]]) as usize; // agyis: no-mutant
         assert_eq!(length, frame.len() - 4); // agyis: no-mutant
@@ -1209,7 +1250,7 @@ mod tests {
         assert_eq!(func_id, 0x392dcda5); // agyis: no-mutant
 
         let total_fields = u16::from_le_bytes([payload[5], payload[6]]); // agyis: no-mutant
-        assert_eq!(total_fields, 6); // agyis: no-mutant
+        assert_eq!(total_fields, 7); // agyis: no-mutant
 
         // Group 0x3000 check
         let grp4 = u16::from_le_bytes([payload[7], payload[8]]); // agyis: no-mutant
@@ -1250,6 +1291,43 @@ mod tests {
         ]); // agyis: no-mutant
         assert_eq!(v700, 878850364); // agyis: no-mutant
         assert_eq!(v703, 434); // agyis: no-mutant
+
+        // Group 0x6000 check: Table 242 (QUEUE_STATUS)
+        let grp_tbl = u16::from_le_bytes([payload[55], payload[56]]); // agyis: no-mutant
+        assert_eq!(grp_tbl, 0x6001); // agyis: no-mutant
+        let tbl_token = u16::from_le_bytes([payload[57], payload[58]]); // agyis: no-mutant
+        assert_eq!(tbl_token, MCTS_TOKEN_QUEUE_STATUS); // agyis: no-mutant
+        assert_eq!(tbl_token, 242); // agyis: no-mutant
+
+        let tbl_rows = u16::from_le_bytes([payload[59], payload[60]]); // agyis: no-mutant
+        assert_eq!(tbl_rows, 1); // agyis: no-mutant
+        let row_fields = u16::from_le_bytes([payload[61], payload[62]]); // agyis: no-mutant
+        assert_eq!(row_fields, 3); // agyis: no-mutant
+
+        let row_grp1 = u16::from_le_bytes([payload[63], payload[64]]); // agyis: no-mutant
+        assert_eq!(row_grp1, 0x1001); // agyis: no-mutant
+        let t_active = u16::from_le_bytes([payload[65], payload[66]]); // agyis: no-mutant
+        assert_eq!(t_active, MCTS_TOKEN_QUEUE_STATE); // agyis: no-mutant
+        assert_eq!(t_active, 36); // agyis: no-mutant
+        assert_eq!(payload[67], 0x01); // agyis: no-mutant (active = true)
+
+        let row_grp4 = u16::from_le_bytes([payload[68], payload[69]]); // agyis: no-mutant
+        assert_eq!(row_grp4, 0x3001); // agyis: no-mutant
+        let t_ts = u16::from_le_bytes([payload[70], payload[71]]); // agyis: no-mutant
+        assert_eq!(t_ts, MCTS_TOKEN_TIMESTAMP); // agyis: no-mutant
+        assert_eq!(t_ts, 912); // agyis: no-mutant
+        let v_launch = u32::from_le_bytes([payload[72], payload[73], payload[74], payload[75]]); // agyis: no-mutant
+        assert_eq!(v_launch, 120); // agyis: no-mutant
+
+        let row_grp8 = u16::from_le_bytes([payload[76], payload[77]]); // agyis: no-mutant
+        assert_eq!(row_grp8, 0x4001); // agyis: no-mutant
+        let t_queue = u16::from_le_bytes([payload[78], payload[79]]); // agyis: no-mutant
+        assert_eq!(t_queue, 703); // agyis: no-mutant
+        let v_queue = u64::from_le_bytes([
+            payload[80], payload[81], payload[82], payload[83],
+            payload[84], payload[85], payload[86], payload[87],
+        ]); // agyis: no-mutant
+        assert_eq!(v_queue, 434); // agyis: no-mutant
     }
 
     #[test]

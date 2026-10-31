@@ -15,7 +15,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, warn};
 
 /// Configuration options for the Tokio TCP Auth Gateway server.
@@ -169,17 +169,30 @@ pub use crate::mcts_handshake::{
 };
 
 async fn handle_connection(
-    mut stream: TcpStream,
+    stream: TcpStream,
     peer_addr: SocketAddr,
     config: Arc<AuthGatewayConfig>,
 ) -> Result<(), NetError> {
     debug!("Accepted incoming MCTS TCP connection from {}", peer_addr);
+    let (mut reader, mut writer) = stream.into_split();
+    let (write_tx, mut write_rx) = mpsc::channel::<Vec<u8>>(128);
+
+    // Dedicated writer task continuously flushing frames queued onto write_tx
+    let writer_task = tokio::spawn(async move {
+        while let Some(pkt) = write_rx.recv().await {
+            writer.write_all(&pkt).await?;
+            writer.flush().await?;
+        }
+        Ok::<(), std::io::Error>(())
+    });
+
     let mut post_login_count: usize = 0;
     let mut login_completed = false;
+    let mut matchmaking_started = false;
 
     loop {
         let mut header = [0u8; HEADER_LEN];
-        match stream.read_exact(&mut header).await {
+        match reader.read_exact(&mut header).await {
             Ok(_) => {
                 debug!("Received wire header from {}: {:02x?}", peer_addr, &header);
             }
@@ -201,7 +214,7 @@ async fn handle_connection(
             let flags = field1;
             let mut payload = vec![0u8; payload_len];
             if payload_len > 0 {
-                stream.read_exact(&mut payload).await?;
+                reader.read_exact(&mut payload).await?;
             }
 
             let has_fernando = payload.windows(2).any(|w| w == [0x9b, 0x08] || w == [0x08, 0x9b]) // agyis: no-mutant diagnostic logging
@@ -214,113 +227,121 @@ async fn handle_connection(
             );
 
             post_login_count += 1;
-            if post_login_count == 1 || has_shooting_range_req {
-                // Calibrated settling cadence: give client HUD time to finish scene and vendor loading before match launch
-                if config.post_login_settle_delay_ms > 0 {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(
-                        config.post_login_settle_delay_ms,
-                    ))
-                    .await;
-                }
+            if (post_login_count == 1 || has_shooting_range_req) && !matchmaking_started {
+                matchmaking_started = true;
+                let tx = write_tx.clone();
+                let cfg = Arc::clone(&config);
+                tokio::spawn(async move {
+                    // Calibrated settling cadence: give client HUD time to finish scene and vendor loading before match launch
+                    if cfg.post_login_settle_delay_ms > 0 {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(
+                            cfg.post_login_settle_delay_ms,
+                        ))
+                        .await;
+                    }
 
-                // Emit Shooting Range transition: MATCH_STATUS queued (queue 434, match 0, queue_state 2 MQ_QUEUED)
-                // -> MATCH_STATUS invited (queue 0, match 878850364, queue_state 3 MQ_INVITED)
-                // -> MATCH_INVITATION (queue 434, match 878850364, timeout 30s, Table 1619 account_id)
-                // -> MATCH_STATUS state 8 with members table (queue 0, match 878850364, queue_state 4 MQ_ACCEPTED)
-                // -> Champion Roster
-                // -> MATCH_STATUS state 10 with members table (queue 0, match 878850364, queue_state 7 MQ_LAUNCHING)
-                // -> Map Transition
-                let match_status_queued =
-                    create_mcts_match_status_frame(434, 0, 0, 0, 0, 2);
-                stream.write_all(&match_status_queued).await?;
-                stream.flush().await?;
+                    // Emit Shooting Range transition: MATCH_STATUS queued (queue 434, match 0, queue_state 2 MQ_QUEUED)
+                    // -> MATCH_STATUS invited (queue 0, match 878850364, queue_state 3 MQ_INVITED)
+                    // -> MATCH_INVITATION (queue 434, match 878850364, timeout 30s, Table 1619 account_id)
+                    // -> MATCH_STATUS state 8 with members table (queue 0, match 878850364, queue_state 4 MQ_ACCEPTED)
+                    // -> Champion Roster
+                    // -> MATCH_STATUS state 10 with members table (queue 0, match 878850364, queue_state 7 MQ_LAUNCHING)
+                    // -> Map Transition
+                    let match_status_queued =
+                        create_mcts_match_status_frame(434, 0, 0, 0, 0, 2);
+                    if tx.send(match_status_queued).await.is_err() {
+                        return;
+                    }
 
-                if config.post_login_invite_delay_ms > 0 {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(
-                        config.post_login_invite_delay_ms,
-                    ))
-                    .await;
-                }
+                    if cfg.post_login_invite_delay_ms > 0 {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(
+                            cfg.post_login_invite_delay_ms,
+                        ))
+                        .await;
+                    }
 
-                let match_status_invited =
-                    create_mcts_match_status_frame(0, 878850364, 0, 30, 0, 3);
-                stream.write_all(&match_status_invited).await?;
+                    let match_status_invited =
+                        create_mcts_match_status_frame(0, 878850364, 0, 30, 0, 3);
+                    if tx.send(match_status_invited).await.is_err() {
+                        return;
+                    }
 
-                let match_invite_frame = create_mcts_match_invitation_frame(
-                    434,
-                    878850364,
-                    30,
-                    config.account_id as u32,
-                );
-                stream.write_all(&match_invite_frame).await?;
-                stream.flush().await?;
+                    let match_invite_frame = create_mcts_match_invitation_frame(
+                        434,
+                        878850364,
+                        30,
+                        cfg.account_id as u32,
+                    );
+                    if tx.send(match_invite_frame).await.is_err() {
+                        return;
+                    }
 
-                // Cadence: allow client thread time to process OnMatchInvite and auto-accept,
-                // transitioning internal m_QueueState from 3 (MQ_INVITED) to 4 (MQ_ACCEPTED).
-                if config.post_login_accept_delay_ms > 0 {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(
-                        config.post_login_accept_delay_ms,
-                    ))
-                    .await;
-                }
+                    // Cadence: allow client thread time to process OnMatchInvite and auto-accept,
+                    // transitioning internal m_QueueState from 3 (MQ_INVITED) to 4 (MQ_ACCEPTED).
+                    if cfg.post_login_accept_delay_ms > 0 {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(
+                            cfg.post_login_accept_delay_ms,
+                        ))
+                        .await;
+                    }
 
-                let match_status_8 = create_mcts_match_status_with_members_frame(
-                    434,
-                    878850364,
-                    8,
-                    0,
-                    5,
-                    4,
-                    config.account_id as u64,
-                    BOT_ID_FERNANDO,
-                );
-                stream.write_all(&match_status_8).await?;
+                    let match_status_8 = create_mcts_match_status_with_members_frame(
+                        434,
+                        878850364,
+                        8,
+                        0,
+                        5,
+                        4,
+                        cfg.account_id as u64,
+                        BOT_ID_FERNANDO,
+                    );
+                    if tx.send(match_status_8).await.is_err() {
+                        return;
+                    }
 
-                let champion_roster_frame =
-                    create_mcts_champion_roster_frame(&[1026, 1024, 1025, 1027]);
-                stream.write_all(&champion_roster_frame).await?;
-                stream.flush().await?;
+                    let champion_roster_frame =
+                        create_mcts_champion_roster_frame(&[1026, 1024, 1025, 1027]);
+                    if tx.send(champion_roster_frame).await.is_err() {
+                        return;
+                    }
 
-                if config.post_login_launch_delay_ms > 0 {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(
-                        config.post_login_launch_delay_ms,
-                    ))
-                    .await;
-                }
+                    if cfg.post_login_launch_delay_ms > 0 {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(
+                            cfg.post_login_launch_delay_ms,
+                        ))
+                        .await;
+                    }
 
-                let match_status_10 = create_mcts_match_status_with_members_frame(
-                    434,
-                    878850364,
-                    10,
-                    0,
-                    5,
-                    7,
-                    config.account_id as u64,
-                    BOT_ID_FERNANDO,
-                );
-                stream.write_all(&match_status_10).await?;
+                    let match_status_10 = create_mcts_match_status_with_members_frame(
+                        434,
+                        878850364,
+                        10,
+                        0,
+                        5,
+                        7,
+                        cfg.account_id as u64,
+                        BOT_ID_FERNANDO,
+                    );
+                    if tx.send(match_status_10).await.is_err() {
+                        return;
+                    }
 
-                let map_transition_frame = create_mcts_map_transition_frame(
-                    MAP_GAME_ID_SHOOTING_RANGE,
-                    MAP_INSTANCE_ID_SHOOTING_RANGE as u64,
-                    false,
-                );
-                stream.write_all(&map_transition_frame).await?;
-                stream.flush().await?;
-                info!(
-                    "Sent Live MCTS Shooting Range transition (queued status [queue:434, match:0, state:2], invited status [queue:0, match:878850364, state:3], match_invitation, status 8 with queue & members table [queue:434, lock:5, queue:4, account_id={}, bot_id={}], champion roster, status 10 with queue & members table [queue:434, lock:5, queue:7, account_id={}, bot_id={}], map_transition mapGameId={}, instanceId={}) to {}",
-                    config.account_id, BOT_ID_FERNANDO, config.account_id, BOT_ID_FERNANDO, MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, peer_addr
-                );
-            } else if has_fernando {
-                // Reply with champion select acknowledgment frame (Frame 2554)
-                stream.write_all(&MCTS_CHAMPION_SELECT_ACK_FRAME).await?;
-                stream.flush().await?;
-                info!("Sent Live MCTS champion select acknowledgment frame (19 bytes) to {}", peer_addr); // agyis: no-mutant logging
+                    let map_transition_frame = create_mcts_map_transition_frame(
+                        MAP_GAME_ID_SHOOTING_RANGE,
+                        MAP_INSTANCE_ID_SHOOTING_RANGE as u64,
+                        false,
+                    );
+                    let _ = tx.send(map_transition_frame).await;
+                    info!(
+                        "Dispatched Live MCTS Shooting Range transition sequence (queued -> invited -> invite -> status 8 -> roster -> status 10 -> map_transition) for {}",
+                        peer_addr
+                    );
+                });
             }
         } else if field0 == MCTS_CLIENT_AUTH_REQUEST_LEN && field1 == MCTS_CLIENT_AUTH_REQUEST_FLAGS {
             // Live MCTS Step 1: Client Auth Request / Hello (405 bytes, flags 0x0000)
             let mut payload = vec![0u8; MCTS_CLIENT_AUTH_REQUEST_LEN as usize];
-            stream.read_exact(&mut payload).await?;
+            reader.read_exact(&mut payload).await?;
 
             let hex_preview = payload
                 .iter()
@@ -334,8 +355,10 @@ async fn handle_connection(
 
             // Respond with unencrypted CMarshal Hello response (wire flags 0x0000, 20-byte payload)
             // Client checks Field 2 (true) and Field 4 (1), setting CPackSession to authenticated.
-            stream.write_all(&MCTS_HELLO_RESPONSE_FRAME).await?;
-            stream.flush().await?;
+            write_tx
+                .send(MCTS_HELLO_RESPONSE_FRAME.to_vec())
+                .await
+                .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
             info!(
                 "Sent unencrypted Live MCTS Hello Response (24 bytes, flags 0x0000) to {}. Awaiting SendLogin...",
                 peer_addr
@@ -346,7 +369,7 @@ async fn handle_connection(
         {
             // Live MCTS Step 2: Client SendLogin (1117 bytes or chunked wire transport)
             let mut payload = vec![0u8; field0 as usize];
-            stream.read_exact(&mut payload).await?;
+            reader.read_exact(&mut payload).await?;
 
             info!(
                 "Received Live MCTS Step 2 SendLogin ({} bytes, flags 0x{:04x}) from {}",
@@ -358,10 +381,16 @@ async fn handle_connection(
             ack_pkt.extend_from_slice(&(MCTS_HANDSHAKE_CHUNK2_ACK.len() as u16).to_le_bytes());
             ack_pkt.extend_from_slice(&MCTS_WIRE_FLAG_CHUNK.to_le_bytes());
             ack_pkt.extend_from_slice(&MCTS_HANDSHAKE_CHUNK2_ACK);
-            stream.write_all(&ack_pkt).await?;
+            write_tx
+                .send(ack_pkt)
+                .await
+                .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
 
             // Send Chunk 3 Session (75 bytes, which already contains the 3 framed subpackets)
-            stream.write_all(&MCTS_HANDSHAKE_CHUNK3_SESSION).await?;
+            write_tx
+                .send(MCTS_HANDSHAKE_CHUNK3_SESSION.to_vec())
+                .await
+                .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
 
             // Send authentic Live MCTS OnLoginResponse wire frame (reverse engineered CMarshalRow::Store format)
             let login_frame = create_mcts_login_response_frame(
@@ -369,17 +398,26 @@ async fn handle_connection(
                 &config.player_name,
                 &config.session_token,
             );
-            stream.write_all(&login_frame).await?;
+            write_tx
+                .send(login_frame)
+                .await
+                .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
 
             // Emit OnMatchStatus frame declaring initial lobby state (queue_id 0, match_id 0, match_lobby_state 0, launch_seconds 0, player_lobby_state 0, player_queue_state 0)
             let initial_status_frame = create_mcts_match_status_frame(0, 0, 0, 0, 0, 0);
-            stream.write_all(&initial_status_frame).await?;
+            write_tx
+                .send(initial_status_frame)
+                .await
+                .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
 
             // Emit initial champion roster frame granting playable champions
             let initial_champion_roster =
                 create_mcts_champion_roster_frame(&[1026, 1024, 1025, 1027, BOT_ID_FERNANDO]);
-            stream.write_all(&initial_champion_roster).await?;
-            stream.flush().await?;
+            write_tx
+                .send(initial_champion_roster)
+                .await
+                .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
+
             info!(
                 "Sent Live MCTS Chunk 2 ACK, Chunk 3 Session, OnLoginResponse, OnMatchStatus, and Initial Champion Roster to {}",
                 peer_addr
@@ -398,7 +436,7 @@ async fn handle_connection(
             }
 
             let mut payload = vec![0u8; payload_len];
-            stream.read_exact(&mut payload).await?;
+            reader.read_exact(&mut payload).await?;
 
             let req_frame = CPackFrame { magic, payload };
             let uncompressed_req = req_frame.uncompressed_payload()?;
@@ -428,12 +466,16 @@ async fn handle_connection(
                 CPackFrame::encode_uncompressed(&response_bytes)?
             };
 
-            stream.write_all(&response_packet).await?;
-            stream.flush().await?;
+            write_tx
+                .send(response_packet)
+                .await
+                .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
             debug!("Sent OnLoginResponse to {}", peer_addr);
         }
     }
 
+    drop(write_tx);
+    let _ = writer_task.await;
     Ok(())
 }
 
