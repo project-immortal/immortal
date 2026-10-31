@@ -49,88 +49,116 @@ Derived from the **Project Immortal** 18-hour empirical milestone breakthrough (
 
 ---
 
-## 2. The 4 Velocity Acceleration Vectors
+## 2. Operational Application of the 4 Acceleration Tools
 
-### Vector 1: Zero-Guesswork Global Schema Extraction & Linter
-*Never guess wire types or token IDs one-by-one at runtime.*
-
-1. **Locate the Binary's Schema / Reflection Table**:
-   - Proprietary RPCs, marshalers, and serialization engines almost always embed a global field descriptor table (e.g. `s_pFields`, protobuf descriptors, Unreal reflection `UClass`/`UProperty`, or flatbuffers schemas).
-   - Use REA (`search_strings`, `search_bytes`, `inspect_native_data_type`) or dirtyroom CLI to locate the table or extract it from memory.
-2. **Dump Schema to Clean JSON**:
-   - Extract fields into a clean JSON fixture:
-     ```json
-     {
-       "fields": [
-         {"token": 36, "name": "MFIELD_ACTIVE", "type": 1, "group": "0x1000", "size": 1},
-         {"token": 703, "name": "MATCH_QUEUE_ID", "type": 9, "group": "0x4000", "size": 8},
-         {"token": 912, "name": "MFIELD_TIMESTAMP", "type": 5, "group": "0x3000", "size": 4}
-       ]
-     }
-     ```
-3. **Implement a Native Sub-Second Schema Linter**:
-   - Write a unit test (`schema_conformance_test.rs`) that statically checks every token constant and serializer layout against the JSON schema.
-   - Run on every build (`cargo test`, `pytest`, `go test`). Catches scalar size mismatches (e.g. encoding an `int64` in a 4-byte group) in **0.01s** before any client is launched.
+Rather than writing custom one-off scripts or guessing wire contracts, agents operating on Project Immortal apply the four built-in acceleration tools in the repository:
 
 ---
 
-### Vector 2: Sub-Second Offline Golden Pcap Conformance Suite
-*Never launch the target binary just to test if a packet parser works.*
+### Tool 1: Schema Conformance Linter (`schema_conformance_test.rs`)
+*Static schema verification against 3,731 engine fields in 0.01 seconds.*
 
-1. **Carve Genuine Protocol Streams**:
-   - From an authentic live packet capture (`.pcap`), isolate the raw TCP/UDP application payload stream using `tshark` or a python script:
+- **When to Apply**:
+  - Whenever defining a new `MCTS_TOKEN_*` constant or serializer function.
+  - Whenever modifying scalar group layouts (Group 0x1000 vs 0x3000 vs 0x4000).
+  - Whenever a client parser unexpectedly drops a connection or reports malformed rowsets.
+- **Operational Workflow**:
+  1. **Query the Ground Truth Schema**:
+     Inspect `crates/immortal-net/tests/fixtures/mcts_field_schema.json` (extracted from the engine's `s_pFields` table) to check token ID, canonical name, and data type:
      ```bash
-     tshark -r capture.pcap -Y "tcp.port == 9000" -T fields -e tcp.payload | tr -d '\n' | xxd -r -p > golden_stream.bin
+     grep -n -C 4 '"id": <TOKEN_ID>' crates/immortal-net/tests/fixtures/mcts_field_schema.json
      ```
-2. **Build an In-Memory Golden Replay Test**:
-   - Read `golden_stream.bin` into memory during unit tests (`golden_conformance_test.rs`).
-   - Validate framing, checksums, compression headers, and payload structures against cleanroom parsers.
-   - Executes 1,000+ real frames in **<0.01s**, guaranteeing 100% wire parity hermetically.
+  2. **Verify Field Grouping Rules**:
+     - **Group `0x1000`** (1 byte): `Type 1` (bool), `Type 2` (int8/uint8).
+     - **Group `0x3000`** (4 bytes): `Type 5` (int32/uint32), `Type 6` (float).
+     - **Group `0x4000`** (8 bytes): `Type 9` (int64/uint64), `Type 10` (double).
+     - **Group `0x6000`** (Tables / Rowsets): `Type 13` (nested CMarshalRowSet).
+     - **Group `0xa000`** (Strings & Blobs): `Type 12` (length-prefixed ASCII/UTF-16).
+  3. **Run the Static Linter Gate**:
+     ```bash
+     cargo test test_all_mcts_token_constants_match_engine_schema
+     cargo test test_match_status_with_members_frame_schema_conformance
+     ```
+     Executes hermetically in **0.01s**, guaranteeing zero scalar size or type mismatches before any live binary is launched.
 
 ---
 
-### Vector 3: Cohesive Milestone Batching & Gating Architecture
-*Stop thrashing between disparate subsystems; batch by state gates.*
+### Tool 2: Offline Golden Pcap Conformance Suite (`golden_conformance_test.rs`)
+*In-memory bit-level replay of genuine live network frames in <0.01 seconds.*
 
-1. **Deconstruct the State Machine into Distinct Milestones**:
-   - **Milestone A (Handshake & Lobby Gate)**: Transport handshake, authentication, roster synchronization, and transition to initial UI.
-   - **Milestone B (Session & Launch Gate)**: Matchmaking invite, queue states (`MQ_QUEUED` $\to$ `MQ_INVITED` $\to$ `MQ_ACCEPTED` $\to$ `MQ_LAUNCHING`), map change command.
-   - **Milestone C (Simulation & World Replication Gate)**: UDP NetDriver handshake, world replication, entity spawn, pawn possession, movement/ability streaming.
-2. **REA Gating Audit**:
-   - When a transition does not trigger, use REA to find the gating instruction in the binary:
+- **When to Apply**:
+  - Prior to any live flight run to guarantee that cleanroom framing, decompression, and row parsing maintain 100% wire parity with authentic retail server traffic.
+  - When implementing or refactoring network framing or compression handlers.
+- **Operational Workflow**:
+  1. **Run Golden Stream Replay**:
+     ```bash
+     cargo test test_golden_stream
+     ```
+     Replays 1,000+ real frames from `crates/immortal-net/tests/fixtures/golden_mcts_stream.bin` in memory.
+  2. **Carving New Protocol Streams (If expanding to new subsystems)**:
+     If exploring unmapped game subsystems (e.g. UDP bunches, chat, clan queries), extract the raw stream from the live pcap into a new test fixture:
+     ```bash
+     tshark -r /mnt/fast_data/re_dirtyroom/paladins_8.1.5839.0/pcaps/paladins_live_session.pcap \
+       -Y "tcp.port == 9000" -T fields -e tcp.payload | tr -d '\n' | xxd -r -p > scratch/new_stream.bin
+     ```
+     Ground all new parsers against this offline fixture before testing against live binaries.
+
+---
+
+### Tool 3: Milestone Gating & REA Branch Gate Audits
+*Batching progress across discrete state gates and pinpointing client bail-out branches.*
+
+- **When to Apply**:
+  - When progressing through the client's state machine or diagnosing why the client failed to transition to the next screen.
+- **The 3 Canonical Milestones**:
+  - **Milestone A (Handshake & Main Menu Gate)**:
+    TCP connect $\to$ CMarshal Hello $\to$ Login Response $\to$ Character Roster $\to$ **Lobby State 2** (`LOBBY_MENU`).
+  - **Milestone B (Matchmaking & Gazebo Gate)**:
+    Queue join (`QueueState 2`) $\to$ Match found (`QueueState 3` + `OnMatchInvite`) $\to$ Accept click (`QueueState 4`) $\to$ **Lobby State 3** (`GAZEBO` / Champion Select) $\to$ Map travel command (`QueueState 7` + `ReceiveChangeMap: mapGameId 1615` / `Browse: Shootingrange_P`).
+  - **Milestone C (Simulation & World Replication Gate)**:
+    Unreal Engine 3 UDP NetDriver port 7777 handshake $\to$ Actor channel 2 open $\to$ Fernando pawn possession (4,600 HP, Flame Lance Device ID 10774) $\to$ Ability and movement replication.
+- **Auditing Gating Branches with REA**:
+  When a milestone fails to trigger, locate the exact gating check in the binary:
+  1. Search for references to the target function or state variable (e.g., `UTgMatchLobby->QueueState` at offset `0x1d8`).
+  2. Disassemble the branch instructions (`inspect_native_instruction` / `procedure_assembly`):
      ```x86asm
-     mov eax, DWORD PTR [rcx+0x1d8] ; Read QueueState
-     sub eax, 0x7                   ; Check for MQ_LAUNCHING
-     test eax, 0xfffffffd           ; Gating condition
-     jne bailout_address            ; Abort transition
+     mov eax, DWORD PTR [rcx+0x1d8] ; UTgMatchLobby->QueueState
+     sub eax, 0x7                   ; Check for MQ_LAUNCHING (7)
+     test eax, 0xfffffffd           ; Checks if QueueState == 7 or 9
+     jne bailout                    ; Bails out without map transition!
      ```
-   - Satisfy the exact gate before writing code for downstream states.
+  3. Ensure the cleanroom server emits the exact state required by the gate before dispatching subsequent commands.
 
 ---
 
-### Vector 4: Automated Flight Runner with Watchdog & Input Automation
-*Replace manual 90s playtesting with headless automated flight execution.*
+### Tool 4: Automated Flight Test Runner (`dirty flight`)
+*Automated 90s flight execution with real-time log watchdog, input injection, and keyframe extraction.*
 
-Implement `./scripts/dirtyroom/dirty flight` with the following loop:
-1. **Pre-flight Cleanup**: Gracefully terminate lingering target processes (`killall -9 ShippingPC-ChaosGame.exe`), clear previous client logs (`Launch.log`), and ensure release server is built.
-2. **Background Daemon Startup**: Launch the cleanroom server daemon in the background with output piped to a flight log.
-3. **Agentic Screen Recording**:
-   - Start hardware screen recording (`gpu-screen-recorder` or `ffmpeg`) with an agentic preset: **480p 3fps MP4** (<200KB per 10s).
-   - Fast enough to capture all visual state transitions without eating disk or token context.
-4. **Target Client Launch**: Launch client via native binary, Wine, or Proton.
-5. **Non-Blocking Real-Time Log Watchdog**:
-   - Continuously monitor client log in real-time.
-   - Define regex milestone detectors:
-     - `LOBBY_MENU`: Reached main menu.
-     - `MATCH_INVITE`: Match invitation modal displayed.
-     - `GAZEBO`: Champion select / staging area loaded.
-     - `MAP_CHANGE`: Map travel command accepted.
-6. **Automated Input Injection**:
-   - When `MATCH_INVITE` is detected, use `dirty input` (`ydotool` / `xdotool`) to focus the target window, move mouse to the accept button `(X, Y)` or send `Return`.
-7. **Post-Flight Evidence Extraction**:
-   - Send `SIGINT` to the screen recorder for clean MP4 container finalization.
-   - Extract keyframe JPEGs at detected milestone timestamps (`ffmpeg -ss <t> -i rec.mp4 -vframes 1 keyframe.jpg`).
-   - Generate a concise flight summary markdown in `scratch/recordings/flight_summary_<timestamp>.md`.
+- **When to Apply**:
+  - For end-to-end behavioral verification without manual playtesting or interactive desktop babysitting.
+- **Operational Workflow**:
+  1. **Execute Targeted Flight Test**:
+     ```bash
+     # Flight run up to map transition milestone with 110s timeout
+     ./scripts/dirtyroom/dirty flight --target map --timeout 110
+
+     # Target options:
+     #   --target menu    : Stop when Main Menu (Lobby State 2) is reached
+     #   --target invite  : Stop when MATCH READY modal is displayed
+     #   --target gazebo  : Stop when Champion Select Gazebo is reached
+     #   --target map     : Stop when ReceiveChangeMap / Browse is logged
+     #   --target range   : Stop when full in-game Shooting Range is loaded
+     ```
+  2. **Automated Flight Execution Pipeline**:
+     - Pre-flight cleanup (terminates lingering `ShippingPC-ChaosGame.exe` and `immortal-server` daemons, rotates `Launch.log`).
+     - Launches background server daemon with log capture (`scratch/flight_server.log`).
+     - Initializes hardware screen recording using the agentic preset (480p 3fps MP4, ~200KB per 10s).
+     - Launches client under Proton and attaches real-time non-blocking log watchdog.
+     - Automatically handles interactive UI gates (e.g. clicking Accept on match invite via `dirty input`).
+  3. **Inspect Flight Telemetry & Evidence**:
+     - Review execution timeline and milestone table: `scratch/recordings/flight_summary_<TIMESTAMP>.md`
+     - Inspect captured milestone keyframes: `scratch/recordings/keyframes_<TIMESTAMP>/`
+     - Verify video recording: `scratch/recordings/rec_<TIMESTAMP>.mp4`
 
 ---
 
