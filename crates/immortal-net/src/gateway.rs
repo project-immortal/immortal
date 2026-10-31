@@ -285,8 +285,10 @@ async fn handle_connection(
                         .await;
                     }
 
+                    // Token 703 (queue_id) is set to 0 in match status updates during lobby entry
+                    // to bind status directly to the active match lobby, driving QueueState to 7.
                     let match_status_8 = create_mcts_match_status_with_members_frame(
-                        434,
+                        0,
                         878850364,
                         8,
                         0,
@@ -312,8 +314,10 @@ async fn handle_connection(
                         .await;
                     }
 
+                    // Token 703 (queue_id) is set to 0 to bind status directly to the active match lobby
+                    // and drive QueueState to 7 (MQ_LAUNCHING).
                     let match_status_10 = create_mcts_match_status_with_members_frame(
-                        434,
+                        0,
                         878850364,
                         10,
                         0,
