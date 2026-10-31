@@ -395,7 +395,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(u64::from_le_bytes([
         status_payload[80], status_payload[81], status_payload[82], status_payload[83],
         status_payload[84], status_payload[85], status_payload[86], status_payload[87],
-    ]), 0);
+    ]), 434);
 
     // Step 3b: Expect authentic Live MCTS CHAMPION_ROSTER wire frame (Table 249, 5 champions: [1026, 1024, 1025, 1027, BOT_ID_FERNANDO])
     stream.read_exact(&mut header_buf).await.unwrap();
@@ -544,7 +544,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(u64::from_le_bytes([
         status_inv_payload[80], status_inv_payload[81], status_inv_payload[82], status_inv_payload[83],
         status_inv_payload[84], status_inv_payload[85], status_inv_payload[86], status_inv_payload[87],
-    ]), 0); // queue_id = 0 // agyis: no-mutant
+    ]), 434); // active_queue = 434 // agyis: no-mutant
 
     // (a1) MATCH_INVITATION (Function ID 0x423b389a, queue 434, match 878850364, timeout 30s, Table 1619 account 8302401)
     stream.read_exact(&mut header_buf).await.unwrap();

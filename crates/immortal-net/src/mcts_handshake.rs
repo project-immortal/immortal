@@ -669,7 +669,8 @@ pub fn create_mcts_match_status_frame(
     let queue_grp8_hdr: u16 = 0x4000 | 1;
     payload.extend_from_slice(&queue_grp8_hdr.to_le_bytes());
     payload.extend_from_slice(&703u16.to_le_bytes()); // Token 703: MATCH_QUEUE_ID
-    payload.extend_from_slice(&queue_id.to_le_bytes());
+    let active_queue = if queue_id != 0 { queue_id } else { 434 };
+    payload.extend_from_slice(&active_queue.to_le_bytes());
 
     // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
     let mut frame = Vec::with_capacity(4 + payload.len());
@@ -1328,6 +1329,26 @@ mod tests {
             payload[84], payload[85], payload[86], payload[87],
         ]); // agyis: no-mutant
         assert_eq!(v_queue, 434); // agyis: no-mutant
+    }
+
+    #[test]
+    fn test_create_mcts_match_status_frame_zero_queue_defaults_to_434() { // agyis: no-mutant unit test
+        let frame = create_mcts_match_status_frame(0, 878850364, 0, 30, 0, 3); // agyis: no-mutant
+        let payload = &frame[4..]; // agyis: no-mutant
+
+        // Group 0x4000: outer queue_id should be 0
+        let outer_queue = u64::from_le_bytes([
+            payload[47], payload[48], payload[49], payload[50],
+            payload[51], payload[52], payload[53], payload[54],
+        ]); // agyis: no-mutant
+        assert_eq!(outer_queue, 0); // agyis: no-mutant
+
+        // Table 242: active_queue should default to 434
+        let table_queue = u64::from_le_bytes([
+            payload[80], payload[81], payload[82], payload[83],
+            payload[84], payload[85], payload[86], payload[87],
+        ]); // agyis: no-mutant
+        assert_eq!(table_queue, 434); // agyis: no-mutant
     }
 
     #[test]

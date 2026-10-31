@@ -48,8 +48,8 @@ impl Default for AuthGatewayConfig {
             compress_response: false,
             post_login_settle_delay_ms: 16000,
             post_login_invite_delay_ms: 100,
-            post_login_accept_delay_ms: 500,
-            post_login_launch_delay_ms: 500,
+            post_login_accept_delay_ms: 4000,
+            post_login_launch_delay_ms: 3000,
         }
     }
 }
@@ -488,7 +488,7 @@ mod tests {
         let config = AuthGatewayConfig::default();
         assert_eq!(config.post_login_settle_delay_ms, 16000);
         assert_eq!(config.post_login_invite_delay_ms, 100);
-        assert_eq!(config.post_login_accept_delay_ms, 500);
-        assert_eq!(config.post_login_launch_delay_ms, 500);
+        assert_eq!(config.post_login_accept_delay_ms, 4000);
+        assert_eq!(config.post_login_launch_delay_ms, 3000);
     }
 }
