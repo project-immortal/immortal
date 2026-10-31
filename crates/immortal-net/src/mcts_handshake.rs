@@ -153,10 +153,10 @@ pub fn create_mcts_login_response_frame(
     // Group 0x3000 (4-byte fields: 2 fields)
     let grp4_hdr: u16 = 0x3000 | 2;
     payload.extend_from_slice(&grp4_hdr.to_le_bytes());
-    payload.extend_from_slice(&3u16.to_le_bytes());   // Token 3
+    payload.extend_from_slice(&3u16.to_le_bytes()); // Token 3
     payload.extend_from_slice(&739u16.to_le_bytes()); // Token 739: MINUTES
 
-    payload.extend_from_slice(&0u32.to_le_bytes());  // Token 3 = 0
+    payload.extend_from_slice(&0u32.to_le_bytes()); // Token 3 = 0
     payload.extend_from_slice(&60u32.to_le_bytes()); // Token 739 = 60
 
     // Group 0x4000 (8-byte fields: 2 fields)
@@ -318,7 +318,7 @@ pub fn create_mcts_player_svc_change_map_frame(
     let grp4_hdr: u16 = 0x3000 | 2;
     payload.extend_from_slice(&grp4_hdr.to_le_bytes());
     payload.extend_from_slice(&682u16.to_le_bytes()); // Token 682 (0x02aa): mapGameId
-    payload.extend_from_slice(&11u16.to_le_bytes());  // Token 11 (0x000b): mapInstanceId
+    payload.extend_from_slice(&11u16.to_le_bytes()); // Token 11 (0x000b): mapInstanceId
     payload.extend_from_slice(&map_game_id.to_le_bytes());
     payload.extend_from_slice(&map_instance_id.to_le_bytes());
 
@@ -484,7 +484,7 @@ pub fn create_mcts_match_invitation_frame(
     // Row Group 0x3000 (4-byte fields: 2 fields)
     let row_grp4_hdr: u16 = 0x3000 | 2;
     payload.extend_from_slice(&row_grp4_hdr.to_le_bytes());
-    payload.extend_from_slice(&MCTS_TOKEN_PLAYER_ID.to_le_bytes());  // Token 11: MCTS_TOKEN_PLAYER_ID
+    payload.extend_from_slice(&MCTS_TOKEN_PLAYER_ID.to_le_bytes()); // Token 11: MCTS_TOKEN_PLAYER_ID
     payload.extend_from_slice(&MCTS_TOKEN_ACCOUNT_ID.to_le_bytes()); // Token 682: MCTS_TOKEN_ACCOUNT_ID
     payload.extend_from_slice(&account_id.to_le_bytes());
     payload.extend_from_slice(&account_id.to_le_bytes());
@@ -856,8 +856,8 @@ pub fn create_mcts_match_status_with_members_frame(
     // Row Group 0x3000 (4-byte fields: 3 fields)
     let row_grp4_hdr: u16 = 0x3000 | 3;
     payload.extend_from_slice(&row_grp4_hdr.to_le_bytes());
-    payload.extend_from_slice(&122u16.to_le_bytes());  // Token 122: BOT_ID / CHAMPION_ID
-    payload.extend_from_slice(&855u16.to_le_bytes());  // Token 855: PROFILE_ID
+    payload.extend_from_slice(&122u16.to_le_bytes()); // Token 122: BOT_ID / CHAMPION_ID
+    payload.extend_from_slice(&855u16.to_le_bytes()); // Token 855: PROFILE_ID
     payload.extend_from_slice(&1344u16.to_le_bytes()); // Token 1344: PLAYER_LOBBY_STATE
 
     payload.extend_from_slice(&bot_id.to_le_bytes());
@@ -867,7 +867,7 @@ pub fn create_mcts_match_status_with_members_frame(
     // Row Group 0x4000 (8-byte fields: 1 field)
     let row_grp8_hdr: u16 = 0x4000 | 1;
     payload.extend_from_slice(&row_grp8_hdr.to_le_bytes());
-    payload.extend_from_slice(&11u16.to_le_bytes());   // Token 11: PLAYER_ID (int64 scalar, Type 9)
+    payload.extend_from_slice(&11u16.to_le_bytes()); // Token 11: PLAYER_ID (int64 scalar, Type 9)
     payload.extend_from_slice(&account_id.to_le_bytes());
 
     // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
@@ -907,7 +907,9 @@ pub fn create_mcts_match_status_with_queue_and_members_frame(
 /// Authentic Function ID for `CMctsNetwork::ON_MATCH_INVITE` (0x1ad4a846, MATCH_EXPIRED_INVITE).
 /// Reverse engineered from `ShippingPC-ChaosGame.exe` (0x14157081c, 0x1400d333c, 0x1400cba10, 0x14163acb0)
 /// and `MctsInterface.dll` (0x1800f616c, 0x1800ee440). Wire LE: [0x46, 0xa8, 0xd4, 0x1a].
-#[deprecated(note = "0x1ad4a846 is MATCH_EXPIRED_INVITE; use create_mcts_match_invitation_frame instead")]
+#[deprecated(
+    note = "0x1ad4a846 is MATCH_EXPIRED_INVITE; use create_mcts_match_invitation_frame instead"
+)]
 pub const MCTS_FUNCTION_ID_ON_MATCH_INVITE: u32 = 0x1ad4a846;
 
 /// Authentic Token ID for timeout warning boolean (847).
@@ -933,7 +935,9 @@ pub const MCTS_TOKEN_TIMEOUT_WARNING: u16 = 847;
 ///   - Length: payload length (u16 little-endian)
 ///   - Wire flags: `0x0000` (u16 little-endian)
 ///   - Followed by payload bytes
-#[deprecated(note = "0x1ad4a846 is MATCH_EXPIRED_INVITE; use create_mcts_match_invitation_frame instead")]
+#[deprecated(
+    note = "0x1ad4a846 is MATCH_EXPIRED_INVITE; use create_mcts_match_invitation_frame instead"
+)]
 #[allow(deprecated)]
 pub fn create_mcts_on_match_invite_frame(
     queue_id: u64,
@@ -1033,12 +1037,24 @@ mod tests {
         assert_eq!(t11, 11);
         assert_eq!(t26, 26);
         let v11 = u64::from_le_bytes([
-            payload[32], payload[33], payload[34], payload[35],
-            payload[36], payload[37], payload[38], payload[39],
+            payload[32],
+            payload[33],
+            payload[34],
+            payload[35],
+            payload[36],
+            payload[37],
+            payload[38],
+            payload[39],
         ]);
         let v26 = u64::from_le_bytes([
-            payload[40], payload[41], payload[42], payload[43],
-            payload[44], payload[45], payload[46], payload[47],
+            payload[40],
+            payload[41],
+            payload[42],
+            payload[43],
+            payload[44],
+            payload[45],
+            payload[46],
+            payload[47],
         ]);
         assert_eq!(v11, 10001);
         assert_eq!(v26, 10001);
@@ -1073,12 +1089,24 @@ mod tests {
 
         // Verify local NetId (Token 11) and account_id (Token 26)
         let v11 = u64::from_le_bytes([
-            payload[32], payload[33], payload[34], payload[35],
-            payload[36], payload[37], payload[38], payload[39],
+            payload[32],
+            payload[33],
+            payload[34],
+            payload[35],
+            payload[36],
+            payload[37],
+            payload[38],
+            payload[39],
         ]);
         let v26 = u64::from_le_bytes([
-            payload[40], payload[41], payload[42], payload[43],
-            payload[44], payload[45], payload[46], payload[47],
+            payload[40],
+            payload[41],
+            payload[42],
+            payload[43],
+            payload[44],
+            payload[45],
+            payload[46],
+            payload[47],
         ]);
         assert_eq!(v11, 8302401);
         assert_eq!(v26, 8302401);
@@ -1098,7 +1126,8 @@ mod tests {
     }
 
     #[test]
-    fn test_create_mcts_change_map_frame_structure() { // agyis: no-mutant unit test
+    fn test_create_mcts_change_map_frame_structure() {
+        // agyis: no-mutant unit test
         let frame = create_mcts_change_map_frame(1615, 1282927737, true); // agyis: no-mutant
         let length = u16::from_le_bytes([frame[0], frame[1]]) as usize; // agyis: no-mutant
         assert_eq!(length, frame.len() - 4); // agyis: no-mutant
@@ -1137,14 +1166,21 @@ mod tests {
         let t685 = u16::from_le_bytes([payload[22], payload[23]]); // agyis: no-mutant
         assert_eq!(t685, 685); // agyis: no-mutant
         let v685 = u64::from_le_bytes([
-            payload[24], payload[25], payload[26], payload[27],
-            payload[28], payload[29], payload[30], payload[31],
+            payload[24],
+            payload[25],
+            payload[26],
+            payload[27],
+            payload[28],
+            payload[29],
+            payload[30],
+            payload[31],
         ]); // agyis: no-mutant
         assert_eq!(v685, 1282927737); // agyis: no-mutant
     }
 
     #[test]
-    fn test_create_mcts_player_svc_change_map_frame_structure() { // agyis: no-mutant unit test
+    fn test_create_mcts_player_svc_change_map_frame_structure() {
+        // agyis: no-mutant unit test
         let frame = create_mcts_player_svc_change_map_frame(1615, 1282927737, false); // agyis: no-mutant
         assert_eq!(frame.len(), 30); // agyis: no-mutant
 
@@ -1184,7 +1220,8 @@ mod tests {
     }
 
     #[test]
-    fn test_create_mcts_champion_roster_frame_structure() { // agyis: no-mutant unit test
+    fn test_create_mcts_champion_roster_frame_structure() {
+        // agyis: no-mutant unit test
         let champs = [1026, 1024, 1025, 1027];
         let frame = create_mcts_champion_roster_frame(&champs); // agyis: no-mutant
         assert_eq!(frame.len(), 57); // agyis: no-mutant
@@ -1235,7 +1272,8 @@ mod tests {
     }
 
     #[test]
-    fn test_create_mcts_match_status_frame_structure() { // agyis: no-mutant unit test
+    fn test_create_mcts_match_status_frame_structure() {
+        // agyis: no-mutant unit test
         let frame = create_mcts_match_status_frame(434, 878850364, 1, 120, 5, 7); // agyis: no-mutant
         assert_eq!(frame.len(), 92); // agyis: no-mutant
 
@@ -1283,12 +1321,24 @@ mod tests {
         assert_eq!(t703, 703); // agyis: no-mutant
 
         let v700 = u64::from_le_bytes([
-            payload[39], payload[40], payload[41], payload[42],
-            payload[43], payload[44], payload[45], payload[46],
+            payload[39],
+            payload[40],
+            payload[41],
+            payload[42],
+            payload[43],
+            payload[44],
+            payload[45],
+            payload[46],
         ]); // agyis: no-mutant
         let v703 = u64::from_le_bytes([
-            payload[47], payload[48], payload[49], payload[50],
-            payload[51], payload[52], payload[53], payload[54],
+            payload[47],
+            payload[48],
+            payload[49],
+            payload[50],
+            payload[51],
+            payload[52],
+            payload[53],
+            payload[54],
         ]); // agyis: no-mutant
         assert_eq!(v700, 878850364); // agyis: no-mutant
         assert_eq!(v703, 434); // agyis: no-mutant
@@ -1325,39 +1375,60 @@ mod tests {
         let t_queue = u16::from_le_bytes([payload[78], payload[79]]); // agyis: no-mutant
         assert_eq!(t_queue, 703); // agyis: no-mutant
         let v_queue = u64::from_le_bytes([
-            payload[80], payload[81], payload[82], payload[83],
-            payload[84], payload[85], payload[86], payload[87],
+            payload[80],
+            payload[81],
+            payload[82],
+            payload[83],
+            payload[84],
+            payload[85],
+            payload[86],
+            payload[87],
         ]); // agyis: no-mutant
         assert_eq!(v_queue, 434); // agyis: no-mutant
     }
 
     #[test]
-    fn test_create_mcts_match_status_frame_zero_queue_defaults_to_434() { // agyis: no-mutant unit test
+    fn test_create_mcts_match_status_frame_zero_queue_defaults_to_434() {
+        // agyis: no-mutant unit test
         let frame = create_mcts_match_status_frame(0, 878850364, 0, 30, 0, 3); // agyis: no-mutant
         let payload = &frame[4..]; // agyis: no-mutant
 
         // Group 0x4000: outer queue_id should be 0
         let outer_queue = u64::from_le_bytes([
-            payload[47], payload[48], payload[49], payload[50],
-            payload[51], payload[52], payload[53], payload[54],
+            payload[47],
+            payload[48],
+            payload[49],
+            payload[50],
+            payload[51],
+            payload[52],
+            payload[53],
+            payload[54],
         ]); // agyis: no-mutant
         assert_eq!(outer_queue, 0); // agyis: no-mutant
 
         // Table 242: active_queue should default to 434
         let table_queue = u64::from_le_bytes([
-            payload[80], payload[81], payload[82], payload[83],
-            payload[84], payload[85], payload[86], payload[87],
+            payload[80],
+            payload[81],
+            payload[82],
+            payload[83],
+            payload[84],
+            payload[85],
+            payload[86],
+            payload[87],
         ]); // agyis: no-mutant
         assert_eq!(table_queue, 434); // agyis: no-mutant
     }
 
     #[test]
-    fn test_bot_id_fernando_constant() { // agyis: no-mutant unit test
+    fn test_bot_id_fernando_constant() {
+        // agyis: no-mutant unit test
         assert_eq!(BOT_ID_FERNANDO, 2285); // agyis: no-mutant
     }
 
     #[test]
-    fn test_create_mcts_match_status_with_members_frame_structure() { // agyis: no-mutant unit test
+    fn test_create_mcts_match_status_with_members_frame_structure() {
+        // agyis: no-mutant unit test
         let frame = create_mcts_match_status_with_members_frame(
             434,
             878850364,
@@ -1415,12 +1486,24 @@ mod tests {
         assert_eq!(t703, 703); // agyis: no-mutant
 
         let v700 = u64::from_le_bytes([
-            payload[39], payload[40], payload[41], payload[42],
-            payload[43], payload[44], payload[45], payload[46],
+            payload[39],
+            payload[40],
+            payload[41],
+            payload[42],
+            payload[43],
+            payload[44],
+            payload[45],
+            payload[46],
         ]); // agyis: no-mutant
         let v703 = u64::from_le_bytes([
-            payload[47], payload[48], payload[49], payload[50],
-            payload[51], payload[52], payload[53], payload[54],
+            payload[47],
+            payload[48],
+            payload[49],
+            payload[50],
+            payload[51],
+            payload[52],
+            payload[53],
+            payload[54],
         ]); // agyis: no-mutant
         assert_eq!(v700, 878850364); // agyis: no-mutant
         assert_eq!(v703, 434); // agyis: no-mutant
@@ -1461,8 +1544,14 @@ mod tests {
         let t703_q = u16::from_le_bytes([payload[78], payload[79]]); // agyis: no-mutant
         assert_eq!(t703_q, 703); // agyis: no-mutant
         let v703_q = u64::from_le_bytes([
-            payload[80], payload[81], payload[82], payload[83],
-            payload[84], payload[85], payload[86], payload[87],
+            payload[80],
+            payload[81],
+            payload[82],
+            payload[83],
+            payload[84],
+            payload[85],
+            payload[86],
+            payload[87],
         ]); // agyis: no-mutant
         assert_eq!(v703_q, 434); // agyis: no-mutant
 
@@ -1497,7 +1586,8 @@ mod tests {
 
         let v122 = u32::from_le_bytes([payload[107], payload[108], payload[109], payload[110]]); // agyis: no-mutant
         let v855 = u32::from_le_bytes([payload[111], payload[112], payload[113], payload[114]]); // agyis: no-mutant
-        let v1344_row = u32::from_le_bytes([payload[115], payload[116], payload[117], payload[118]]); // agyis: no-mutant
+        let v1344_row =
+            u32::from_le_bytes([payload[115], payload[116], payload[117], payload[118]]); // agyis: no-mutant
         assert_eq!(v122, BOT_ID_FERNANDO); // agyis: no-mutant
         assert_eq!(v122, 2285); // agyis: no-mutant
         assert_eq!(v855, 8302401); // agyis: no-mutant
@@ -1509,14 +1599,21 @@ mod tests {
         let t11 = u16::from_le_bytes([payload[121], payload[122]]); // agyis: no-mutant
         assert_eq!(t11, 11); // agyis: no-mutant
         let v11 = u64::from_le_bytes([
-            payload[123], payload[124], payload[125], payload[126],
-            payload[127], payload[128], payload[129], payload[130],
+            payload[123],
+            payload[124],
+            payload[125],
+            payload[126],
+            payload[127],
+            payload[128],
+            payload[129],
+            payload[130],
         ]); // agyis: no-mutant
         assert_eq!(v11, 8302401); // agyis: no-mutant
     }
 
     #[test]
-    fn test_create_mcts_map_transition_frame_structure() { // agyis: no-mutant unit test
+    fn test_create_mcts_map_transition_frame_structure() {
+        // agyis: no-mutant unit test
         let frame = create_mcts_map_transition_frame(1615, 1282927737, false); // agyis: no-mutant
         assert_eq!(frame.len(), 36); // agyis: no-mutant
 
@@ -1556,14 +1653,21 @@ mod tests {
         let t685 = u16::from_le_bytes([payload[22], payload[23]]); // agyis: no-mutant
         assert_eq!(t685, 685); // agyis: no-mutant
         let v685 = u64::from_le_bytes([
-            payload[24], payload[25], payload[26], payload[27],
-            payload[28], payload[29], payload[30], payload[31],
+            payload[24],
+            payload[25],
+            payload[26],
+            payload[27],
+            payload[28],
+            payload[29],
+            payload[30],
+            payload[31],
         ]); // agyis: no-mutant
         assert_eq!(v685, 1282927737); // agyis: no-mutant
     }
 
     #[test]
-    fn test_create_mcts_match_invitation_frame_structure() { // agyis: no-mutant unit test
+    fn test_create_mcts_match_invitation_frame_structure() {
+        // agyis: no-mutant unit test
         let frame = create_mcts_match_invitation_frame(434, 878850364, 30, 8302401); // agyis: no-mutant
         assert_eq!(frame.len(), 69); // agyis: no-mutant
 
@@ -1603,12 +1707,24 @@ mod tests {
         assert_eq!(t700, 700); // agyis: no-mutant
         assert_eq!(t703, 703); // agyis: no-mutant
         let v700 = u64::from_le_bytes([
-            payload[27], payload[28], payload[29], payload[30],
-            payload[31], payload[32], payload[33], payload[34],
+            payload[27],
+            payload[28],
+            payload[29],
+            payload[30],
+            payload[31],
+            payload[32],
+            payload[33],
+            payload[34],
         ]); // agyis: no-mutant
         let v703 = u64::from_le_bytes([
-            payload[35], payload[36], payload[37], payload[38],
-            payload[39], payload[40], payload[41], payload[42],
+            payload[35],
+            payload[36],
+            payload[37],
+            payload[38],
+            payload[39],
+            payload[40],
+            payload[41],
+            payload[42],
         ]); // agyis: no-mutant
         assert_eq!(v700, 878850364); // agyis: no-mutant
         assert_eq!(v703, 434); // agyis: no-mutant
@@ -1641,7 +1757,8 @@ mod tests {
 
     #[test]
     #[allow(deprecated)]
-    fn test_create_mcts_on_match_invite_frame_structure() { // agyis: no-mutant unit test
+    fn test_create_mcts_on_match_invite_frame_structure() {
+        // agyis: no-mutant unit test
         let frame = create_mcts_on_match_invite_frame(434, 878850364, 30, false); // agyis: no-mutant
         assert_eq!(frame.len(), 46); // agyis: no-mutant
 
@@ -1684,12 +1801,24 @@ mod tests {
         assert_eq!(t700, 700); // agyis: no-mutant
         assert_eq!(t703, 703); // agyis: no-mutant
         let v700 = u64::from_le_bytes([
-            payload[26], payload[27], payload[28], payload[29],
-            payload[30], payload[31], payload[32], payload[33],
+            payload[26],
+            payload[27],
+            payload[28],
+            payload[29],
+            payload[30],
+            payload[31],
+            payload[32],
+            payload[33],
         ]); // agyis: no-mutant
         let v703 = u64::from_le_bytes([
-            payload[34], payload[35], payload[36], payload[37],
-            payload[38], payload[39], payload[40], payload[41],
+            payload[34],
+            payload[35],
+            payload[36],
+            payload[37],
+            payload[38],
+            payload[39],
+            payload[40],
+            payload[41],
         ]); // agyis: no-mutant
         assert_eq!(v700, 878850364); // agyis: no-mutant
         assert_eq!(v703, 434); // agyis: no-mutant

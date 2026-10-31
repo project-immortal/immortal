@@ -14,19 +14,36 @@ struct GoldenPacket {
 
 fn load_golden_packets() -> Vec<GoldenPacket> {
     let bytes = include_bytes!("fixtures/golden_mcts_stream.bin");
-    assert!(bytes.len() >= 4, "golden_mcts_stream.bin fixture must be valid");
+    assert!(
+        bytes.len() >= 4,
+        "golden_mcts_stream.bin fixture must be valid"
+    );
 
     let count = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
     let mut packets = Vec::with_capacity(count);
     let mut offset = 4;
 
     while offset + 9 <= bytes.len() {
-        let frame_idx = u32::from_le_bytes([bytes[offset], bytes[offset+1], bytes[offset+2], bytes[offset+3]]);
-        let is_client = bytes[offset+4] == 1;
-        let p_len = u32::from_le_bytes([bytes[offset+5], bytes[offset+6], bytes[offset+7], bytes[offset+8]]) as usize;
+        let frame_idx = u32::from_le_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ]);
+        let is_client = bytes[offset + 4] == 1;
+        let p_len = u32::from_le_bytes([
+            bytes[offset + 5],
+            bytes[offset + 6],
+            bytes[offset + 7],
+            bytes[offset + 8],
+        ]) as usize;
         offset += 9;
-        assert!(offset + p_len <= bytes.len(), "corrupted packet payload at frame {}", frame_idx);
-        let payload = bytes[offset..offset+p_len].to_vec();
+        assert!(
+            offset + p_len <= bytes.len(),
+            "corrupted packet payload at frame {}",
+            frame_idx
+        );
+        let payload = bytes[offset..offset + p_len].to_vec();
         offset += p_len;
         packets.push(GoldenPacket {
             frame_idx,
@@ -35,14 +52,22 @@ fn load_golden_packets() -> Vec<GoldenPacket> {
         });
     }
 
-    assert_eq!(packets.len(), count, "Parsed packet count must match header");
+    assert_eq!(
+        packets.len(),
+        count,
+        "Parsed packet count must match header"
+    );
     packets
 }
 
 #[test]
 fn test_golden_stream_fixture_integrity() {
     let packets = load_golden_packets();
-    assert_eq!(packets.len(), 1617, "Golden stream fixture must contain exactly 1617 packets");
+    assert_eq!(
+        packets.len(),
+        1617,
+        "Golden stream fixture must contain exactly 1617 packets"
+    );
 
     // Frame 4: Client Step 1 Handshake
     let f4 = &packets[0];
@@ -105,9 +130,23 @@ fn test_golden_stream_framing_and_flags_distribution() {
         }
     }
 
-    assert!(client_count >= 90, "Must have >=90 client packets (got {})", client_count);
-    assert!(server_count >= 1500, "Must have >=1500 server packets (got {})", server_count);
+    assert!(
+        client_count >= 90,
+        "Must have >=90 client packets (got {})",
+        client_count
+    );
+    assert!(
+        server_count >= 1500,
+        "Must have >=1500 server packets (got {})",
+        server_count
+    );
     assert!(total_bytes > 1_000_000, "Must have >1MB total payload data");
-    assert!(uncompressed_frames > 0, "Must have uncompressed handshake frames");
-    assert!(chunk_flag_frames > 0, "Must have chunk-flagged payload frames");
+    assert!(
+        uncompressed_frames > 0,
+        "Must have uncompressed handshake frames"
+    );
+    assert!(
+        chunk_flag_frames > 0,
+        "Must have chunk-flagged payload frames"
+    );
 }
