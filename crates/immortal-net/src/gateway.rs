@@ -325,8 +325,28 @@ async fn handle_connection(
                         return;
                     }
 
+                    tokio::time::sleep(tokio::time::Duration::from_millis(900)).await;
+
+                    let change_map_frame = create_mcts_change_map_frame(
+                        MAP_GAME_ID_SHOOTING_RANGE,
+                        MAP_INSTANCE_ID_SHOOTING_RANGE as u64,
+                        true,
+                    );
+                    if tx.send(change_map_frame).await.is_err() {
+                        return;
+                    }
+
+                    let player_svc_change_map_frame = create_mcts_player_svc_change_map_frame(
+                        MAP_GAME_ID_SHOOTING_RANGE,
+                        MAP_INSTANCE_ID_SHOOTING_RANGE,
+                        true,
+                    );
+                    if tx.send(player_svc_change_map_frame).await.is_err() {
+                        return;
+                    }
+
                     info!(
-                        "Dispatched Live MCTS Shooting Range transition sequence (queued -> invited -> invite -> status 8 -> roster -> status 10) for {}",
+                        "Dispatched Live MCTS Shooting Range transition sequence (queued -> invited -> invite -> status 8 -> roster -> status 10 -> change_map) for {}",
                         peer_addr
                     );
                 });
