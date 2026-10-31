@@ -151,19 +151,20 @@ impl AuthGateway {
 
 pub use crate::mcts_handshake::{
     create_mcts_champion_roster_frame, create_mcts_change_map_frame,
-    create_mcts_login_response_frame, create_mcts_match_invitation_frame,
-    create_mcts_match_status_frame, create_mcts_match_status_with_members_frame,
-    create_mcts_player_svc_change_map_frame, BOT_ID_FERNANDO, CHUNK1_HANDSHAKE, CHUNK2_ACK,
-    CHUNK3_SESSION, MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE,
-    MCTS_CHAMPION_SELECT_ACK_FRAME, MCTS_CLIENT_AUTH_REQUEST_FLAGS, MCTS_CLIENT_AUTH_REQUEST_LEN,
-    MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
+    create_mcts_launch_map_instance_frame, create_mcts_login_response_frame,
+    create_mcts_match_invitation_frame, create_mcts_match_status_frame,
+    create_mcts_match_status_with_members_frame, create_mcts_player_svc_change_map_frame,
+    BOT_ID_FERNANDO, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MAP_GAME_ID_SHOOTING_RANGE,
+    MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
+    MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
     MCTS_FUNCTION_ID_CHAMPION_ROSTER, MCTS_FUNCTION_ID_CHANGE_MAP, MCTS_FUNCTION_ID_MAP_TRANSITION,
     MCTS_FUNCTION_ID_MATCH_INVITATION, MCTS_FUNCTION_ID_MATCH_STATUS,
     MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP,
-    MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP, MCTS_HANDSHAKE_CHUNK1, MCTS_HANDSHAKE_CHUNK2_ACK,
-    MCTS_HANDSHAKE_CHUNK3_SESSION, MCTS_HELLO_RESPONSE_FRAME, MCTS_HELLO_RESPONSE_PAYLOAD,
-    MCTS_TOKEN_ACCOUNT_ID, MCTS_TOKEN_INVITED_MEMBERS, MCTS_TOKEN_MEMBERS,
-    MCTS_TOKEN_TIMEOUT_WARNING, MCTS_WIRE_FLAG_CHUNK,
+    MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP,
+    MCTS_HANDSHAKE_CHUNK1, MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION,
+    MCTS_HELLO_RESPONSE_FRAME, MCTS_HELLO_RESPONSE_PAYLOAD, MCTS_TOKEN_ACCOUNT_ID,
+    MCTS_TOKEN_INVITED_MEMBERS, MCTS_TOKEN_MEMBERS, MCTS_TOKEN_TIMEOUT_WARNING,
+    MCTS_WIRE_FLAG_CHUNK,
 };
 
 async fn handle_connection(
@@ -327,12 +328,14 @@ async fn handle_connection(
 
                     tokio::time::sleep(tokio::time::Duration::from_millis(900)).await;
 
-                    let change_map_frame = create_mcts_change_map_frame(
-                        MAP_GAME_ID_SHOOTING_RANGE,
-                        MAP_INSTANCE_ID_SHOOTING_RANGE as u64,
-                        true,
+                    let launch_map_frame = create_mcts_launch_map_instance_frame(
+                        434,
+                        878850364,
+                        60,
+                        [127, 0, 0, 1],
+                        7777,
                     );
-                    if tx.send(change_map_frame).await.is_err() {
+                    if tx.send(launch_map_frame).await.is_err() {
                         return;
                     }
 
@@ -346,7 +349,7 @@ async fn handle_connection(
                     }
 
                     info!(
-                        "Dispatched Live MCTS Shooting Range transition sequence (queued -> invited -> invite -> status 8 -> roster -> status 10 -> change_map) for {}",
+                        "Dispatched Live MCTS Shooting Range transition sequence (queued -> invited -> invite -> status 8 -> roster -> status 10 -> launch_map_instance) for {}",
                         peer_addr
                     );
                 });

@@ -1369,79 +1369,102 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     ]); // agyis: no-mutant
     assert_eq!(s10_player_id, 8302401); // agyis: no-mutant
 
-    // (d) ChangeMap wire frame (Function ID 0x48631f9a, len 32, mapGameId 1615, mapInstanceId 1282927737, compel true)
+    // (d) PLAYER_SVC_LAUNCH_MAP_INSTANCE wire frame (Function ID 0x4bee2ed8, len 53, queue_id 434, match_id 878850364, timeout 60, sockaddr 127.0.0.1:7777)
     stream.read_exact(&mut header_buf).await.unwrap();
-    let change_map_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
-    let change_map_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
-    assert_eq!(change_map_flags, 0x0000); // agyis: no-mutant
-    assert_eq!(change_map_len, 32); // agyis: no-mutant
-    let mut change_map_payload = vec![0u8; change_map_len];
-    stream.read_exact(&mut change_map_payload).await.unwrap();
-    assert_eq!(change_map_payload[0], 0x00); // agyis: no-mutant
-    let change_map_func_id = u32::from_le_bytes([
-        change_map_payload[1],
-        change_map_payload[2],
-        change_map_payload[3],
-        change_map_payload[4],
+    let launch_map_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let launch_map_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(launch_map_flags, 0x0000); // agyis: no-mutant
+    assert_eq!(launch_map_len, 53); // agyis: no-mutant
+    let mut launch_map_payload = vec![0u8; launch_map_len];
+    stream.read_exact(&mut launch_map_payload).await.unwrap();
+    assert_eq!(launch_map_payload[0], 0x00); // agyis: no-mutant
+    let launch_map_func_id = u32::from_le_bytes([
+        launch_map_payload[1],
+        launch_map_payload[2],
+        launch_map_payload[3],
+        launch_map_payload[4],
     ]); // agyis: no-mutant
     assert_eq!(
-        change_map_func_id,
-        immortal_net::MCTS_FUNCTION_ID_CHANGE_MAP
+        launch_map_func_id,
+        immortal_net::MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE
     ); // agyis: no-mutant
-    assert_eq!(change_map_func_id, 0x48631f9a); // agyis: no-mutant
+    assert_eq!(launch_map_func_id, 0x4bee2ed8); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([change_map_payload[5], change_map_payload[6]]),
-        3
-    ); // agyis: no-mutant (3 total fields)
+        u16::from_le_bytes([launch_map_payload[5], launch_map_payload[6]]),
+        5
+    ); // agyis: no-mutant (5 total fields)
 
-    // Group 0x1000 (1 field): Token 1536 (compel = true / 0x01)
+    // Group 0x3000 (2 fields): Token 721 (queue_id = 434), Token 1839 (timeout_secs = 60)
     assert_eq!(
-        u16::from_le_bytes([change_map_payload[7], change_map_payload[8]]),
-        0x1001
+        u16::from_le_bytes([launch_map_payload[7], launch_map_payload[8]]),
+        0x3002
     ); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([change_map_payload[9], change_map_payload[10]]),
-        1536
-    ); // agyis: no-mutant
-    assert_eq!(change_map_payload[11], 1); // agyis: no-mutant
-
-    // Group 0x3000 (1 field): Token 682 (mapGameId = 1615)
-    assert_eq!(
-        u16::from_le_bytes([change_map_payload[12], change_map_payload[13]]),
-        0x3001
+        u16::from_le_bytes([launch_map_payload[9], launch_map_payload[10]]),
+        721
     ); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([change_map_payload[14], change_map_payload[15]]),
-        682
+        u16::from_le_bytes([launch_map_payload[11], launch_map_payload[12]]),
+        1839
     ); // agyis: no-mutant
-    let cm_map_game_id = u32::from_le_bytes([
-        change_map_payload[16],
-        change_map_payload[17],
-        change_map_payload[18],
-        change_map_payload[19],
+    let lm_queue_id = u32::from_le_bytes([
+        launch_map_payload[13],
+        launch_map_payload[14],
+        launch_map_payload[15],
+        launch_map_payload[16],
     ]); // agyis: no-mutant
-    assert_eq!(cm_map_game_id, 1615); // agyis: no-mutant
-
-    // Group 0x4000 (1 field): Token 685 (mapInstanceId = 1282927737)
-    assert_eq!(
-        u16::from_le_bytes([change_map_payload[20], change_map_payload[21]]),
-        0x4001
-    ); // agyis: no-mutant
-    assert_eq!(
-        u16::from_le_bytes([change_map_payload[22], change_map_payload[23]]),
-        685
-    ); // agyis: no-mutant
-    let cm_map_instance_id = u64::from_le_bytes([
-        change_map_payload[24],
-        change_map_payload[25],
-        change_map_payload[26],
-        change_map_payload[27],
-        change_map_payload[28],
-        change_map_payload[29],
-        change_map_payload[30],
-        change_map_payload[31],
+    let lm_timeout = u32::from_le_bytes([
+        launch_map_payload[17],
+        launch_map_payload[18],
+        launch_map_payload[19],
+        launch_map_payload[20],
     ]); // agyis: no-mutant
-    assert_eq!(cm_map_instance_id, 1282927737); // agyis: no-mutant
+    assert_eq!(lm_queue_id, 434); // agyis: no-mutant
+    assert_eq!(lm_timeout, 60); // agyis: no-mutant
+
+    // Group 0x4000 (3 fields): Token 25 (0u64), Token 700 (match_id), Token 877 (sockaddr_in)
+    assert_eq!(
+        u16::from_le_bytes([launch_map_payload[21], launch_map_payload[22]]),
+        0x4003
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([launch_map_payload[23], launch_map_payload[24]]),
+        25
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([launch_map_payload[25], launch_map_payload[26]]),
+        700
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([launch_map_payload[27], launch_map_payload[28]]),
+        877
+    ); // agyis: no-mutant
+    let lm_instance_id = u64::from_le_bytes([
+        launch_map_payload[29],
+        launch_map_payload[30],
+        launch_map_payload[31],
+        launch_map_payload[32],
+        launch_map_payload[33],
+        launch_map_payload[34],
+        launch_map_payload[35],
+        launch_map_payload[36],
+    ]); // agyis: no-mutant
+    let lm_match_id = u64::from_le_bytes([
+        launch_map_payload[37],
+        launch_map_payload[38],
+        launch_map_payload[39],
+        launch_map_payload[40],
+        launch_map_payload[41],
+        launch_map_payload[42],
+        launch_map_payload[43],
+        launch_map_payload[44],
+    ]); // agyis: no-mutant
+    assert_eq!(lm_instance_id, 0); // agyis: no-mutant
+    assert_eq!(lm_match_id, 878850364); // agyis: no-mutant
+    assert_eq!(
+        &launch_map_payload[45..53],
+        &[0x02, 0x00, 0x1e, 0x61, 127, 0, 0, 1]
+    ); // agyis: no-mutant
 
     // (e) PLAYER_SVC_CHANGE_MAP wire frame (Function ID 0xae90091f, len 26, is_standalone true, mapGameId 1615, mapInstanceId 1282927737)
     stream.read_exact(&mut header_buf).await.unwrap();

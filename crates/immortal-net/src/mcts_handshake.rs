@@ -211,6 +211,10 @@ pub const MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP: u32 = 0xae90091f;
 pub const MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP_BE: u32 = 0x1f0990ae;
 pub const MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP_LE: u32 = MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP;
 
+/// Authentic Function ID for `PLAYER_SVC_LAUNCH_MAP_INSTANCE` (0x4bee2ed8 / 1273933528).
+/// Reverse engineered from `MctsInterface.dll: ProcessMarshal` (VA 0x1800cc6a0 at 0x1800ccdd0 -> FUN_1800ce310 -> FUN_1800da6e0).
+pub const MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE: u32 = 0x4bee2ed8;
+
 /// Live MCTS Champion Selection acknowledgment wire frame (Frame 2554 from PCAP: 19 bytes)
 pub const MCTS_CHAMPION_SELECT_ACK_FRAME: [u8; 19] = [
     0x0f, 0x00, 0x00, 0x01, 0xef, 0xdd, 0x69, 0xe4, 0x70, 0x11, 0xda, 0xaa, 0x94, 0xb1, 0xb0, 0xd2,
@@ -320,6 +324,76 @@ pub fn create_mcts_player_svc_change_map_frame(
     payload.extend_from_slice(&11u16.to_le_bytes()); // Token 11 (0x000b): mapInstanceId
     payload.extend_from_slice(&map_game_id.to_le_bytes());
     payload.extend_from_slice(&map_instance_id.to_le_bytes());
+
+    // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
+    let mut frame = Vec::with_capacity(4 + payload.len());
+    let payload_len = payload.len() as u16;
+    frame.extend_from_slice(&payload_len.to_le_bytes()); // agyis: no-mutant wire framing
+    frame.extend_from_slice(&0x0000u16.to_le_bytes()); // agyis: no-mutant wire framing
+    frame.extend_from_slice(&payload); // agyis: no-mutant wire framing
+
+    frame
+}
+
+/// Builds an authentic live MCTS `PLAYER_SVC_LAUNCH_MAP_INSTANCE` wire frame (0x4bee2ed8).
+///
+/// Reverse engineered from `MctsInterface.dll: ProcessMarshal` (0x1800ccdd0 -> FUN_1800ce310 -> FUN_1800da6e0):
+/// - Prefix: byte `0x00` (`this[0x30]`)
+/// - Function ID: `0x4bee2ed8` (`MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE`, wire LE `[0xd8, 0x2e, 0xee, 0x4b]`)
+/// - CMarshalRow field count: 5 (2 uint32 fields in Group 0x3000 + 3 8-byte fields in Group 0x4000)
+/// - Group 0x3000 (4-byte fields: 2 fields, header `0x3002`):
+///   - Token 721 (0x02d1): `queue_id` (u32 little-endian)
+///   - Token 1839 (0x072f): `timeout_secs` (u32 little-endian)
+/// - Group 0x4000 (8-byte fields: 3 fields, header `0x4003`):
+///   - Token 25 (0x0019): `0u64` (u64 little-endian)
+///   - Token 700 (0x02bc): `match_id` (u64 little-endian)
+///   - Token 877 (0x036d): `sockaddr_in` (8 bytes: [0x02, 0x00, port_high, port_low, ip0, ip1, ip2, ip3])
+/// - TCP Framing:
+///   - Length: payload length (u16 little-endian)
+///   - Wire flags: `0x0000` (u16 little-endian)
+///   - Followed by payload bytes
+pub fn create_mcts_launch_map_instance_frame(
+    queue_id: u32,
+    match_id: u64,
+    timeout_secs: u32,
+    ip: [u8; 4],
+    port: u16,
+) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(64);
+    payload.push(0x00); // this[0x30]
+    payload.extend_from_slice(&MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE.to_le_bytes());
+
+    // CMarshalRow: total fields = 5 (2 in 0x3000 + 3 in 0x4000)
+    let total_fields: u16 = 5;
+    payload.extend_from_slice(&total_fields.to_le_bytes());
+
+    // Group 0x3000 (4-byte fields: 2 fields, header 0x3002)
+    let grp4_hdr: u16 = 0x3000 | 2;
+    payload.extend_from_slice(&grp4_hdr.to_le_bytes());
+    payload.extend_from_slice(&721u16.to_le_bytes()); // Token 721 (0x02d1): queue_id
+    payload.extend_from_slice(&1839u16.to_le_bytes()); // Token 1839 (0x072f): timeout_secs
+    payload.extend_from_slice(&queue_id.to_le_bytes());
+    payload.extend_from_slice(&timeout_secs.to_le_bytes());
+
+    // Group 0x4000 (8-byte fields: 3 fields, header 0x4003)
+    let grp8_hdr: u16 = 0x4000 | 3;
+    payload.extend_from_slice(&grp8_hdr.to_le_bytes());
+    payload.extend_from_slice(&25u16.to_le_bytes()); // Token 25 (0x0019): instance_id / 0
+    payload.extend_from_slice(&700u16.to_le_bytes()); // Token 700 (0x02bc): match_id
+    payload.extend_from_slice(&877u16.to_le_bytes()); // Token 877 (0x036d): sockaddr_in
+    payload.extend_from_slice(&0u64.to_le_bytes());
+    payload.extend_from_slice(&match_id.to_le_bytes());
+    let sockaddr: [u8; 8] = [
+        0x02,
+        0x00,
+        (port >> 8) as u8,
+        (port & 0xff) as u8,
+        ip[0],
+        ip[1],
+        ip[2],
+        ip[3],
+    ];
+    payload.extend_from_slice(&sockaddr);
 
     // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
     let mut frame = Vec::with_capacity(4 + payload.len());
@@ -1143,6 +1217,77 @@ mod tests {
         let v11 = u32::from_le_bytes([payload[22], payload[23], payload[24], payload[25]]); // agyis: no-mutant
         assert_eq!(v682, 1615); // agyis: no-mutant
         assert_eq!(v11, 1282927737); // agyis: no-mutant
+    }
+
+    #[test]
+    fn test_create_mcts_launch_map_instance_frame_structure() {
+        // agyis: no-mutant unit test
+        let frame = create_mcts_launch_map_instance_frame(434, 878850364, 60, [127, 0, 0, 1], 7777); // agyis: no-mutant
+        assert_eq!(frame.len(), 57); // agyis: no-mutant
+
+        let length = u16::from_le_bytes([frame[0], frame[1]]) as usize; // agyis: no-mutant
+        assert_eq!(length, frame.len() - 4); // agyis: no-mutant
+        let flags = u16::from_le_bytes([frame[2], frame[3]]); // agyis: no-mutant
+        assert_eq!(flags, 0x0000); // agyis: no-mutant
+
+        let payload = &frame[4..]; // agyis: no-mutant
+        assert_eq!(payload[0], 0x00); // this[0x30] // agyis: no-mutant
+        assert_eq!(&payload[1..5], &[0xd8, 0x2e, 0xee, 0x4b]); // agyis: no-mutant
+        let func_id_le = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]); // agyis: no-mutant
+        assert_eq!(func_id_le, MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE); // agyis: no-mutant
+        assert_eq!(func_id_le, 0x4bee2ed8); // agyis: no-mutant
+
+        let total_fields = u16::from_le_bytes([payload[5], payload[6]]); // agyis: no-mutant
+        assert_eq!(total_fields, 5); // agyis: no-mutant
+
+        // Group 0x3000: Token 721 (queue_id = 434), Token 1839 (timeout_secs = 60)
+        let grp4 = u16::from_le_bytes([payload[7], payload[8]]); // agyis: no-mutant
+        assert_eq!(grp4, 0x3002); // agyis: no-mutant
+        let t721 = u16::from_le_bytes([payload[9], payload[10]]); // agyis: no-mutant
+        let t1839 = u16::from_le_bytes([payload[11], payload[12]]); // agyis: no-mutant
+        assert_eq!(t721, 721); // agyis: no-mutant
+        assert_eq!(t1839, 1839); // agyis: no-mutant
+        let v721 = u32::from_le_bytes([payload[13], payload[14], payload[15], payload[16]]); // agyis: no-mutant
+        let v1839 = u32::from_le_bytes([payload[17], payload[18], payload[19], payload[20]]); // agyis: no-mutant
+        assert_eq!(v721, 434); // agyis: no-mutant
+        assert_eq!(v1839, 60); // agyis: no-mutant
+
+        // Group 0x4000: Token 25 (0u64), Token 700 (match_id), Token 877 (sockaddr_in)
+        let grp8 = u16::from_le_bytes([payload[21], payload[22]]); // agyis: no-mutant
+        assert_eq!(grp8, 0x4003); // agyis: no-mutant
+        let t25 = u16::from_le_bytes([payload[23], payload[24]]); // agyis: no-mutant
+        let t700 = u16::from_le_bytes([payload[25], payload[26]]); // agyis: no-mutant
+        let t877 = u16::from_le_bytes([payload[27], payload[28]]); // agyis: no-mutant
+        assert_eq!(t25, 25); // agyis: no-mutant
+        assert_eq!(t700, 700); // agyis: no-mutant
+        assert_eq!(t877, 877); // agyis: no-mutant
+
+        let v25 = u64::from_le_bytes([
+            payload[29],
+            payload[30],
+            payload[31],
+            payload[32],
+            payload[33],
+            payload[34],
+            payload[35],
+            payload[36],
+        ]); // agyis: no-mutant
+        assert_eq!(v25, 0); // agyis: no-mutant
+
+        let v700 = u64::from_le_bytes([
+            payload[37],
+            payload[38],
+            payload[39],
+            payload[40],
+            payload[41],
+            payload[42],
+            payload[43],
+            payload[44],
+        ]); // agyis: no-mutant
+        assert_eq!(v700, 878850364); // agyis: no-mutant
+
+        // Token 877: sockaddr_in (AF_INET = 2, port = 7777 [0x1e, 0x61], ip = 127.0.0.1)
+        assert_eq!(&payload[45..53], &[0x02, 0x00, 0x1e, 0x61, 127, 0, 0, 1]); // agyis: no-mutant
     }
 
     #[test]
