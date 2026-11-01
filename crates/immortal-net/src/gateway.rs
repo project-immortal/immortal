@@ -154,17 +154,17 @@ pub use crate::mcts_handshake::{
     create_mcts_launch_map_instance_frame, create_mcts_login_response_frame,
     create_mcts_match_invitation_frame, create_mcts_match_status_frame,
     create_mcts_match_status_with_members_frame, create_mcts_player_svc_change_map_frame,
-    BOT_ID_FERNANDO, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MAP_GAME_ID_SHOOTING_RANGE,
-    MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
-    MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
-    MCTS_FUNCTION_ID_CHAMPION_ROSTER, MCTS_FUNCTION_ID_CHANGE_MAP, MCTS_FUNCTION_ID_MAP_TRANSITION,
-    MCTS_FUNCTION_ID_MATCH_INVITATION, MCTS_FUNCTION_ID_MATCH_STATUS,
-    MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP,
-    MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP,
-    MCTS_HANDSHAKE_CHUNK1, MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION,
-    MCTS_HELLO_RESPONSE_FRAME, MCTS_HELLO_RESPONSE_PAYLOAD, MCTS_TOKEN_ACCOUNT_ID,
-    MCTS_TOKEN_INVITED_MEMBERS, MCTS_TOKEN_MEMBERS, MCTS_TOKEN_TIMEOUT_WARNING,
-    MCTS_WIRE_FLAG_CHUNK,
+    create_mcts_queue_status_frame, BOT_ID_FERNANDO, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION,
+    MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME,
+    MCTS_CLIENT_AUTH_REQUEST_FLAGS, MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS,
+    MCTS_CLIENT_CRYPTO_TICKET_LEN, MCTS_FUNCTION_ID_CHAMPION_ROSTER, MCTS_FUNCTION_ID_CHANGE_MAP,
+    MCTS_FUNCTION_ID_MAP_TRANSITION, MCTS_FUNCTION_ID_MATCH_INVITATION,
+    MCTS_FUNCTION_ID_MATCH_STATUS, MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE,
+    MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP, MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE,
+    MCTS_FUNCTION_ID_QUEUE_STATUS, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP, MCTS_HANDSHAKE_CHUNK1,
+    MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION, MCTS_HELLO_RESPONSE_FRAME,
+    MCTS_HELLO_RESPONSE_PAYLOAD, MCTS_TOKEN_ACCOUNT_ID, MCTS_TOKEN_INVITED_MEMBERS,
+    MCTS_TOKEN_MEMBERS, MCTS_TOKEN_TIMEOUT_WARNING, MCTS_WIRE_FLAG_CHUNK,
 };
 
 async fn handle_connection(
@@ -241,13 +241,23 @@ async fn handle_connection(
                         .await;
                     }
 
-                    // Emit Shooting Range transition: MATCH_STATUS queued (queue 434, match 0, queue_state 2 MQ_QUEUED)
+                    // Emit Shooting Range transition: QUEUE_STATUS (queue 434, state 2 MQ_QUEUED)
+                    // -> MATCH_STATUS queued (queue 434, match 0, queue_state 2 MQ_QUEUED)
                     // -> MATCH_STATUS invited (queue 0, match 878850364, queue_state 3 MQ_INVITED)
                     // -> MATCH_INVITATION (queue 434, match 878850364, timeout 30s, Table 1619 account_id)
                     // -> MATCH_STATUS state 8 with members table (queue 0, match 878850364, queue_state 4 MQ_ACCEPTED)
                     // -> Champion Roster
                     // -> MATCH_STATUS state 10 with members table (queue 0, match 878850364, queue_state 7 MQ_LAUNCHING)
                     // -> Map Transition
+                    let queue_status_frame = create_mcts_queue_status_frame(434, 2, 0);
+                    if tx.send(queue_status_frame).await.is_err() {
+                        return;
+                    }
+                    info!(
+                        "Dispatched MCTS QUEUE_STATUS (queue_id 434, state 2) for {}",
+                        peer_addr
+                    );
+
                     let match_status_queued = create_mcts_match_status_frame(434, 0, 0, 0, 0, 2);
                     if tx.send(match_status_queued).await.is_err() {
                         return;

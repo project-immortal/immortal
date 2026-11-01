@@ -505,6 +505,71 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     stream.flush().await.unwrap();
 
     // Expect automatic Shooting Range transition sequence:
+    // (a0-queue-status) QUEUE_STATUS (Function ID 0x2cdbafe1, Table 242, queue 434, state 2)
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let q_status_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let q_status_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(q_status_flags, 0x0000); // agyis: no-mutant
+    assert_eq!(q_status_len, 37); // agyis: no-mutant
+    let mut q_status_payload = vec![0u8; q_status_len];
+    stream.read_exact(&mut q_status_payload).await.unwrap();
+    assert_eq!(q_status_payload[0], 0x00); // agyis: no-mutant
+    let q_status_func_id = u32::from_le_bytes([
+        q_status_payload[1],
+        q_status_payload[2],
+        q_status_payload[3],
+        q_status_payload[4],
+    ]); // agyis: no-mutant
+    assert_eq!(
+        q_status_func_id,
+        immortal_net::MCTS_FUNCTION_ID_QUEUE_STATUS
+    ); // agyis: no-mutant
+    assert_eq!(q_status_func_id, 0x2cdbafe1); // agyis: no-mutant
+    let q_fields = u16::from_le_bytes([q_status_payload[5], q_status_payload[6]]); // agyis: no-mutant
+    assert_eq!(q_fields, 1); // agyis: no-mutant
+    let q_tbl_grp = u16::from_le_bytes([q_status_payload[7], q_status_payload[8]]); // agyis: no-mutant
+    assert_eq!(q_tbl_grp, 0x6001); // agyis: no-mutant
+    let q_tbl_tok = u16::from_le_bytes([q_status_payload[9], q_status_payload[10]]); // agyis: no-mutant
+    assert_eq!(q_tbl_tok, immortal_net::MCTS_TOKEN_QUEUE_STATUS); // agyis: no-mutant
+    assert_eq!(q_tbl_tok, 242); // agyis: no-mutant
+    let q_row_cnt = u32::from_le_bytes([
+        q_status_payload[11],
+        q_status_payload[12],
+        q_status_payload[13],
+        q_status_payload[14],
+    ]); // agyis: no-mutant
+    assert_eq!(q_row_cnt, 1); // agyis: no-mutant
+    let q_row_fields = u16::from_le_bytes([q_status_payload[15], q_status_payload[16]]); // agyis: no-mutant
+    assert_eq!(q_row_fields, 2); // agyis: no-mutant
+    let q_grp4 = u16::from_le_bytes([q_status_payload[17], q_status_payload[18]]); // agyis: no-mutant
+    assert_eq!(q_grp4, 0x3001); // agyis: no-mutant
+    let q_tok36 = u16::from_le_bytes([q_status_payload[19], q_status_payload[20]]); // agyis: no-mutant
+    assert_eq!(q_tok36, immortal_net::MCTS_TOKEN_QUEUE_STATE); // agyis: no-mutant
+    assert_eq!(q_tok36, 36); // agyis: no-mutant
+    let q_v36 = u32::from_le_bytes([
+        q_status_payload[21],
+        q_status_payload[22],
+        q_status_payload[23],
+        q_status_payload[24],
+    ]); // agyis: no-mutant
+    assert_eq!(q_v36, 2); // agyis: no-mutant
+    let q_grp8 = u16::from_le_bytes([q_status_payload[25], q_status_payload[26]]); // agyis: no-mutant
+    assert_eq!(q_grp8, 0x4001); // agyis: no-mutant
+    let q_tok703 = u16::from_le_bytes([q_status_payload[27], q_status_payload[28]]); // agyis: no-mutant
+    assert_eq!(q_tok703, immortal_net::MCTS_TOKEN_MATCH_QUEUE_ID); // agyis: no-mutant
+    assert_eq!(q_tok703, 703); // agyis: no-mutant
+    let q_v703 = u64::from_le_bytes([
+        q_status_payload[29],
+        q_status_payload[30],
+        q_status_payload[31],
+        q_status_payload[32],
+        q_status_payload[33],
+        q_status_payload[34],
+        q_status_payload[35],
+        q_status_payload[36],
+    ]); // agyis: no-mutant
+    assert_eq!(q_v703, 434); // agyis: no-mutant
+
     // (a0) MATCH_STATUS queued (queue 434, match 0, lobby_state 0, launch_seconds 0, player_lobby_state 0, player_queue_state 2 MQ_QUEUED)
     stream.read_exact(&mut header_buf).await.unwrap();
     let status_queued_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
