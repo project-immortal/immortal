@@ -243,8 +243,7 @@ async fn handle_connection(
                     .any(|w| w == MCTS_FUNCTION_ID_QUERY_SERVERS.to_le_bytes()))
                 || payload
                     .windows(2)
-                    .any(|w| w == MCTS_TOKEN_QUEUE_CATEGORY.to_le_bytes())
-                || (payload_len == 15 && (flags & 0x0100) != 0);
+                    .any(|w| w == MCTS_TOKEN_QUEUE_CATEGORY.to_le_bytes());
             if is_query_servers {
                 let queue_def_frame =
                     create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE);

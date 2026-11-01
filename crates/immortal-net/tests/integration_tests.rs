@@ -2046,11 +2046,33 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         "Server must continuously drain client frames without sending bogus ACKs"
     );
 
-    // 8. Step 8: Client sends 15-byte RequestList frame with flags 0x0108 (FUN_1800f3a00 MM: Request list [1])
+    // 8. Step 8: Assert that a raw 15-byte protocol sequence ACK packet does NOT trigger a queue definition frame
+    let mut seq_ack_frame = Vec::new();
+    seq_ack_frame.extend_from_slice(&15u16.to_le_bytes());
+    seq_ack_frame.extend_from_slice(&0x0100u16.to_le_bytes());
+    let mut seq_ack_payload = [0u8; 15];
+    seq_ack_payload[..9].copy_from_slice(&[0xf8, 0x85, 0x8d, 0x96, 0xbe, 0x4c, 0xc3, 0x01, 0x00]);
+    seq_ack_frame.extend_from_slice(&seq_ack_payload);
+    stream.write_all(&seq_ack_frame).await.unwrap();
+    stream.flush().await.unwrap();
+
+    let probe_res_ack = tokio::time::timeout(
+        std::time::Duration::from_millis(50),
+        stream.read(&mut probe_buf),
+    )
+    .await;
+    assert!(
+        probe_res_ack.is_err(),
+        "Raw 15-byte sequence ACK packet must not trigger unsolicited queue definition frames"
+    );
+
+    // Client sends query servers request carrying MCTS_FUNCTION_ID_QUERY_SERVERS (content-based matching)
     let mut req_list_frame = Vec::new();
-    req_list_frame.extend_from_slice(&15u16.to_le_bytes());
+    let mut req_payload = vec![0x00u8; 15];
+    req_payload[1..5].copy_from_slice(&immortal_net::MCTS_FUNCTION_ID_QUERY_SERVERS.to_le_bytes());
+    req_list_frame.extend_from_slice(&(req_payload.len() as u16).to_le_bytes());
     req_list_frame.extend_from_slice(&0x0108u16.to_le_bytes());
-    req_list_frame.extend_from_slice(&[0x00u8; 15]);
+    req_list_frame.extend_from_slice(&req_payload);
     stream.write_all(&req_list_frame).await.unwrap();
     stream.flush().await.unwrap();
 
