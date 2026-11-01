@@ -510,7 +510,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     let q_status_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
     let q_status_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
     assert_eq!(q_status_flags, 0x0000); // agyis: no-mutant
-    assert_eq!(q_status_len, 37); // agyis: no-mutant
+    assert_eq!(q_status_len, 35); // agyis: no-mutant
     let mut q_status_payload = vec![0u8; q_status_len];
     stream.read_exact(&mut q_status_payload).await.unwrap();
     assert_eq!(q_status_payload[0], 0x00); // agyis: no-mutant
@@ -532,41 +532,36 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     let q_tbl_tok = u16::from_le_bytes([q_status_payload[9], q_status_payload[10]]); // agyis: no-mutant
     assert_eq!(q_tbl_tok, immortal_net::MCTS_TOKEN_QUEUE_STATUS); // agyis: no-mutant
     assert_eq!(q_tbl_tok, 242); // agyis: no-mutant
-    let q_row_cnt = u32::from_le_bytes([
-        q_status_payload[11],
-        q_status_payload[12],
-        q_status_payload[13],
-        q_status_payload[14],
-    ]); // agyis: no-mutant
+    let q_row_cnt = u16::from_le_bytes([q_status_payload[11], q_status_payload[12]]); // agyis: no-mutant
     assert_eq!(q_row_cnt, 1); // agyis: no-mutant
-    let q_row_fields = u16::from_le_bytes([q_status_payload[15], q_status_payload[16]]); // agyis: no-mutant
+    let q_row_fields = u16::from_le_bytes([q_status_payload[13], q_status_payload[14]]); // agyis: no-mutant
     assert_eq!(q_row_fields, 2); // agyis: no-mutant
-    let q_grp4 = u16::from_le_bytes([q_status_payload[17], q_status_payload[18]]); // agyis: no-mutant
+    let q_grp4 = u16::from_le_bytes([q_status_payload[15], q_status_payload[16]]); // agyis: no-mutant
     assert_eq!(q_grp4, 0x3001); // agyis: no-mutant
-    let q_tok36 = u16::from_le_bytes([q_status_payload[19], q_status_payload[20]]); // agyis: no-mutant
+    let q_tok36 = u16::from_le_bytes([q_status_payload[17], q_status_payload[18]]); // agyis: no-mutant
     assert_eq!(q_tok36, immortal_net::MCTS_TOKEN_QUEUE_STATE); // agyis: no-mutant
     assert_eq!(q_tok36, 36); // agyis: no-mutant
     let q_v36 = u32::from_le_bytes([
+        q_status_payload[19],
+        q_status_payload[20],
         q_status_payload[21],
         q_status_payload[22],
-        q_status_payload[23],
-        q_status_payload[24],
     ]); // agyis: no-mutant
     assert_eq!(q_v36, 2); // agyis: no-mutant
-    let q_grp8 = u16::from_le_bytes([q_status_payload[25], q_status_payload[26]]); // agyis: no-mutant
+    let q_grp8 = u16::from_le_bytes([q_status_payload[23], q_status_payload[24]]); // agyis: no-mutant
     assert_eq!(q_grp8, 0x4001); // agyis: no-mutant
-    let q_tok703 = u16::from_le_bytes([q_status_payload[27], q_status_payload[28]]); // agyis: no-mutant
+    let q_tok703 = u16::from_le_bytes([q_status_payload[25], q_status_payload[26]]); // agyis: no-mutant
     assert_eq!(q_tok703, immortal_net::MCTS_TOKEN_MATCH_QUEUE_ID); // agyis: no-mutant
     assert_eq!(q_tok703, 703); // agyis: no-mutant
     let q_v703 = u64::from_le_bytes([
+        q_status_payload[27],
+        q_status_payload[28],
         q_status_payload[29],
         q_status_payload[30],
         q_status_payload[31],
         q_status_payload[32],
         q_status_payload[33],
         q_status_payload[34],
-        q_status_payload[35],
-        q_status_payload[36],
     ]); // agyis: no-mutant
     assert_eq!(q_v703, 434); // agyis: no-mutant
 
@@ -1531,12 +1526,12 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         &[0x02, 0x00, 0x1e, 0x61, 127, 0, 0, 1]
     ); // agyis: no-mutant
 
-    // (e) PLAYER_SVC_CHANGE_MAP wire frame (Function ID 0xae90091f, len 26, is_standalone true, mapGameId 1615, mapInstanceId 1282927737)
+    // (e) PLAYER_SVC_CHANGE_MAP wire frame (Function ID 0xae90091f, len 32, is_standalone true, mapGameId 1615, mapInstanceId 1282927737)
     stream.read_exact(&mut header_buf).await.unwrap();
     let player_svc_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
     let player_svc_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
     assert_eq!(player_svc_flags, 0x0000); // agyis: no-mutant
-    assert_eq!(player_svc_len, 26); // agyis: no-mutant
+    assert_eq!(player_svc_len, 32); // agyis: no-mutant
     let mut player_svc_payload = vec![0u8; player_svc_len];
     stream.read_exact(&mut player_svc_payload).await.unwrap();
     assert_eq!(player_svc_payload[0], 0x00); // agyis: no-mutant
@@ -1567,32 +1562,42 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     ); // agyis: no-mutant
     assert_eq!(player_svc_payload[11], 1); // agyis: no-mutant
 
-    // Group 0x3000 (2 fields): Token 682 (mapGameId = 1615), Token 11 (mapInstanceId = 1282927737)
+    // Group 0x3000 (1 field): Token 682 (mapGameId = 1615)
     assert_eq!(
         u16::from_le_bytes([player_svc_payload[12], player_svc_payload[13]]),
-        0x3002
+        0x3001
     ); // agyis: no-mutant
     assert_eq!(
         u16::from_le_bytes([player_svc_payload[14], player_svc_payload[15]]),
         682
     ); // agyis: no-mutant
-    assert_eq!(
-        u16::from_le_bytes([player_svc_payload[16], player_svc_payload[17]]),
-        11
-    ); // agyis: no-mutant
     let psvc_map_game_id = u32::from_le_bytes([
+        player_svc_payload[16],
+        player_svc_payload[17],
         player_svc_payload[18],
         player_svc_payload[19],
-        player_svc_payload[20],
-        player_svc_payload[21],
-    ]); // agyis: no-mutant
-    let psvc_map_instance_id = u32::from_le_bytes([
-        player_svc_payload[22],
-        player_svc_payload[23],
-        player_svc_payload[24],
-        player_svc_payload[25],
     ]); // agyis: no-mutant
     assert_eq!(psvc_map_game_id, 1615); // agyis: no-mutant
+
+    // Group 0x4000 (1 field): Token 685 (mapInstanceId = 1282927737)
+    assert_eq!(
+        u16::from_le_bytes([player_svc_payload[20], player_svc_payload[21]]),
+        0x4001
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([player_svc_payload[22], player_svc_payload[23]]),
+        685
+    ); // agyis: no-mutant
+    let psvc_map_instance_id = u64::from_le_bytes([
+        player_svc_payload[24],
+        player_svc_payload[25],
+        player_svc_payload[26],
+        player_svc_payload[27],
+        player_svc_payload[28],
+        player_svc_payload[29],
+        player_svc_payload[30],
+        player_svc_payload[31],
+    ]); // agyis: no-mutant
     assert_eq!(psvc_map_instance_id, 1282927737); // agyis: no-mutant
 
     // 5. Step 5: Live sequence completes at MATCH_STATUS 10 and change_map without bogus disconnect frame (0xe621824e).

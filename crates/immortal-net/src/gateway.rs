@@ -355,7 +355,7 @@ async fn handle_connection(
 
                     let player_svc_change_map_frame = create_mcts_player_svc_change_map_frame(
                         MAP_GAME_ID_SHOOTING_RANGE,
-                        MAP_INSTANCE_ID_SHOOTING_RANGE,
+                        MAP_INSTANCE_ID_SHOOTING_RANGE as u64,
                         true,
                     );
                     if tx.send(player_svc_change_map_frame).await.is_err() {
