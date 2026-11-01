@@ -552,7 +552,7 @@ def cmd_record_start(args):
     os.makedirs(os.path.dirname(out_file), exist_ok=True)
 
     preset = "agent" if (getattr(args, "agent", False) or getattr(args, "fast", False)) else "standard"
-    res = args.resolution or ("854x480" if preset == "agent" else "1920x1080")
+    res = args.resolution or ("1720x720" if preset == "agent" else "1920x1080")
     fps = str(args.fps or (3 if preset == "agent" else 30))
     window = args.window or "screen"
 
@@ -698,7 +698,7 @@ def cmd_record_clip(args):
     os.makedirs(os.path.dirname(out_file), exist_ok=True)
 
     preset = "agent" if (getattr(args, "agent", False) or getattr(args, "fast", False)) else "standard"
-    res = args.resolution or ("854x480" if preset == "agent" else "1920x1080")
+    res = args.resolution or ("1720x720" if preset == "agent" else "1920x1080")
     fps = str(args.fps or (3 if preset == "agent" else 30))
     window = args.window or "screen"
 

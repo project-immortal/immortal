@@ -352,10 +352,10 @@ async fn handle_connection(
                         return;
                     }
 
-                    // Token 703 (queue_id) is set to 0 in match status updates during lobby entry
-                    // to bind status directly to the active match lobby, driving QueueState to 7.
+                    // Token 703 (queue_id) is set to 434 (Preserving QueueId throughout Gazebo
+                    // to prevent queue dissociation and allow FindQueueById(434) to drive QueueState to 7).
                     let match_status_8 = create_mcts_match_status_with_members_frame(
-                        0,
+                        434,
                         878850364,
                         8,
                         0,
@@ -395,10 +395,10 @@ async fn handle_connection(
                         return;
                     }
 
-                    // Token 703 (queue_id) is set to 0 to bind status directly to the active match lobby
-                    // and drive QueueState to 7 (MQ_LAUNCHING).
+                    // Token 703 (queue_id) is set to 434 (Preserving QueueId throughout Gazebo
+                    // to prevent queue dissociation and drive QueueState to 7 (MQ_LAUNCHING)).
                     let match_status_10 = create_mcts_match_status_with_members_frame(
-                        0,
+                        434,
                         878850364,
                         10,
                         0,

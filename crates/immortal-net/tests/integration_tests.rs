@@ -1351,7 +1351,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         status8_payload[54],
     ]); // agyis: no-mutant
     assert_eq!(s8_match_id, 878850364); // agyis: no-mutant
-    assert_eq!(s8_queue_id, 0); // agyis: no-mutant
+    assert_eq!(s8_queue_id, 434); // agyis: no-mutant
 
     // Group 0x6000 (1 table: Table 312 DATA_SET_MEMBERS)
     assert_eq!(
@@ -1696,7 +1696,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         status10_payload[54],
     ]); // agyis: no-mutant
     assert_eq!(s10_match_id, 878850364); // agyis: no-mutant
-    assert_eq!(s10_queue_id, 0); // agyis: no-mutant
+    assert_eq!(s10_queue_id, 434); // agyis: no-mutant
 
     // Group 0x6000 (1 table: Table 312 DATA_SET_MEMBERS)
     assert_eq!(
