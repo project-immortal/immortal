@@ -645,6 +645,27 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     stream.flush().await.unwrap();
 
     // Expect automatic Shooting Range transition sequence:
+    // (a0-queue-definition) Proactive Queue Definition (Function ID 0xaf434825, Table 242)
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let qdef_start_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let qdef_start_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(qdef_start_flags, 0x0000); // agyis: no-mutant
+    assert_eq!(qdef_start_len, 59); // agyis: no-mutant
+    let mut qdef_start_payload = vec![0u8; qdef_start_len];
+    stream.read_exact(&mut qdef_start_payload).await.unwrap();
+    assert_eq!(qdef_start_payload[0], 0x00); // agyis: no-mutant
+    let qdef_start_func_id = u32::from_le_bytes([
+        qdef_start_payload[1],
+        qdef_start_payload[2],
+        qdef_start_payload[3],
+        qdef_start_payload[4],
+    ]); // agyis: no-mutant
+    assert_eq!(
+        qdef_start_func_id,
+        immortal_net::MCTS_FUNCTION_ID_QUERY_SERVERS
+    ); // agyis: no-mutant
+    assert_eq!(qdef_start_func_id, 0xaf434825); // agyis: no-mutant
+
     // (a0-queue-status) QUEUE_STATUS (Function ID 0x2cdbafe1, Table 242, queue 434, state 2)
     stream.read_exact(&mut header_buf).await.unwrap();
     let q_status_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
@@ -1503,6 +1524,27 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         assert_eq!(champ_id, expected_champ); // agyis: no-mutant
     }
 
+    // (b-queue-definition-launching) Proactive Queue Definition (Function ID 0xaf434825, Table 242)
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let qdef_launch_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let qdef_launch_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(qdef_launch_flags, 0x0000); // agyis: no-mutant
+    assert_eq!(qdef_launch_len, 59); // agyis: no-mutant
+    let mut qdef_launch_payload = vec![0u8; qdef_launch_len];
+    stream.read_exact(&mut qdef_launch_payload).await.unwrap();
+    assert_eq!(qdef_launch_payload[0], 0x00); // agyis: no-mutant
+    let qdef_launch_func_id = u32::from_le_bytes([
+        qdef_launch_payload[1],
+        qdef_launch_payload[2],
+        qdef_launch_payload[3],
+        qdef_launch_payload[4],
+    ]); // agyis: no-mutant
+    assert_eq!(
+        qdef_launch_func_id,
+        immortal_net::MCTS_FUNCTION_ID_QUERY_SERVERS
+    ); // agyis: no-mutant
+    assert_eq!(qdef_launch_func_id, 0xaf434825); // agyis: no-mutant
+
     // (b-queue-status-launching) QUEUE_STATUS (Function ID 0x2cdbafe1, Table 242, queue 434, state 7 MQ_LAUNCHING)
     stream.read_exact(&mut header_buf).await.unwrap();
     let q_status7_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
@@ -2002,6 +2044,47 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert!(
         probe_res2.is_err(),
         "Server must continuously drain client frames without sending bogus ACKs"
+    );
+
+    // 8. Step 8: Client sends 15-byte RequestList frame with flags 0x0108 (FUN_1800f3a00 MM: Request list [1])
+    let mut req_list_frame = Vec::new();
+    req_list_frame.extend_from_slice(&15u16.to_le_bytes());
+    req_list_frame.extend_from_slice(&0x0108u16.to_le_bytes());
+    req_list_frame.extend_from_slice(&[0x00u8; 15]);
+    stream.write_all(&req_list_frame).await.unwrap();
+    stream.flush().await.unwrap();
+
+    // Expect server to respond with MCTS Queue Definition wire frame (Function ID 0xaf434825)
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let qdef_req_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let qdef_req_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(qdef_req_flags, 0x0000); // agyis: no-mutant
+    assert_eq!(qdef_req_len, 59); // agyis: no-mutant
+
+    let mut qdef_req_payload = vec![0u8; qdef_req_len];
+    stream.read_exact(&mut qdef_req_payload).await.unwrap();
+    assert_eq!(qdef_req_payload[0], 0x00); // agyis: no-mutant
+    let qdef_req_func_id = u32::from_le_bytes([
+        qdef_req_payload[1],
+        qdef_req_payload[2],
+        qdef_req_payload[3],
+        qdef_req_payload[4],
+    ]); // agyis: no-mutant
+    assert_eq!(
+        qdef_req_func_id,
+        immortal_net::MCTS_FUNCTION_ID_QUERY_SERVERS
+    ); // agyis: no-mutant
+    assert_eq!(qdef_req_func_id, 0xaf434825); // agyis: no-mutant
+
+    // Verify stream has no extra pending bytes
+    let probe_res3 = tokio::time::timeout(
+        std::time::Duration::from_millis(50),
+        stream.read(&mut probe_buf),
+    )
+    .await;
+    assert!(
+        probe_res3.is_err(),
+        "Server must not send additional unsolicited frames after queue definition response"
     );
 
     handle.shutdown().await.unwrap();

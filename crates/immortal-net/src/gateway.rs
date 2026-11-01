@@ -165,7 +165,8 @@ pub use crate::mcts_handshake::{
     MCTS_FUNCTION_ID_QUEUE_STATUS, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP, MCTS_HANDSHAKE_CHUNK1,
     MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION, MCTS_HELLO_RESPONSE_FRAME,
     MCTS_HELLO_RESPONSE_PAYLOAD, MCTS_TOKEN_ACCOUNT_ID, MCTS_TOKEN_INVITED_MEMBERS,
-    MCTS_TOKEN_MEMBERS, MCTS_TOKEN_TIMEOUT_WARNING, MCTS_WIRE_FLAG_CHUNK,
+    MCTS_TOKEN_MEMBERS, MCTS_TOKEN_QUEUE_CATEGORY, MCTS_TOKEN_TIMEOUT_WARNING,
+    MCTS_WIRE_FLAG_CHUNK,
 };
 
 async fn handle_connection(
@@ -217,6 +218,13 @@ async fn handle_connection(
                 reader.read_exact(&mut payload).await?;
             }
 
+            if payload_len > 0 && payload_len <= 64 {
+                debug!(
+                    "Frame payload hex ({} bytes, flags 0x{:04x}): {:02x?}",
+                    payload_len, flags, payload
+                );
+            }
+
             let has_fernando = payload.windows(2).any(|w| w == [0x9b, 0x08] || w == [0x08, 0x9b]) // agyis: no-mutant diagnostic logging
                 || payload.windows(2).any(|w| w == 2203u16.to_le_bytes() || w == 2203u16.to_be_bytes()); // agyis: no-mutant diagnostic logging
             let has_shooting_range_req = payload.windows(2).any(|w| w == 434u16.to_le_bytes())
@@ -228,10 +236,15 @@ async fn handle_connection(
                 payload_len, flags, has_fernando, has_shooting_range_req, peer_addr
             );
 
-            // Respond if client requests queue catalog definitions (Function ID 0xaf434825)
-            let is_query_servers = payload.len() >= 5
-                && u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]])
-                    == MCTS_FUNCTION_ID_QUERY_SERVERS;
+            // Respond if client requests queue catalog definitions (Function ID 0xaf434825 or RequestList)
+            let is_query_servers = (payload.len() >= 4
+                && payload
+                    .windows(4)
+                    .any(|w| w == MCTS_FUNCTION_ID_QUERY_SERVERS.to_le_bytes()))
+                || payload
+                    .windows(2)
+                    .any(|w| w == MCTS_TOKEN_QUEUE_CATEGORY.to_le_bytes())
+                || (payload_len == 15 && (flags & 0x0100) != 0);
             if is_query_servers {
                 let queue_def_frame =
                     create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE);
@@ -259,7 +272,8 @@ async fn handle_connection(
                         .await;
                     }
 
-                    // Emit Shooting Range transition: QUEUE_STATUS (queue 434, state 2 MQ_QUEUED)
+                    // Emit Shooting Range transition: QUEUE_DEFINITION (queue 434, map_id 1615)
+                    // -> QUEUE_STATUS (queue 434, state 2 MQ_QUEUED)
                     // -> MATCH_STATUS queued (queue 434, match 0, queue_state 2 MQ_QUEUED)
                     // -> QUEUE_STATUS (queue 434, state 3 MQ_INVITED)
                     // -> MATCH_STATUS invited (queue 0, match 878850364, queue_state 3 MQ_INVITED)
@@ -267,9 +281,20 @@ async fn handle_connection(
                     // -> QUEUE_STATUS (queue 434, state 4 MQ_ACCEPTED)
                     // -> MATCH_STATUS state 8 with members table (queue 0, match 878850364, queue_state 4 MQ_ACCEPTED)
                     // -> Champion Roster
+                    // -> QUEUE_DEFINITION (queue 434, map_id 1615)
                     // -> QUEUE_STATUS (queue 434, state 7 MQ_LAUNCHING)
                     // -> MATCH_STATUS state 10 with members table (queue 0, match 878850364, queue_state 7 MQ_LAUNCHING)
                     // -> Map Transition
+                    let queue_def_frame =
+                        create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE);
+                    if tx.send(queue_def_frame).await.is_err() {
+                        return;
+                    }
+                    info!(
+                        "Dispatched MCTS queue catalog definition (queue_id 434, map_id {}) prior to queue status for {}",
+                        MAP_GAME_ID_SHOOTING_RANGE, peer_addr
+                    );
+
                     let queue_status_frame = create_mcts_queue_status_frame(434, 2, 0);
                     if tx.send(queue_status_frame).await.is_err() {
                         return;
@@ -365,6 +390,16 @@ async fn handle_connection(
                         ))
                         .await;
                     }
+
+                    let queue_def_frame =
+                        create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE);
+                    if tx.send(queue_def_frame).await.is_err() {
+                        return;
+                    }
+                    info!(
+                        "Dispatched MCTS queue catalog definition (queue_id 434, map_id {}) prior to launch for {}",
+                        MAP_GAME_ID_SHOOTING_RANGE, peer_addr
+                    );
 
                     let queue_status_launching = create_mcts_queue_status_frame(434, 7, 0);
                     if tx.send(queue_status_launching).await.is_err() {
