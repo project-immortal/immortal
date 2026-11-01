@@ -62,6 +62,8 @@ fn test_all_mcts_token_constants_match_engine_schema() {
         ), // Type 5 (INT32)
         (MCTS_TOKEN_POSITION, "POSITION", 5, 0x3000),                   // Type 5 (INT32)
         (MCTS_TOKEN_QUEUE_CATEGORY, "GROUP_TYPE", 5, 0x3000),           // Type 5 (INT32)
+        (MCTS_TOKEN_QUEUE_STATE, "UI_HINT_VALUE_ID", 5, 0x3000),        // Type 5 (INT32)
+        (MCTS_TOKEN_QUEUE_ACTIVE, "ACTIVE_FLAG", 12, 0xa000),           // Type 12 (STRING)
     ];
 
     for &(token, name, type_id, group_mask) in expectations {
