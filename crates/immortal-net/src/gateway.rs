@@ -243,10 +243,13 @@ async fn handle_connection(
 
                     // Emit Shooting Range transition: QUEUE_STATUS (queue 434, state 2 MQ_QUEUED)
                     // -> MATCH_STATUS queued (queue 434, match 0, queue_state 2 MQ_QUEUED)
+                    // -> QUEUE_STATUS (queue 434, state 3 MQ_INVITED)
                     // -> MATCH_STATUS invited (queue 0, match 878850364, queue_state 3 MQ_INVITED)
                     // -> MATCH_INVITATION (queue 434, match 878850364, timeout 30s, Table 1619 account_id)
+                    // -> QUEUE_STATUS (queue 434, state 4 MQ_ACCEPTED)
                     // -> MATCH_STATUS state 8 with members table (queue 0, match 878850364, queue_state 4 MQ_ACCEPTED)
                     // -> Champion Roster
+                    // -> QUEUE_STATUS (queue 434, state 7 MQ_LAUNCHING)
                     // -> MATCH_STATUS state 10 with members table (queue 0, match 878850364, queue_state 7 MQ_LAUNCHING)
                     // -> Map Transition
                     let queue_status_frame = create_mcts_queue_status_frame(434, 2, 0);
@@ -258,6 +261,8 @@ async fn handle_connection(
                         peer_addr
                     );
 
+                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
                     let match_status_queued = create_mcts_match_status_frame(434, 0, 0, 0, 0, 2);
                     if tx.send(match_status_queued).await.is_err() {
                         return;
@@ -268,6 +273,11 @@ async fn handle_connection(
                             cfg.post_login_invite_delay_ms,
                         ))
                         .await;
+                    }
+
+                    let queue_status_invited = create_mcts_queue_status_frame(434, 3, 0);
+                    if tx.send(queue_status_invited).await.is_err() {
+                        return;
                     }
 
                     let match_status_invited =
@@ -293,6 +303,11 @@ async fn handle_connection(
                             cfg.post_login_accept_delay_ms,
                         ))
                         .await;
+                    }
+
+                    let queue_status_accepted = create_mcts_queue_status_frame(434, 4, 0);
+                    if tx.send(queue_status_accepted).await.is_err() {
+                        return;
                     }
 
                     // Token 703 (queue_id) is set to 0 in match status updates during lobby entry
@@ -322,6 +337,11 @@ async fn handle_connection(
                             cfg.post_login_launch_delay_ms,
                         ))
                         .await;
+                    }
+
+                    let queue_status_launching = create_mcts_queue_status_frame(434, 7, 0);
+                    if tx.send(queue_status_launching).await.is_err() {
+                        return;
                     }
 
                     // Token 703 (queue_id) is set to 0 to bind status directly to the active match lobby
