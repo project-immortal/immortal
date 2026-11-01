@@ -282,7 +282,7 @@ async fn handle_connection(
                     // -> Champion Roster
                     // -> QUEUE_DEFINITION (queue 434, map_id 1615)
                     // -> QUEUE_STATUS (queue 434, state 7 MQ_LAUNCHING)
-                    // -> MATCH_STATUS state 10 with members table (queue 0, match 878850364, queue_state 7 MQ_LAUNCHING)
+                    // -> MATCH_STATUS state 10 with members table (queue 434, match 878850364, queue_state 7 MQ_LAUNCHING)
                     // -> Map Transition
                     let queue_def_frame =
                         create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE);
@@ -352,10 +352,13 @@ async fn handle_connection(
                         return;
                     }
 
-                    // Token 703 (queue_id) is set to 434 (Preserving QueueId throughout Gazebo
-                    // to prevent queue dissociation and allow FindQueueById(434) to drive QueueState to 7).
+                    // Token 703 (queue_id) is set to 0 during formation state 8. The client lobby state
+                    // machine compares active queue identifier against incoming match status updates;
+                    // if identical, queue status replication is bypassed as a cache hit.
+                    // Transitioning from QueueId 0 in state 8 to QueueId 434 in state 10 forces the client
+                    // to update queue status and propagate QueueState 7 (MQ_LAUNCHING).
                     let match_status_8 = create_mcts_match_status_with_members_frame(
-                        434,
+                        0,
                         878850364,
                         8,
                         0,
