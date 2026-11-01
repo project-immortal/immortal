@@ -390,16 +390,6 @@ async fn handle_connection(
                         .await;
                     }
 
-                    let queue_def_frame =
-                        create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE);
-                    if tx.send(queue_def_frame).await.is_err() {
-                        return;
-                    }
-                    info!(
-                        "Dispatched MCTS queue catalog definition (queue_id 434, map_id {}) prior to launch for {}",
-                        MAP_GAME_ID_SHOOTING_RANGE, peer_addr
-                    );
-
                     let queue_status_launching = create_mcts_queue_status_frame(434, 7, 0);
                     if tx.send(queue_status_launching).await.is_err() {
                         return;
