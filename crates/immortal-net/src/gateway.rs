@@ -24,7 +24,7 @@ pub struct AuthGatewayConfig {
     pub bind_addr: SocketAddr,
     pub game_server_host: String,
     pub game_server_port: u16,
-    pub account_id: i32,
+    pub account_id: u64,
     pub player_name: String,
     pub session_token: String,
     pub match_ticket_str: String,
@@ -41,12 +41,12 @@ impl Default for AuthGatewayConfig {
             bind_addr: SocketAddr::from(([127, 0, 0, 1], crate::DEFAULT_AUTH_PORT)),
             game_server_host: "127.0.0.1".to_string(),
             game_server_port: crate::DEFAULT_GAME_PORT,
-            account_id: 8302401,
+            account_id: 109775243102792335,
             player_name: "Fernando".to_string(),
             session_token: "IMMORTAL-DEV-SESSION-TICKET".to_string(),
             match_ticket_str: "IMMORTAL-MATCH-TICKET-7777".to_string(),
             compress_response: false,
-            post_login_settle_delay_ms: 35000,
+            post_login_settle_delay_ms: 1500,
             post_login_invite_delay_ms: 100,
             post_login_accept_delay_ms: 4000,
             post_login_launch_delay_ms: 3000,
@@ -155,7 +155,7 @@ pub use crate::mcts_handshake::{
     create_mcts_match_invitation_frame, create_mcts_match_status_frame,
     create_mcts_match_status_with_members_frame, create_mcts_player_svc_change_map_frame,
     create_mcts_queue_definition_frame, create_mcts_queue_status_frame, BOT_ID_FERNANDO,
-    CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MAP_GAME_ID_SHOOTING_RANGE,
+    BOT_ID_VIKTOR, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MAP_GAME_ID_SHOOTING_RANGE,
     MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
     MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
     MCTS_FUNCTION_ID_CHAMPION_ROSTER, MCTS_FUNCTION_ID_CHANGE_MAP, MCTS_FUNCTION_ID_MAP_TRANSITION,
@@ -337,15 +337,24 @@ async fn handle_connection(
                         0,
                         5,
                         4,
-                        cfg.account_id as u64,
-                        BOT_ID_FERNANDO,
+                        cfg.account_id,
+                        BOT_ID_VIKTOR,
                     );
                     if tx.send(match_status_8).await.is_err() {
                         return;
                     }
 
-                    let champion_roster_frame =
-                        create_mcts_champion_roster_frame(&[1026, 1024, 1025, 1027]);
+                    let champion_roster_frame = create_mcts_champion_roster_frame(&[
+                        1026,
+                        1024,
+                        1025,
+                        1027,
+                        BOT_ID_FERNANDO,
+                        BOT_ID_VIKTOR,
+                        2205,
+                        2404,
+                        2512,
+                    ]);
                     if tx.send(champion_roster_frame).await.is_err() {
                         return;
                     }
@@ -371,8 +380,8 @@ async fn handle_connection(
                         0,
                         5,
                         7,
-                        cfg.account_id as u64,
-                        BOT_ID_FERNANDO,
+                        cfg.account_id,
+                        BOT_ID_VIKTOR,
                     );
                     if tx.send(match_status_10).await.is_err() {
                         return;
@@ -463,7 +472,7 @@ async fn handle_connection(
 
             // Send authentic Live MCTS OnLoginResponse wire frame (reverse engineered CMarshalRow::Store format)
             let login_frame = create_mcts_login_response_frame(
-                config.account_id as u64,
+                config.account_id,
                 &config.player_name,
                 &config.session_token,
             );
@@ -491,8 +500,17 @@ async fn handle_connection(
                 .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
 
             // Emit initial champion roster frame granting playable champions
-            let initial_champion_roster =
-                create_mcts_champion_roster_frame(&[1026, 1024, 1025, 1027, BOT_ID_FERNANDO]);
+            let initial_champion_roster = create_mcts_champion_roster_frame(&[
+                1026,
+                1024,
+                1025,
+                1027,
+                BOT_ID_FERNANDO,
+                BOT_ID_VIKTOR,
+                2205,
+                2404,
+                2512,
+            ]);
             write_tx
                 .send(initial_champion_roster)
                 .await
@@ -534,8 +552,11 @@ async fn handle_connection(
                 &config.match_ticket_str,
             );
 
-            let response =
-                LoginResponse::new(config.account_id, &config.session_token, match_ticket);
+            let response = LoginResponse::new(
+                config.account_id as i32,
+                &config.session_token,
+                match_ticket,
+            );
 
             let response_bytes = response.to_bytes()?;
 
@@ -566,7 +587,8 @@ mod tests {
     #[test]
     fn test_auth_gateway_config_default_cadence() {
         let config = AuthGatewayConfig::default();
-        assert_eq!(config.post_login_settle_delay_ms, 35000);
+        assert_eq!(config.account_id, 109775243102792335);
+        assert_eq!(config.post_login_settle_delay_ms, 1500);
         assert_eq!(config.post_login_invite_delay_ms, 100);
         assert_eq!(config.post_login_accept_delay_ms, 4000);
         assert_eq!(config.post_login_launch_delay_ms, 3000);

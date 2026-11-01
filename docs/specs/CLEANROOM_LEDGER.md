@@ -50,11 +50,11 @@
 - **Verification Gate**: `cargo test --package immortal-net` (`test_mcts_login_response_frame_structure`).
 - **Status**: 🟢 Verified (Exit code 0).
 
-### Claim 5: MCTS `LaunchMapInstance` Server Socket Handoff (`OBL-MCTS-005`)
-- **Behavioral Requirement**: Server directs client to dedicated match instance using `PLAYER_SVC_LAUNCH_MAP_INSTANCE` (function hash `0x4bee2ed8` / `1273933528`). Payload contains Group `0x3002` (Token 721=5, Token 1839=60) and Group `0x4003` (Token 25=0, Token 700=match_id, Token 877=`sockaddr_in` containing target IPv4 and UDP port in network byte order).
-- **Evidence Reference**: `EV-BIN-001` (`FUN_14008a5f0`) and `EV-LOG-001` (`ReceiveChangeMap: mapGameId 1615`).
-- **Cleanroom Implementation**: `crates/immortal-net/src/mcts_handshake.rs` (`create_mcts_launch_map_instance_frame`).
-- **Verification Gate**: `cargo test --package immortal-net` (`test_create_mcts_launch_map_instance_frame`).
+### Claim 5: MCTS `LaunchMapInstance` Server Socket Handoff & Table 312 Lobby Binding (`OBL-MCTS-005`)
+- **Behavioral Requirement**: Server directs client to dedicated match instance using `PLAYER_SVC_LAUNCH_MAP_INSTANCE` (function hash `0x4bee2ed8` / `1273933528`). Payload contains Group `0x3002` (Token 721=5, Token 1839=60) and Group `0x4003` (Token 25=0, Token 700=match_id, Token 877=`sockaddr_in` containing target IPv4 and UDP port in network byte order). Additionally, matchmaking member binding in Table 312 (`DATA_SET_MEMBERS`) requires Token 838 (`POSITION` = 0, Group `0x3000`) and authentic 64-bit NetId (`Token 11` = `109775243102792335` / `0x0186000082462a8f`). Without Token 838 = 0 and 64-bit NetId matching `LocalNetId`, `UTgMatchLobby` classifies the local player as an opponent ('Enemy 1') on the right team, leaves friendly slots empty, and bails out of local QueueState progression.
+- **Evidence Reference**: `EV-BIN-001` (`FUN_14008a5f0`, `UTgMatchLobby` member classification), `EV-BIN-002` (`MctsInterface.dll: FUN_1800eadd0` extracting Token 838 `POSITION`), and `EV-LOG-001` (`ReceiveChangeMap: mapGameId 1615`, `LocalNetId` initialization `109775243102792335`).
+- **Cleanroom Implementation**: `crates/immortal-net/src/mcts_handshake.rs` (`create_mcts_launch_map_instance_frame`, `create_mcts_match_status_with_members_frame`), `crates/immortal-net/src/gateway.rs`.
+- **Verification Gate**: `cargo test --package immortal-net` (`test_create_mcts_launch_map_instance_frame`, `test_create_mcts_match_status_with_members_frame_structure`, `test_auth_gateway_live_mcts_two_step_exchange`).
 - **Status**: 🟢 Verified (Exit code 0).
 
 ### Claim 6: MCTS `QUEUE_STATUS` / `SERVER_STATUS` Table 242 Dispatch (`OBL-MCTS-006`)

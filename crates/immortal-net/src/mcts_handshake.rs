@@ -762,11 +762,15 @@ pub const MCTS_TOKEN_PLAYER_LOBBY_STATE: u16 = 1344;
 pub const MCTS_TOKEN_COMPEL_FLAG: u16 = 1536;
 pub const MCTS_TOKEN_LAUNCH_SECONDS: u16 = 1690;
 pub const MCTS_TOKEN_INVITE_PRIVILEGES: u16 = 2143;
+pub const MCTS_TOKEN_POSITION: u16 = 838;
 pub const MCTS_TOKEN_PLAYER_QUEUE_STATE: u16 = 2191;
 
 /// Authentic Bot Template ID for Fernando in live shooting range sessions (2285).
 /// Grounded in `live_paladins_launch.log:1095` and cleanroom disassembly of `ShippingPC-ChaosGame.exe: FUN_1414df220`.
 pub const BOT_ID_FERNANDO: u32 = 2285;
+
+/// Authentic Bot Template ID for Viktor in live shooting range sessions (2285).
+pub const BOT_ID_VIKTOR: u32 = 2285;
 
 /// Builds an authentic live MCTS `QUEUE_STATUS` / `SERVER_STATUS` wire frame (0x2cdbafe1)
 /// containing Table 242 (`MFIELD_QUEUE_STATUS`).
@@ -930,16 +934,17 @@ pub fn create_mcts_queue_definition_frame(queue_id: u64, map_game_id: u32) -> Ve
 ///   - Table Token: 312 (`MCTS_TOKEN_MEMBERS`)
 ///     - Row count: 1 (u16)
 ///     - Row 0 (CMarshalRow):
-///       - Field count: 5 (u16)
+///       - Field count: 6 (u16)
 ///       - Group 0x1000 (1-byte fields):
 ///         - Header: `0x1001` (group 0x1000 | 1)
 ///         - Token 2143 (u16): bool false (0x00 u8)
 ///       - Group 0x3000 (4-byte fields):
-///         - Header: `0x3003` (group 0x3000 | 3)
+///         - Header: `0x3004` (group 0x3000 | 4)
 ///         - Token 122 (u16): BOT_ID / CHAMPION_ID (`bot_id`)
+///         - Token 838 (u16): POSITION (`0u32` = friendly slot 0)
 ///         - Token 855 (u16): PROFILE_ID (`account_id as u32`)
 ///         - Token 1344 (u16): PLAYER_LOBBY_STATE (`player_lobby_state`)
-///         - Values: `bot_id`, `(account_id as u32)`, `player_lobby_state`
+///         - Values: `bot_id`, `0u32`, `(account_id as u32)`, `player_lobby_state`
 ///       - Group 0x4000 (8-byte fields):
 ///         - Header: `0x4001` (group 0x4000 | 1)
 ///         - Token 11 (u16): PLAYER_ID (`account_id`)
@@ -1000,8 +1005,8 @@ pub fn create_mcts_match_status_with_members_frame(
     let row_count: u16 = 1;
     payload.extend_from_slice(&row_count.to_le_bytes());
 
-    // Row 0: CMarshalRow with 5 fields (1 bool + 3 dwords + 1 qword)
-    let row_fields: u16 = 5;
+    // Row 0: CMarshalRow with 6 fields (1 bool + 4 dwords + 1 qword)
+    let row_fields: u16 = 6;
     payload.extend_from_slice(&row_fields.to_le_bytes());
 
     // Row Group 0x1000 (1-byte fields: 1 field)
@@ -1010,14 +1015,16 @@ pub fn create_mcts_match_status_with_members_frame(
     payload.extend_from_slice(&2143u16.to_le_bytes()); // Token 2143: bool false (bIsBot = false)
     payload.push(0x00);
 
-    // Row Group 0x3000 (4-byte fields: 3 fields)
-    let row_grp4_hdr: u16 = 0x3000 | 3;
+    // Row Group 0x3000 (4-byte fields: 4 fields)
+    let row_grp4_hdr: u16 = 0x3000 | 4;
     payload.extend_from_slice(&row_grp4_hdr.to_le_bytes());
-    payload.extend_from_slice(&122u16.to_le_bytes()); // Token 122: BOT_ID / CHAMPION_ID
-    payload.extend_from_slice(&855u16.to_le_bytes()); // Token 855: PROFILE_ID
-    payload.extend_from_slice(&1344u16.to_le_bytes()); // Token 1344: PLAYER_LOBBY_STATE
+    payload.extend_from_slice(&MCTS_TOKEN_BOT_ID.to_le_bytes()); // Token 122: BOT_ID / CHAMPION_ID
+    payload.extend_from_slice(&MCTS_TOKEN_POSITION.to_le_bytes()); // Token 838: POSITION
+    payload.extend_from_slice(&MCTS_TOKEN_PROFILE_ID.to_le_bytes()); // Token 855: PROFILE_ID
+    payload.extend_from_slice(&MCTS_TOKEN_PLAYER_LOBBY_STATE.to_le_bytes()); // Token 1344: PLAYER_LOBBY_STATE
 
     payload.extend_from_slice(&bot_id.to_le_bytes());
+    payload.extend_from_slice(&0u32.to_le_bytes()); // Position 0 = Friendly slot 0
     payload.extend_from_slice(&(account_id as u32).to_le_bytes());
     payload.extend_from_slice(&player_lobby_state.to_le_bytes());
 
@@ -1608,11 +1615,11 @@ mod tests {
             8302401,
             BOT_ID_FERNANDO,
         ); // agyis: no-mutant
-        assert_eq!(frame.len(), 104); // agyis: no-mutant
+        assert_eq!(frame.len(), 110); // agyis: no-mutant
 
         let length = u16::from_le_bytes([frame[0], frame[1]]) as usize; // agyis: no-mutant
         assert_eq!(length, frame.len() - 4); // agyis: no-mutant
-        assert_eq!(length, 100); // agyis: no-mutant
+        assert_eq!(length, 106); // agyis: no-mutant
         let flags = u16::from_le_bytes([frame[2], frame[3]]); // agyis: no-mutant
         assert_eq!(flags, 0x0000); // agyis: no-mutant
 
@@ -1689,9 +1696,9 @@ mod tests {
         let row_count = u16::from_le_bytes([payload[59], payload[60]]); // agyis: no-mutant
         assert_eq!(row_count, 1); // agyis: no-mutant
 
-        // Row 0 check: field count 5
+        // Row 0 check: field count 6
         let row_field_count = u16::from_le_bytes([payload[61], payload[62]]); // agyis: no-mutant
-        assert_eq!(row_field_count, 5); // agyis: no-mutant
+        assert_eq!(row_field_count, 6); // agyis: no-mutant
 
         // Row Group 0x1000: Token 2143 (bool false = 0)
         let row_grp1 = u16::from_le_bytes([payload[63], payload[64]]); // agyis: no-mutant
@@ -1700,41 +1707,45 @@ mod tests {
         assert_eq!(t2143, 2143); // agyis: no-mutant
         assert_eq!(payload[67], 0); // bool false (bIsBot = false) // agyis: no-mutant
 
-        // Row Group 0x3000: Tokens 122, 855, 1344
+        // Row Group 0x3000: Tokens 122, 838, 855, 1344
         let row_grp4 = u16::from_le_bytes([payload[68], payload[69]]); // agyis: no-mutant
-        assert_eq!(row_grp4, 0x3003); // agyis: no-mutant
+        assert_eq!(row_grp4, 0x3004); // agyis: no-mutant
         let t122 = u16::from_le_bytes([payload[70], payload[71]]); // agyis: no-mutant
-        let t855 = u16::from_le_bytes([payload[72], payload[73]]); // agyis: no-mutant
-        let t1344_row = u16::from_le_bytes([payload[74], payload[75]]); // agyis: no-mutant
+        let t838 = u16::from_le_bytes([payload[72], payload[73]]); // agyis: no-mutant
+        let t855 = u16::from_le_bytes([payload[74], payload[75]]); // agyis: no-mutant
+        let t1344_row = u16::from_le_bytes([payload[76], payload[77]]); // agyis: no-mutant
         assert_eq!(t122, 122); // agyis: no-mutant
+        assert_eq!(t838, 838); // agyis: no-mutant
         assert_eq!(t855, 855); // agyis: no-mutant
         assert_eq!(t1344_row, 1344); // agyis: no-mutant
 
-        let v122 = u32::from_le_bytes([payload[76], payload[77], payload[78], payload[79]]); // agyis: no-mutant
-        let v855 = u32::from_le_bytes([payload[80], payload[81], payload[82], payload[83]]); // agyis: no-mutant
-        let v1344_row = u32::from_le_bytes([payload[84], payload[85], payload[86], payload[87]]); // agyis: no-mutant
+        let v122 = u32::from_le_bytes([payload[78], payload[79], payload[80], payload[81]]); // agyis: no-mutant
+        let v838 = u32::from_le_bytes([payload[82], payload[83], payload[84], payload[85]]); // agyis: no-mutant
+        let v855 = u32::from_le_bytes([payload[86], payload[87], payload[88], payload[89]]); // agyis: no-mutant
+        let v1344_row = u32::from_le_bytes([payload[90], payload[91], payload[92], payload[93]]); // agyis: no-mutant
         assert_eq!(v122, BOT_ID_FERNANDO); // agyis: no-mutant
         assert_eq!(v122, 2285); // agyis: no-mutant
+        assert_eq!(v838, 0); // agyis: no-mutant
         assert_eq!(v855, 8302401); // agyis: no-mutant
         assert_eq!(v1344_row, 5); // agyis: no-mutant
 
         // Row Group 0x4000: Token 11 (PLAYER_ID, 8 bytes)
-        let row_grp8 = u16::from_le_bytes([payload[88], payload[89]]); // agyis: no-mutant
+        let row_grp8 = u16::from_le_bytes([payload[94], payload[95]]); // agyis: no-mutant
         assert_eq!(row_grp8, 0x4001); // agyis: no-mutant
-        let t11 = u16::from_le_bytes([payload[90], payload[91]]); // agyis: no-mutant
+        let t11 = u16::from_le_bytes([payload[96], payload[97]]); // agyis: no-mutant
         assert_eq!(t11, 11); // agyis: no-mutant
         let v11 = u64::from_le_bytes([
-            payload[92],
-            payload[93],
-            payload[94],
-            payload[95],
-            payload[96],
-            payload[97],
             payload[98],
             payload[99],
+            payload[100],
+            payload[101],
+            payload[102],
+            payload[103],
+            payload[104],
+            payload[105],
         ]); // agyis: no-mutant
         assert_eq!(v11, 8302401); // agyis: no-mutant
-        assert_eq!(payload.len(), 100); // agyis: no-mutant
+        assert_eq!(payload.len(), 106); // agyis: no-mutant
     }
 
     #[test]
