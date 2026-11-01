@@ -352,6 +352,138 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     let s2_str = std::str::from_utf8(&payload[p2 + 6..p2 + 6 + s2_len]).unwrap();
     assert_eq!(s2_str, "Fernando");
 
+    // Expect authentic Live MCTS Queue Definition wire frame (Function ID 0xaf434825, Table 242)
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let qdef_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let qdef_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(qdef_flags, 0x0000); // agyis: no-mutant
+    assert_eq!(qdef_len, 59); // agyis: no-mutant
+
+    let mut qdef_payload = vec![0u8; qdef_len];
+    stream.read_exact(&mut qdef_payload).await.unwrap();
+    assert_eq!(qdef_payload[0], 0x00); // agyis: no-mutant
+    let qdef_func_id = u32::from_le_bytes([
+        qdef_payload[1],
+        qdef_payload[2],
+        qdef_payload[3],
+        qdef_payload[4],
+    ]); // agyis: no-mutant
+    assert_eq!(qdef_func_id, immortal_net::MCTS_FUNCTION_ID_QUERY_SERVERS); // agyis: no-mutant
+    assert_eq!(qdef_func_id, 0xaf434825); // agyis: no-mutant
+
+    // Total fields: 2
+    let qdef_fields = u16::from_le_bytes([qdef_payload[5], qdef_payload[6]]); // agyis: no-mutant
+    assert_eq!(qdef_fields, 2); // agyis: no-mutant
+
+    // Group 0x3001: Token 550 (QUEUE_CATEGORY = 1)
+    assert_eq!(
+        u16::from_le_bytes([qdef_payload[7], qdef_payload[8]]),
+        0x3001
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([qdef_payload[9], qdef_payload[10]]),
+        immortal_net::MCTS_TOKEN_QUEUE_CATEGORY
+    ); // agyis: no-mutant
+    assert_eq!(
+        u32::from_le_bytes([
+            qdef_payload[11],
+            qdef_payload[12],
+            qdef_payload[13],
+            qdef_payload[14]
+        ]),
+        1
+    ); // agyis: no-mutant
+
+    // Group 0x6001: Table 242 (QUEUE_STATUS)
+    assert_eq!(
+        u16::from_le_bytes([qdef_payload[15], qdef_payload[16]]),
+        0x6001
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([qdef_payload[17], qdef_payload[18]]),
+        immortal_net::MCTS_TOKEN_QUEUE_STATUS
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([qdef_payload[17], qdef_payload[18]]),
+        242
+    ); // agyis: no-mutant
+
+    // Row count 1, field count 4
+    assert_eq!(u16::from_le_bytes([qdef_payload[19], qdef_payload[20]]), 1); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([qdef_payload[21], qdef_payload[22]]), 4); // agyis: no-mutant
+
+    // Row Group 0x3002: Token 36 (0) and Token 682 (1615)
+    assert_eq!(
+        u16::from_le_bytes([qdef_payload[23], qdef_payload[24]]),
+        0x3002
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([qdef_payload[25], qdef_payload[26]]),
+        immortal_net::MCTS_TOKEN_QUEUE_STATE
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([qdef_payload[27], qdef_payload[28]]),
+        immortal_net::MCTS_TOKEN_MAP_GAME_ID
+    ); // agyis: no-mutant
+    assert_eq!(
+        u32::from_le_bytes([
+            qdef_payload[29],
+            qdef_payload[30],
+            qdef_payload[31],
+            qdef_payload[32]
+        ]),
+        0
+    ); // agyis: no-mutant
+    assert_eq!(
+        u32::from_le_bytes([
+            qdef_payload[33],
+            qdef_payload[34],
+            qdef_payload[35],
+            qdef_payload[36]
+        ]),
+        1615
+    ); // agyis: no-mutant
+
+    // Row Group 0x4002: Token 703 (434) and Token 685 (0)
+    assert_eq!(
+        u16::from_le_bytes([qdef_payload[37], qdef_payload[38]]),
+        0x4002
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([qdef_payload[39], qdef_payload[40]]),
+        immortal_net::MCTS_TOKEN_MATCH_QUEUE_ID
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([qdef_payload[41], qdef_payload[42]]),
+        immortal_net::MCTS_TOKEN_MAP_INSTANCE_ID
+    ); // agyis: no-mutant
+    assert_eq!(
+        u64::from_le_bytes([
+            qdef_payload[43],
+            qdef_payload[44],
+            qdef_payload[45],
+            qdef_payload[46],
+            qdef_payload[47],
+            qdef_payload[48],
+            qdef_payload[49],
+            qdef_payload[50]
+        ]),
+        434
+    ); // agyis: no-mutant
+    assert_eq!(
+        u64::from_le_bytes([
+            qdef_payload[51],
+            qdef_payload[52],
+            qdef_payload[53],
+            qdef_payload[54],
+            qdef_payload[55],
+            qdef_payload[56],
+            qdef_payload[57],
+            qdef_payload[58]
+        ]),
+        0
+    ); // agyis: no-mutant
+
     // 3. Step 3: Expect authentic Live MCTS MATCH_STATUS wire frame (0x392dcda5, queue_id 0, match_id 0, match_lobby_state 0, launch_seconds 0, player_lobby_state 0, player_queue_state 0)
     stream.read_exact(&mut header_buf).await.unwrap();
     let status_frame_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;

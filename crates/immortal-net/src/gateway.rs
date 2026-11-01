@@ -154,13 +154,14 @@ pub use crate::mcts_handshake::{
     create_mcts_launch_map_instance_frame, create_mcts_login_response_frame,
     create_mcts_match_invitation_frame, create_mcts_match_status_frame,
     create_mcts_match_status_with_members_frame, create_mcts_player_svc_change_map_frame,
-    create_mcts_queue_status_frame, BOT_ID_FERNANDO, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION,
-    MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME,
-    MCTS_CLIENT_AUTH_REQUEST_FLAGS, MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS,
-    MCTS_CLIENT_CRYPTO_TICKET_LEN, MCTS_FUNCTION_ID_CHAMPION_ROSTER, MCTS_FUNCTION_ID_CHANGE_MAP,
-    MCTS_FUNCTION_ID_MAP_TRANSITION, MCTS_FUNCTION_ID_MATCH_INVITATION,
-    MCTS_FUNCTION_ID_MATCH_STATUS, MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE,
-    MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP, MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE,
+    create_mcts_queue_definition_frame, create_mcts_queue_status_frame, BOT_ID_FERNANDO,
+    CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MAP_GAME_ID_SHOOTING_RANGE,
+    MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
+    MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
+    MCTS_FUNCTION_ID_CHAMPION_ROSTER, MCTS_FUNCTION_ID_CHANGE_MAP, MCTS_FUNCTION_ID_MAP_TRANSITION,
+    MCTS_FUNCTION_ID_MATCH_INVITATION, MCTS_FUNCTION_ID_MATCH_STATUS,
+    MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP,
+    MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE, MCTS_FUNCTION_ID_QUERY_SERVERS,
     MCTS_FUNCTION_ID_QUEUE_STATUS, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP, MCTS_HANDSHAKE_CHUNK1,
     MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION, MCTS_HELLO_RESPONSE_FRAME,
     MCTS_HELLO_RESPONSE_PAYLOAD, MCTS_TOKEN_ACCOUNT_ID, MCTS_TOKEN_INVITED_MEMBERS,
@@ -226,6 +227,23 @@ async fn handle_connection(
                 "Received Live MCTS post-login/queue/champion select frame ({} bytes, flags 0x{:04x}, fernando={}, shooting_range={}) from {}",
                 payload_len, flags, has_fernando, has_shooting_range_req, peer_addr
             );
+
+            // Respond if client requests queue catalog definitions (Function ID 0xaf434825)
+            let is_query_servers = payload.len() >= 5
+                && u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]])
+                    == MCTS_FUNCTION_ID_QUERY_SERVERS;
+            if is_query_servers {
+                let queue_def_frame =
+                    create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE);
+                write_tx
+                    .send(queue_def_frame)
+                    .await
+                    .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
+                info!(
+                    "Dispatched MCTS queue catalog definition (queue_id 434, map_id {}) on client request from {}",
+                    MAP_GAME_ID_SHOOTING_RANGE, peer_addr
+                );
+            }
 
             post_login_count += 1;
             if (post_login_count == 1 || has_shooting_range_req) && !matchmaking_started {
@@ -453,6 +471,17 @@ async fn handle_connection(
                 .send(login_frame)
                 .await
                 .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
+
+            let queue_def_frame =
+                create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE);
+            write_tx
+                .send(queue_def_frame)
+                .await
+                .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
+            info!(
+                "Dispatched MCTS queue catalog definition (queue_id 434, map_id {}) for {}",
+                MAP_GAME_ID_SHOOTING_RANGE, peer_addr
+            );
 
             // Emit OnMatchStatus frame declaring initial lobby state (queue_id 0, match_id 0, match_lobby_state 0, launch_seconds 0, player_lobby_state 0, player_queue_state 0)
             let initial_status_frame = create_mcts_match_status_frame(0, 0, 0, 0, 0, 0);
