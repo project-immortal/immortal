@@ -357,12 +357,17 @@ async fn handle_connection(
                     // if identical, queue status replication is bypassed as a cache hit.
                     // Transitioning from QueueId 0 in state 8 to QueueId 434 in state 10 forces the client
                     // to update queue status and propagate QueueState 7 (MQ_LAUNCHING).
+                    //
+                    // PlayerLobbyState is set to 0 during state 8 so that transitioning to
+                    // PlayerLobbyState 5 in state 10 satisfies the launch gate condition
+                    // (PlayerLobbyState_OLD < 1 && PlayerLobbyState_NEW > 0 && MatchLobbyState != 1),
+                    // firing event 0x3af7.
                     let match_status_8 = create_mcts_match_status_with_members_frame(
                         0,
                         878850364,
                         8,
                         0,
-                        5,
+                        0,
                         4,
                         cfg.account_id,
                         BOT_ID_VIKTOR,

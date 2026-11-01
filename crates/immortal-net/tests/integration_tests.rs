@@ -1357,7 +1357,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     ]); // agyis: no-mutant
     assert_eq!(s8_state, 8); // agyis: no-mutant
     assert_eq!(s8_launch, 0); // agyis: no-mutant
-    assert_eq!(s8_player_lobby, 5); // agyis: no-mutant
+    assert_eq!(s8_player_lobby, 0); // agyis: no-mutant
     assert_eq!(s8_player_queue, 4); // agyis: no-mutant
 
     // Group 0x4000 (2 fields)
@@ -1482,7 +1482,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(s8_bot_id, 2285); // agyis: no-mutant
     assert_eq!(s8_position, 0); // agyis: no-mutant
     assert_eq!(s8_profile_id, 8302401); // agyis: no-mutant
-    assert_eq!(s8_lobby_state, 5); // agyis: no-mutant
+    assert_eq!(s8_lobby_state, 0); // agyis: no-mutant
 
     // Row Group 0x4000: Token 11 (PLAYER_ID, 8 bytes)
     assert_eq!(
