@@ -1,0 +1,100 @@
+--- dist/mcp/binary-DR8ElrdQ.js.orig	2026-11-02 17:17:28.323144421 +0600
++++ dist/mcp/binary-DR8ElrdQ.js	2026-11-02 17:43:18.793603115 +0600
+@@ -6676,6 +6676,43 @@
+ 		ghidraHeadlessArguments = (options) => {
+ 			const scriptPath = (options.platform ?? process.platform) === "win32" ? win32 : posix;
+ 			const bridgeDirectory = scriptPath.dirname(options.bridgeScriptPath);
++			const projectDir = process.env.REA_GHIDRA_PROJECT_DIR || (process.env.IMMORTAL_DIRTYROOM ? scriptPath.join(process.env.IMMORTAL_DIRTYROOM, "ghidra") : undefined);
++			const projectName = process.env.REA_GHIDRA_PROJECT_NAME || (process.env.IMMORTAL_DIRTYROOM ? "PaladinsProject" : undefined);
++			let targetBase = scriptPath.basename(options.targetPath);
++			const BINARY_MAP = {
++				"0c51d381dfe9": "ShippingPC-ChaosGame.exe",
++				"90ce02b7b820": "MctsInterface.dll",
++				"1c4ad378fb8c": "vivoxsdk_x64.dll"
++			};
++			if (targetBase.startsWith("target-")) {
++				const prefix = targetBase.slice(7, 19);
++				if (BINARY_MAP[prefix]) {
++					targetBase = BINARY_MAP[prefix];
++				}
++			}
++			if (projectDir && projectName && !options.rawBinary && !options.dosMz && !options.dosCom && options.gamecubeDol === undefined && options.psp !== true) {
++				try {
++					const gprPath = scriptPath.join(projectDir, `${projectName}.gpr`);
++					statSync(gprPath);
++					return [
++						projectDir,
++						projectName,
++						"-process",
++						targetBase,
++						"-noanalysis",
++						"-readOnly",
++						"-log",
++						options.ghidraLogPath,
++						"-scriptlog",
++						options.scriptLogPath,
++						"-scriptPath",
++						bridgeDirectory,
++						"-postScript",
++						options.bridgeScriptPath,
++						options.descriptorPath
++					];
++				} catch {}
++			}
+ 			const override = options.languageOverride;
+ 			const rawBinary = options.rawBinary;
+ 			const gamecubeDol = options.gamecubeDol;
+--- dist/ghidra/GhidraLauncher.js.orig	2026-11-02 17:17:28.324144414 +0600
++++ dist/ghidra/GhidraLauncher.js	2026-11-02 17:43:28.578528731 +0600
+@@ -1,6 +1,7 @@
+ import { GHIDRA_BRIDGE_SOURCES } from "./GhidraBridgeSources.js";
+ import { snapshotGhidraAnalysisSeeds, } from "./GhidraAnalysisSeeds.js";
+ import { snapshotEnvironment } from "../process/snapshotEnvironment.js";
++import { statSync } from "node:fs";
+ import { mkdir, realpath } from "node:fs/promises";
+ import { basename, dirname, join, posix, win32 } from "node:path";
+ import { writeGhidraRuntimeFile } from "./GhidraRuntimeFile.js";
+@@ -411,6 +412,43 @@
+     // the host when building a cross-platform invocation.
+     const scriptPath = (options.platform ?? process.platform) === "win32" ? win32 : posix;
+     const bridgeDirectory = scriptPath.dirname(options.bridgeScriptPath);
++    const projectDir = process.env.REA_GHIDRA_PROJECT_DIR || (process.env.IMMORTAL_DIRTYROOM ? scriptPath.join(process.env.IMMORTAL_DIRTYROOM, "ghidra") : undefined);
++    const projectName = process.env.REA_GHIDRA_PROJECT_NAME || (process.env.IMMORTAL_DIRTYROOM ? "PaladinsProject" : undefined);
++    let targetBase = scriptPath.basename(options.targetPath);
++    const BINARY_MAP = {
++        "0c51d381dfe9": "ShippingPC-ChaosGame.exe",
++        "90ce02b7b820": "MctsInterface.dll",
++        "1c4ad378fb8c": "vivoxsdk_x64.dll"
++    };
++    if (targetBase.startsWith("target-")) {
++        const prefix = targetBase.slice(7, 19);
++        if (BINARY_MAP[prefix]) {
++            targetBase = BINARY_MAP[prefix];
++        }
++    }
++    if (projectDir && projectName && !options.rawBinary && !options.dosMz && !options.dosCom && options.gamecubeDol === undefined && options.psp !== true) {
++        try {
++            const gprPath = scriptPath.join(projectDir, `${projectName}.gpr`);
++            statSync(gprPath);
++            return [
++                projectDir,
++                projectName,
++                "-process",
++                targetBase,
++                "-noanalysis",
++                "-readOnly",
++                "-log",
++                options.ghidraLogPath,
++                "-scriptlog",
++                options.scriptLogPath,
++                "-scriptPath",
++                bridgeDirectory,
++                "-postScript",
++                options.bridgeScriptPath,
++                options.descriptorPath
++            ];
++        } catch {}
++    }
+     const override = options.languageOverride;
+     const rawBinary = options.rawBinary;
+     const gamecubeDol = options.gamecubeDol;

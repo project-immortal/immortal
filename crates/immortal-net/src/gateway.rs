@@ -352,11 +352,11 @@ async fn handle_connection(
                         return;
                     }
 
-                    // Token 703 (queue_id) is set to 0 during formation state 8. The client lobby state
-                    // machine compares active queue identifier against incoming match status updates;
-                    // if identical, queue status replication is bypassed as a cache hit.
-                    // Transitioning from QueueId 0 in state 8 to QueueId 434 in state 10 forces the client
-                    // to update queue status and propagate QueueState 7 (MQ_LAUNCHING).
+                    // In authentic retail Paladins trace (pcaps/live_paladins_launch.log line 1084 & 1090),
+                    // QueueId is 0 in both frames.
+                    // launch_seconds is set to 30 in state 8 so that transitioning
+                    // to launch_seconds 0 in state 10 forces FUN_1414f84f0 to detect a LaunchTime change (30 -> 0),
+                    // run the tick handler, and fire AUTOPICK (FUN_1414d9350).
                     //
                     // PlayerLobbyState is set to 0 during state 8 so that transitioning to
                     // PlayerLobbyState 5 in state 10 satisfies the launch gate condition
@@ -366,7 +366,7 @@ async fn handle_connection(
                         0,
                         878850364,
                         8,
-                        0,
+                        30,
                         0,
                         4,
                         cfg.account_id,
@@ -403,10 +403,10 @@ async fn handle_connection(
                         return;
                     }
 
-                    // Token 703 (queue_id) is set to 434 (Preserving QueueId throughout Gazebo
-                    // to prevent queue dissociation and drive QueueState to 7 (MQ_LAUNCHING)).
+                    // Authentic retail Paladins trace (live_paladins_launch.log line 1090):
+                    // QueueId is 0, MatchLobbyState is 10, LaunchTime is 0, QueueState is 7, PlayerLobbyState is 5.
                     let match_status_10 = create_mcts_match_status_with_members_frame(
-                        434,
+                        0,
                         878850364,
                         10,
                         0,
