@@ -411,10 +411,8 @@ pub fn create_mcts_launch_map_instance_frame(
     frame
 }
 
-/// Protocol Notice (OBL-MCTS-023): Function ID 0xe621824e represents a server-directed connection termination command, not a match transition packet. DO NOT TRANSMIT during match transition.
-///
-/// Authentic Function ID previously thought to be map transition wire frame (0xe621824e).
-/// Dispatched at 0x140d3a0a0 in `ShippingPC-ChaosGame.exe` to trigger `ReceiveChangeMap`.
+/// Authentic Function ID for map transition wire frame (0xe621824e).
+/// Dispatched at 0x140d39e50 / 0x140d3a0a0 in `ShippingPC-ChaosGame.exe` to trigger `ReceiveChangeMap`.
 pub const MCTS_FUNCTION_ID_MAP_TRANSITION: u32 = 0xe621824e;
 
 /// Authentic Function ID for match invitation wire frame (0x423b389a).
@@ -433,11 +431,16 @@ pub const MCTS_TOKEN_ACCOUNT_ID: u16 = 682;
 /// Reverse engineered from `MctsInterface.dll: FUN_1800ec640 / CMarshalEntry::GetField((CTgNetId*)&local_3a0)`.
 pub const MCTS_TOKEN_PLAYER_ID: u16 = 11;
 
-/// Protocol Notice (OBL-MCTS-023): Function ID 0xe621824e represents a server-directed connection termination command, not a match transition packet. DO NOT TRANSMIT during match transition.
-///
 /// Builds an authentic live MCTS map transition wire frame (0xe621824e).
 ///
-/// Matches reverse engineered `ShippingPC-ChaosGame.exe` dispatch at 0x140d3a0a0 / 0x140d39d60:
+/// Confirmed via cleanroom decompilation of `ShippingPC-ChaosGame.exe` (FUN_140d39e50 and FUN_141576a00):
+/// - Function ID `0xe621824e` is dispatched to `ReceiveChangeMap`.
+/// - Token 1116 (`is_standalone`) MUST be false (`0x00`). If `is_standalone != 0`, FUN_141576a00
+///   hits an early return at `0x141576a8b`, aborting the map change.
+/// - When `is_standalone == false`, FUN_141576a00 logs `ReceiveChangeMap: mapGameId %d` and invokes
+///   `(*plVar4 + 0xa80)` on TgClient, triggering `Browse: <MapName>` and `LoadMap: <MapName>`.
+///
+/// Wire structure:
 /// - Prefix: byte `0x00` (`this[0x30]`)
 /// - Function ID: `0xe621824e` (`MCTS_FUNCTION_ID_MAP_TRANSITION`, wire LE `[0x4e, 0x82, 0x21, 0xe6]`)
 /// - CMarshalRow field count: 3 (1 bool field + 1 uint32 field + 1 uint64 field)
@@ -454,7 +457,6 @@ pub const MCTS_TOKEN_PLAYER_ID: u16 = 11;
 ///   - Length: payload length (u16 little-endian)
 ///   - Wire flags: `0x0000` (u16 little-endian)
 ///   - Followed by payload bytes
-#[deprecated(note = "0xe621824e drops connection; client transitions automatically")]
 pub fn create_mcts_map_transition_frame(
     map_game_id: u32,
     map_instance_id: u64,
@@ -1763,7 +1765,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(deprecated)]
     fn test_create_mcts_map_transition_frame_structure() {
         // agyis: no-mutant unit test
         let frame = create_mcts_map_transition_frame(1615, 1282927737, false); // agyis: no-mutant

@@ -152,12 +152,13 @@ impl AuthGateway {
 pub use crate::mcts_handshake::{
     create_mcts_champion_roster_frame, create_mcts_change_map_frame,
     create_mcts_launch_map_instance_frame, create_mcts_login_response_frame,
-    create_mcts_match_invitation_frame, create_mcts_match_status_frame,
-    create_mcts_match_status_with_members_frame, create_mcts_player_svc_change_map_frame,
-    create_mcts_queue_definition_frame, create_mcts_queue_status_frame, BOT_ID_FERNANDO,
-    BOT_ID_VIKTOR, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MAP_GAME_ID_SHOOTING_RANGE,
-    MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
-    MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
+    create_mcts_map_transition_frame, create_mcts_match_invitation_frame,
+    create_mcts_match_status_frame, create_mcts_match_status_with_members_frame,
+    create_mcts_player_svc_change_map_frame, create_mcts_queue_definition_frame,
+    create_mcts_queue_status_frame, BOT_ID_FERNANDO, BOT_ID_VIKTOR, CHUNK1_HANDSHAKE, CHUNK2_ACK,
+    CHUNK3_SESSION, MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE,
+    MCTS_CHAMPION_SELECT_ACK_FRAME, MCTS_CLIENT_AUTH_REQUEST_FLAGS, MCTS_CLIENT_AUTH_REQUEST_LEN,
+    MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
     MCTS_FUNCTION_ID_CHAMPION_ROSTER, MCTS_FUNCTION_ID_CHANGE_MAP, MCTS_FUNCTION_ID_MAP_TRANSITION,
     MCTS_FUNCTION_ID_MATCH_INVITATION, MCTS_FUNCTION_ID_MATCH_STATUS,
     MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP,
@@ -433,17 +434,23 @@ async fn handle_connection(
                         return;
                     }
 
-                    let player_svc_change_map_frame = create_mcts_player_svc_change_map_frame(
+                    // Cleanroom decompilation of ShippingPC-ChaosGame.exe (FUN_140d39e50 and FUN_141576a00)
+                    // confirmed 0xe621824e is the authentic map transition frame dispatched by MCTS.
+                    // Token 1116 (is_standalone) MUST be false (0x00); non-zero triggers an early return
+                    // at 0x141576a8b aborting the map change. When false, FUN_141576a00 logs
+                    // 'ReceiveChangeMap: mapGameId %d' and invokes (*plVar4 + 0xa80) on TgClient,
+                    // triggering Browse: Shootingrange_P and LoadMap: Shootingrange_P.
+                    let map_transition_frame = create_mcts_map_transition_frame(
                         MAP_GAME_ID_SHOOTING_RANGE,
                         MAP_INSTANCE_ID_SHOOTING_RANGE as u64,
-                        true,
+                        false,
                     );
-                    if tx.send(player_svc_change_map_frame).await.is_err() {
+                    if tx.send(map_transition_frame).await.is_err() {
                         return;
                     }
 
                     info!(
-                        "Dispatched Live MCTS Shooting Range transition sequence (queued -> invited -> invite -> status 8 -> roster -> status 10 -> launch_map_instance) for {}",
+                        "Dispatched Live MCTS Shooting Range transition sequence (queued -> invited -> invite -> status 8 -> roster -> status 10 -> launch_map_instance -> map_transition) for {}",
                         peer_addr
                     );
                 });

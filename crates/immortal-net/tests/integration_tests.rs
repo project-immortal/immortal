@@ -1957,81 +1957,81 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         &[0x02, 0x00, 0x1e, 0x61, 127, 0, 0, 1]
     ); // agyis: no-mutant
 
-    // (e) PLAYER_SVC_CHANGE_MAP wire frame (Function ID 0xae90091f, len 32, is_standalone true, mapGameId 1615, mapInstanceId 1282927737)
+    // (e) MAP_TRANSITION wire frame (Function ID 0xe621824e, len 32, is_standalone false, mapGameId 1615, mapInstanceId 1282927737)
     stream.read_exact(&mut header_buf).await.unwrap();
-    let player_svc_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
-    let player_svc_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
-    assert_eq!(player_svc_flags, 0x0000); // agyis: no-mutant
-    assert_eq!(player_svc_len, 32); // agyis: no-mutant
-    let mut player_svc_payload = vec![0u8; player_svc_len];
-    stream.read_exact(&mut player_svc_payload).await.unwrap();
-    assert_eq!(player_svc_payload[0], 0x00); // agyis: no-mutant
-    let player_svc_func_id = u32::from_le_bytes([
-        player_svc_payload[1],
-        player_svc_payload[2],
-        player_svc_payload[3],
-        player_svc_payload[4],
+    let map_trans_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let map_trans_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(map_trans_flags, 0x0000); // agyis: no-mutant
+    assert_eq!(map_trans_len, 32); // agyis: no-mutant
+    let mut map_trans_payload = vec![0u8; map_trans_len];
+    stream.read_exact(&mut map_trans_payload).await.unwrap();
+    assert_eq!(map_trans_payload[0], 0x00); // agyis: no-mutant
+    let map_trans_func_id = u32::from_le_bytes([
+        map_trans_payload[1],
+        map_trans_payload[2],
+        map_trans_payload[3],
+        map_trans_payload[4],
     ]); // agyis: no-mutant
     assert_eq!(
-        player_svc_func_id,
-        immortal_net::MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP
+        map_trans_func_id,
+        immortal_net::MCTS_FUNCTION_ID_MAP_TRANSITION
     ); // agyis: no-mutant
-    assert_eq!(player_svc_func_id, 0xae90091f); // agyis: no-mutant
+    assert_eq!(map_trans_func_id, 0xe621824e); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([player_svc_payload[5], player_svc_payload[6]]),
+        u16::from_le_bytes([map_trans_payload[5], map_trans_payload[6]]),
         3
     ); // agyis: no-mutant (3 total fields)
 
-    // Group 0x1000 (1 field): Token 1116 (is_standalone = true / 0x01)
+    // Group 0x1000 (1 field): Token 1116 (is_standalone = false / 0x00)
     assert_eq!(
-        u16::from_le_bytes([player_svc_payload[7], player_svc_payload[8]]),
+        u16::from_le_bytes([map_trans_payload[7], map_trans_payload[8]]),
         0x1001
     ); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([player_svc_payload[9], player_svc_payload[10]]),
+        u16::from_le_bytes([map_trans_payload[9], map_trans_payload[10]]),
         1116
     ); // agyis: no-mutant
-    assert_eq!(player_svc_payload[11], 1); // agyis: no-mutant
+    assert_eq!(map_trans_payload[11], 0); // agyis: no-mutant
 
     // Group 0x3000 (1 field): Token 682 (mapGameId = 1615)
     assert_eq!(
-        u16::from_le_bytes([player_svc_payload[12], player_svc_payload[13]]),
+        u16::from_le_bytes([map_trans_payload[12], map_trans_payload[13]]),
         0x3001
     ); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([player_svc_payload[14], player_svc_payload[15]]),
+        u16::from_le_bytes([map_trans_payload[14], map_trans_payload[15]]),
         682
     ); // agyis: no-mutant
-    let psvc_map_game_id = u32::from_le_bytes([
-        player_svc_payload[16],
-        player_svc_payload[17],
-        player_svc_payload[18],
-        player_svc_payload[19],
+    let trans_map_game_id = u32::from_le_bytes([
+        map_trans_payload[16],
+        map_trans_payload[17],
+        map_trans_payload[18],
+        map_trans_payload[19],
     ]); // agyis: no-mutant
-    assert_eq!(psvc_map_game_id, 1615); // agyis: no-mutant
+    assert_eq!(trans_map_game_id, 1615); // agyis: no-mutant
 
     // Group 0x4000 (1 field): Token 685 (mapInstanceId = 1282927737)
     assert_eq!(
-        u16::from_le_bytes([player_svc_payload[20], player_svc_payload[21]]),
+        u16::from_le_bytes([map_trans_payload[20], map_trans_payload[21]]),
         0x4001
     ); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([player_svc_payload[22], player_svc_payload[23]]),
+        u16::from_le_bytes([map_trans_payload[22], map_trans_payload[23]]),
         685
     ); // agyis: no-mutant
-    let psvc_map_instance_id = u64::from_le_bytes([
-        player_svc_payload[24],
-        player_svc_payload[25],
-        player_svc_payload[26],
-        player_svc_payload[27],
-        player_svc_payload[28],
-        player_svc_payload[29],
-        player_svc_payload[30],
-        player_svc_payload[31],
+    let trans_map_instance_id = u64::from_le_bytes([
+        map_trans_payload[24],
+        map_trans_payload[25],
+        map_trans_payload[26],
+        map_trans_payload[27],
+        map_trans_payload[28],
+        map_trans_payload[29],
+        map_trans_payload[30],
+        map_trans_payload[31],
     ]); // agyis: no-mutant
-    assert_eq!(psvc_map_instance_id, 1282927737); // agyis: no-mutant
+    assert_eq!(trans_map_instance_id, 1282927737); // agyis: no-mutant
 
-    // 5. Step 5: Live sequence completes at MATCH_STATUS 10 and change_map without bogus disconnect frame (0xe621824e).
+    // 5. Step 5: Live sequence completes at MATCH_STATUS 10 and map_transition frame (0xe621824e with is_standalone=false).
     // Subsequent post-login frame (champion select with Fernando) is drained by decoupled reader
     // without emitting bogus encrypted ciphertext ACK and stream remains connected.
     stream.write_all(&champ_frame).await.unwrap();
