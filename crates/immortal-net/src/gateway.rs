@@ -403,10 +403,11 @@ async fn handle_connection(
                         return;
                     }
 
-                    // Authentic retail Paladins trace (live_paladins_launch.log line 1090):
-                    // QueueId is 0, MatchLobbyState is 10, LaunchTime is 0, QueueState is 7, PlayerLobbyState is 5.
+                    // Transitioning to QueueId 434 in state 10 breaks the UTgMatchLobby queue cache
+                    // check (since state 8 had QueueId 0), executing FindQueueById(434) and CopyFromMctsQueue
+                    // to propagate QueueState 7 (MQ_LAUNCHING) into UTgMatchLobby.
                     let match_status_10 = create_mcts_match_status_with_members_frame(
-                        0,
+                        434,
                         878850364,
                         10,
                         0,
