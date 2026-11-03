@@ -195,11 +195,10 @@ pub const MAP_GAME_ID_SHOOTING_RANGE: u32 = 1615;
 /// Default map instance ID observed in live shooting range sessions
 pub const MAP_INSTANCE_ID_SHOOTING_RANGE: u32 = 1282927737;
 
-/// Authentic Function ID for `ChangeMap` / `RECEIVE_CHANGE_MAP` (0x48631f9a).
-/// Reverse engineered from `MctsInterface.dll` (?ChangeMap@CMctsClient@@UEAA_NK_NVCMctsNetId@@@Z at 0x1800c65b0)
-/// and `ShippingPC-ChaosGame.exe` (FUN_140082be0 at 0x140082be0).
-/// Wire LE bytes: [0x9a, 0x1f, 0x63, 0x48].
-pub const MCTS_FUNCTION_ID_CHANGE_MAP: u32 = 0x48631f9a;
+/// Authentic Function ID for `ChangeMap` / `RECEIVE_CHANGE_MAP` (0x847de68b / 2222843531).
+/// Reverse engineered from `MctsInterface.dll: CMctsGameServer::ProcessMarshal` (0x1800db730 -> FUN_1800da6e0).
+/// Wire LE bytes: [0x8b, 0xe6, 0x7d, 0x84].
+pub const MCTS_FUNCTION_ID_CHANGE_MAP: u32 = 0x847de68b;
 
 /// Backwards compatibility alias for `MCTS_FUNCTION_ID_CHANGE_MAP`.
 pub const MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP: u32 = MCTS_FUNCTION_ID_CHANGE_MAP;
@@ -223,9 +222,10 @@ pub const MCTS_CHAMPION_SELECT_ACK_FRAME: [u8; 19] = [
 
 /// Builds an authentic live MCTS `ChangeMap` wire frame for `CMctsNetwork`.
 ///
-/// Matches reverse engineered `CMctsClient::ChangeMap` and `CMarshalRow::Store` specification:
+/// Matches reverse engineered `MctsInterface.dll: ProcessMarshal` (0x1800db730 -> FUN_1800da6e0)
+/// and `CMarshalRow::Store` specification (Token OBL-MCTS-008):
 /// - Prefix: byte `0x00` (`this[0x30]`)
-/// - Function ID: `0x48631f9a` (`MCTS_FUNCTION_ID_CHANGE_MAP`, wire LE `[0x9a, 0x1f, 0x63, 0x48]`)
+/// - Function ID: `0x847de68b` (`MCTS_FUNCTION_ID_CHANGE_MAP`, wire LE `[0x8b, 0xe6, 0x7d, 0x84]`)
 /// - CMarshalRow field count: 3 (1 bool field + 1 uint32 field + 1 uint64 field)
 /// - Group 0x1000 (1-byte fields):
 ///   - Header: `0x1001` (group 0x1000 | 1)
@@ -411,9 +411,14 @@ pub fn create_mcts_launch_map_instance_frame(
     frame
 }
 
-/// Authentic Function ID for map transition wire frame (0xe621824e).
-/// Dispatched at 0x140d39e50 / 0x140d3a0a0 in `ShippingPC-ChaosGame.exe` to trigger `ReceiveChangeMap`.
-pub const MCTS_FUNCTION_ID_MAP_TRANSITION: u32 = 0xe621824e;
+/// Authentic Function ID for session termination / client logoff frame (0xe621824e).
+/// Reverse engineered from `ShippingPC-ChaosGame.exe` (FUN_140d39e50 line 85).
+/// When Gazebo is active (`FUN_140d38030()` != 0), dispatching this function invokes the virtual
+/// logoff routine `(*param_1 + 0xe8)()`, terminating the client session and reverting to login screen.
+pub const MCTS_FUNCTION_ID_TERMINATE_SESSION: u32 = 0xe621824e;
+
+/// Backwards compatibility alias for `MCTS_FUNCTION_ID_TERMINATE_SESSION`.
+pub const MCTS_FUNCTION_ID_MAP_TRANSITION: u32 = MCTS_FUNCTION_ID_TERMINATE_SESSION;
 
 /// Authentic Function ID for match invitation wire frame (0x423b389a).
 /// Dispatched at 0x140d39eb6 in `ShippingPC-ChaosGame.exe` to trigger `TgClient::OnMatchInvite`
@@ -431,18 +436,17 @@ pub const MCTS_TOKEN_ACCOUNT_ID: u16 = 682;
 /// Reverse engineered from `MctsInterface.dll: FUN_1800ec640 / CMarshalEntry::GetField((CTgNetId*)&local_3a0)`.
 pub const MCTS_TOKEN_PLAYER_ID: u16 = 11;
 
-/// Builds an authentic live MCTS map transition wire frame (0xe621824e).
+/// Builds an authentic live MCTS map transition / session termination wire frame (0xe621824e).
 ///
 /// Confirmed via cleanroom decompilation of `ShippingPC-ChaosGame.exe` (FUN_140d39e50 and FUN_141576a00):
-/// - Function ID `0xe621824e` is dispatched to `ReceiveChangeMap`.
-/// - Token 1116 (`is_standalone`) MUST be false (`0x00`). If `is_standalone != 0`, FUN_141576a00
-///   hits an early return at `0x141576a8b`, aborting the map change.
-/// - When `is_standalone == false`, FUN_141576a00 logs `ReceiveChangeMap: mapGameId %d` and invokes
-///   `(*plVar4 + 0xa80)` on TgClient, triggering `Browse: <MapName>` and `LoadMap: <MapName>`.
+/// - In active Gazebo sessions, FUN_140d39e50 line 85 detects an active lobby and invokes `(*param_1 + 0xe8)()`,
+///   triggering immediate client logoff and connection disconnect.
+/// - In legacy standalone contexts without Gazebo, FUN_141576a00 logs `ReceiveChangeMap: mapGameId %d`
+///   provided Token 1116 (`is_standalone`) is false (`0x00`).
 ///
 /// Wire structure:
 /// - Prefix: byte `0x00` (`this[0x30]`)
-/// - Function ID: `0xe621824e` (`MCTS_FUNCTION_ID_MAP_TRANSITION`, wire LE `[0x4e, 0x82, 0x21, 0xe6]`)
+/// - Function ID: `0xe621824e` (`MCTS_FUNCTION_ID_TERMINATE_SESSION`, wire LE `[0x4e, 0x82, 0x21, 0xe6]`)
 /// - CMarshalRow field count: 3 (1 bool field + 1 uint32 field + 1 uint64 field)
 /// - Group 0x1000 (1-byte fields: 1 field):
 ///   - Header: `0x1001` (group 0x1000 | 1)
@@ -1316,11 +1320,11 @@ mod tests {
 
         let payload = &frame[4..]; // agyis: no-mutant
         assert_eq!(payload[0], 0x00); // agyis: no-mutant
-        assert_eq!(&payload[1..5], &[0x9a, 0x1f, 0x63, 0x48]); // agyis: no-mutant
+        assert_eq!(&payload[1..5], &[0x8b, 0xe6, 0x7d, 0x84]); // agyis: no-mutant
         let func_id_le = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]); // agyis: no-mutant
         assert_eq!(func_id_le, MCTS_FUNCTION_ID_CHANGE_MAP); // agyis: no-mutant
         assert_eq!(func_id_le, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP); // agyis: no-mutant
-        assert_eq!(func_id_le, 0x48631f9a); // agyis: no-mutant
+        assert_eq!(func_id_le, 0x847de68b); // agyis: no-mutant
 
         let total_fields = u16::from_le_bytes([payload[5], payload[6]]); // agyis: no-mutant
         assert_eq!(total_fields, 3); // agyis: no-mutant

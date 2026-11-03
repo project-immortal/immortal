@@ -163,11 +163,11 @@ pub use crate::mcts_handshake::{
     MCTS_FUNCTION_ID_MATCH_INVITATION, MCTS_FUNCTION_ID_MATCH_STATUS,
     MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP,
     MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE, MCTS_FUNCTION_ID_QUERY_SERVERS,
-    MCTS_FUNCTION_ID_QUEUE_STATUS, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP, MCTS_HANDSHAKE_CHUNK1,
-    MCTS_HANDSHAKE_CHUNK2_ACK, MCTS_HANDSHAKE_CHUNK3_SESSION, MCTS_HELLO_RESPONSE_FRAME,
-    MCTS_HELLO_RESPONSE_PAYLOAD, MCTS_TOKEN_ACCOUNT_ID, MCTS_TOKEN_INVITED_MEMBERS,
-    MCTS_TOKEN_MEMBERS, MCTS_TOKEN_QUEUE_CATEGORY, MCTS_TOKEN_TIMEOUT_WARNING,
-    MCTS_WIRE_FLAG_CHUNK,
+    MCTS_FUNCTION_ID_QUEUE_STATUS, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP,
+    MCTS_FUNCTION_ID_TERMINATE_SESSION, MCTS_HANDSHAKE_CHUNK1, MCTS_HANDSHAKE_CHUNK2_ACK,
+    MCTS_HANDSHAKE_CHUNK3_SESSION, MCTS_HELLO_RESPONSE_FRAME, MCTS_HELLO_RESPONSE_PAYLOAD,
+    MCTS_TOKEN_ACCOUNT_ID, MCTS_TOKEN_INVITED_MEMBERS, MCTS_TOKEN_MEMBERS,
+    MCTS_TOKEN_QUEUE_CATEGORY, MCTS_TOKEN_TIMEOUT_WARNING, MCTS_WIRE_FLAG_CHUNK,
 };
 
 async fn handle_connection(
@@ -434,23 +434,23 @@ async fn handle_connection(
                         return;
                     }
 
-                    // Cleanroom decompilation of ShippingPC-ChaosGame.exe (FUN_140d39e50 and FUN_141576a00)
-                    // confirmed 0xe621824e is the authentic map transition frame dispatched by MCTS.
-                    // Token 1116 (is_standalone) MUST be false (0x00); non-zero triggers an early return
-                    // at 0x141576a8b aborting the map change. When false, FUN_141576a00 logs
-                    // 'ReceiveChangeMap: mapGameId %d' and invokes (*plVar4 + 0xa80) on TgClient,
-                    // triggering Browse: Shootingrange_P and LoadMap: Shootingrange_P.
-                    let map_transition_frame = create_mcts_map_transition_frame(
+                    // Grounded in cleanroom decompiler analysis of MctsInterface.dll (0x1800db730 -> FUN_1800da6e0)
+                    // and ShippingPC-ChaosGame.exe (FUN_140d39e50 line 85).
+                    // Function ID 0x847de68b is the authentic ChangeMap RPC. Legacy 0xe621824e triggers an explicit
+                    // virtual logoff routine (*param_1 + 0xe8)() when Gazebo is active.
+                    // Token 1536 (compel) is set to false (0x00), Token 682 is Shooting Range mapGameId (1615),
+                    // and Token 685 is mapInstanceId (1282927737).
+                    let change_map_frame = create_mcts_change_map_frame(
                         MAP_GAME_ID_SHOOTING_RANGE,
                         MAP_INSTANCE_ID_SHOOTING_RANGE as u64,
                         false,
                     );
-                    if tx.send(map_transition_frame).await.is_err() {
+                    if tx.send(change_map_frame).await.is_err() {
                         return;
                     }
 
                     info!(
-                        "Dispatched Live MCTS Shooting Range transition sequence (queued -> invited -> invite -> status 8 -> roster -> status 10 -> launch_map_instance -> map_transition) for {}",
+                        "Dispatched Live MCTS Shooting Range transition sequence (queued -> invited -> invite -> status 8 -> roster -> status 10 -> launch_map_instance -> change_map 0x847de68b) for {}",
                         peer_addr
                     );
                 });

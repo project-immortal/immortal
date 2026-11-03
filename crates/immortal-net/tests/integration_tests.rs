@@ -1957,81 +1957,81 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         &[0x02, 0x00, 0x1e, 0x61, 127, 0, 0, 1]
     ); // agyis: no-mutant
 
-    // (e) MAP_TRANSITION wire frame (Function ID 0xe621824e, len 32, is_standalone false, mapGameId 1615, mapInstanceId 1282927737)
+    // (e) CHANGE_MAP wire frame (Function ID 0x847de68b, len 32, compel false, mapGameId 1615, mapInstanceId 1282927737)
     stream.read_exact(&mut header_buf).await.unwrap();
-    let map_trans_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
-    let map_trans_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
-    assert_eq!(map_trans_flags, 0x0000); // agyis: no-mutant
-    assert_eq!(map_trans_len, 32); // agyis: no-mutant
-    let mut map_trans_payload = vec![0u8; map_trans_len];
-    stream.read_exact(&mut map_trans_payload).await.unwrap();
-    assert_eq!(map_trans_payload[0], 0x00); // agyis: no-mutant
-    let map_trans_func_id = u32::from_le_bytes([
-        map_trans_payload[1],
-        map_trans_payload[2],
-        map_trans_payload[3],
-        map_trans_payload[4],
+    let change_map_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let change_map_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(change_map_flags, 0x0000); // agyis: no-mutant
+    assert_eq!(change_map_len, 32); // agyis: no-mutant
+    let mut change_map_payload = vec![0u8; change_map_len];
+    stream.read_exact(&mut change_map_payload).await.unwrap();
+    assert_eq!(change_map_payload[0], 0x00); // agyis: no-mutant
+    let change_map_func_id = u32::from_le_bytes([
+        change_map_payload[1],
+        change_map_payload[2],
+        change_map_payload[3],
+        change_map_payload[4],
     ]); // agyis: no-mutant
     assert_eq!(
-        map_trans_func_id,
-        immortal_net::MCTS_FUNCTION_ID_MAP_TRANSITION
+        change_map_func_id,
+        immortal_net::MCTS_FUNCTION_ID_CHANGE_MAP
     ); // agyis: no-mutant
-    assert_eq!(map_trans_func_id, 0xe621824e); // agyis: no-mutant
+    assert_eq!(change_map_func_id, 0x847de68b); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([map_trans_payload[5], map_trans_payload[6]]),
+        u16::from_le_bytes([change_map_payload[5], change_map_payload[6]]),
         3
     ); // agyis: no-mutant (3 total fields)
 
-    // Group 0x1000 (1 field): Token 1116 (is_standalone = false / 0x00)
+    // Group 0x1000 (1 field): Token 1536 (compel = false / 0x00)
     assert_eq!(
-        u16::from_le_bytes([map_trans_payload[7], map_trans_payload[8]]),
+        u16::from_le_bytes([change_map_payload[7], change_map_payload[8]]),
         0x1001
     ); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([map_trans_payload[9], map_trans_payload[10]]),
-        1116
+        u16::from_le_bytes([change_map_payload[9], change_map_payload[10]]),
+        1536
     ); // agyis: no-mutant
-    assert_eq!(map_trans_payload[11], 0); // agyis: no-mutant
+    assert_eq!(change_map_payload[11], 0); // agyis: no-mutant
 
     // Group 0x3000 (1 field): Token 682 (mapGameId = 1615)
     assert_eq!(
-        u16::from_le_bytes([map_trans_payload[12], map_trans_payload[13]]),
+        u16::from_le_bytes([change_map_payload[12], change_map_payload[13]]),
         0x3001
     ); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([map_trans_payload[14], map_trans_payload[15]]),
+        u16::from_le_bytes([change_map_payload[14], change_map_payload[15]]),
         682
     ); // agyis: no-mutant
     let trans_map_game_id = u32::from_le_bytes([
-        map_trans_payload[16],
-        map_trans_payload[17],
-        map_trans_payload[18],
-        map_trans_payload[19],
+        change_map_payload[16],
+        change_map_payload[17],
+        change_map_payload[18],
+        change_map_payload[19],
     ]); // agyis: no-mutant
     assert_eq!(trans_map_game_id, 1615); // agyis: no-mutant
 
     // Group 0x4000 (1 field): Token 685 (mapInstanceId = 1282927737)
     assert_eq!(
-        u16::from_le_bytes([map_trans_payload[20], map_trans_payload[21]]),
+        u16::from_le_bytes([change_map_payload[20], change_map_payload[21]]),
         0x4001
     ); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([map_trans_payload[22], map_trans_payload[23]]),
+        u16::from_le_bytes([change_map_payload[22], change_map_payload[23]]),
         685
     ); // agyis: no-mutant
     let trans_map_instance_id = u64::from_le_bytes([
-        map_trans_payload[24],
-        map_trans_payload[25],
-        map_trans_payload[26],
-        map_trans_payload[27],
-        map_trans_payload[28],
-        map_trans_payload[29],
-        map_trans_payload[30],
-        map_trans_payload[31],
+        change_map_payload[24],
+        change_map_payload[25],
+        change_map_payload[26],
+        change_map_payload[27],
+        change_map_payload[28],
+        change_map_payload[29],
+        change_map_payload[30],
+        change_map_payload[31],
     ]); // agyis: no-mutant
     assert_eq!(trans_map_instance_id, 1282927737); // agyis: no-mutant
 
-    // 5. Step 5: Live sequence completes at MATCH_STATUS 10 and map_transition frame (0xe621824e with is_standalone=false).
+    // 5. Step 5: Live sequence completes at MATCH_STATUS 10 and change_map frame (0x847de68b with compel=false).
     // Subsequent post-login frame (champion select with Fernando) is drained by decoupled reader
     // without emitting bogus encrypted ciphertext ACK and stream remains connected.
     stream.write_all(&champ_frame).await.unwrap();
@@ -2154,4 +2154,195 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         "Live MCTS Auth Gateway exchange test must finish in < 2500ms, took {:?}",
         elapsed
     );
+}
+
+#[test]
+fn test_gazebo_lifecycle_state8_to_state10_transition_invariants() {
+    // Verifies the Gazebo lifecycle state machine transition sequence documented in
+    // docs/protocol/mcts_gazebo_lifecycle.md:
+    // - State 8: PlayerLobbyState = 0, QueueId = 0, LaunchTime = 30.
+    // - State 10: PlayerLobbyState = 5, QueueId = 434, LaunchTime = 0.
+    // - ChangeMap RPC: Function ID = 0x847de68b, compel = false, mapGameId = 1615, mapInstanceId = 1282927737.
+
+    let account_id = 8302401u64;
+    let match_id = 878850364u64;
+
+    // 1. Construct State 8: Champion Selection / Gazebo Staging
+    let frame_8 = immortal_net::create_mcts_match_status_with_members_frame(
+        0,
+        match_id,
+        8,
+        30,
+        0,
+        4,
+        account_id,
+        BOT_ID_VIKTOR,
+    );
+    let payload_8 = &frame_8[4..];
+    assert_eq!(payload_8[0], 0x00);
+    let func_id_8 = u32::from_le_bytes([payload_8[1], payload_8[2], payload_8[3], payload_8[4]]);
+    assert_eq!(func_id_8, immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS);
+
+    // Extract State 8 Group 0x3000 fields
+    // Token 1342 (MATCH_LOBBY_STATE) = 8
+    let s8_match_lobby_state =
+        u32::from_le_bytes([payload_8[17], payload_8[18], payload_8[19], payload_8[20]]);
+    assert_eq!(s8_match_lobby_state, 8);
+    // Token 1690 (LAUNCH_SECONDS) = 30
+    let s8_launch_time =
+        u32::from_le_bytes([payload_8[21], payload_8[22], payload_8[23], payload_8[24]]);
+    assert_eq!(s8_launch_time, 30);
+    // Token 1344 (PLAYER_LOBBY_STATE) = 0
+    let s8_player_lobby_state =
+        u32::from_le_bytes([payload_8[25], payload_8[26], payload_8[27], payload_8[28]]);
+    assert_eq!(s8_player_lobby_state, 0);
+    // Token 2191 (PLAYER_QUEUE_STATE) = 4 (MQ_ACCEPTED)
+    let s8_player_queue_state =
+        u32::from_le_bytes([payload_8[29], payload_8[30], payload_8[31], payload_8[32]]);
+    assert_eq!(s8_player_queue_state, 4);
+
+    // Extract State 8 Group 0x4000 fields
+    // Token 700 (MATCH_ID) = 878850364
+    let s8_match_id = u64::from_le_bytes([
+        payload_8[39],
+        payload_8[40],
+        payload_8[41],
+        payload_8[42],
+        payload_8[43],
+        payload_8[44],
+        payload_8[45],
+        payload_8[46],
+    ]);
+    assert_eq!(s8_match_id, match_id);
+    // Token 703 (MATCH_QUEUE_ID) = 0
+    let s8_queue_id = u64::from_le_bytes([
+        payload_8[47],
+        payload_8[48],
+        payload_8[49],
+        payload_8[50],
+        payload_8[51],
+        payload_8[52],
+        payload_8[53],
+        payload_8[54],
+    ]);
+    assert_eq!(s8_queue_id, 0);
+
+    // 2. Construct State 10: Match Finalized / Launching
+    let frame_10 = immortal_net::create_mcts_match_status_with_members_frame(
+        434,
+        match_id,
+        10,
+        0,
+        5,
+        7,
+        account_id,
+        BOT_ID_VIKTOR,
+    );
+    let payload_10 = &frame_10[4..];
+    assert_eq!(payload_10[0], 0x00);
+    let func_id_10 =
+        u32::from_le_bytes([payload_10[1], payload_10[2], payload_10[3], payload_10[4]]);
+    assert_eq!(func_id_10, immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS);
+
+    // Extract State 10 Group 0x3000 fields
+    let s10_match_lobby_state = u32::from_le_bytes([
+        payload_10[17],
+        payload_10[18],
+        payload_10[19],
+        payload_10[20],
+    ]);
+    assert_eq!(s10_match_lobby_state, 10);
+    let s10_launch_time = u32::from_le_bytes([
+        payload_10[21],
+        payload_10[22],
+        payload_10[23],
+        payload_10[24],
+    ]);
+    assert_eq!(s10_launch_time, 0);
+    let s10_player_lobby_state = u32::from_le_bytes([
+        payload_10[25],
+        payload_10[26],
+        payload_10[27],
+        payload_10[28],
+    ]);
+    assert_eq!(s10_player_lobby_state, 5);
+    let s10_player_queue_state = u32::from_le_bytes([
+        payload_10[29],
+        payload_10[30],
+        payload_10[31],
+        payload_10[32],
+    ]);
+    assert_eq!(s10_player_queue_state, 7);
+
+    // Extract State 10 Group 0x4000 fields
+    let s10_queue_id = u64::from_le_bytes([
+        payload_10[47],
+        payload_10[48],
+        payload_10[49],
+        payload_10[50],
+        payload_10[51],
+        payload_10[52],
+        payload_10[53],
+        payload_10[54],
+    ]);
+    assert_eq!(s10_queue_id, 434);
+
+    // 3. Assert State Invariant Deltas (Gate Conditions)
+    // Invariant A: PlayerLobbyState 0 -> 5 (Satisfies client launch gate condition: OLD < 1 && NEW > 0)
+    assert!(
+        s8_player_lobby_state < 1,
+        "State 8 PlayerLobbyState must be < 1"
+    );
+    assert!(
+        s10_player_lobby_state > 0,
+        "State 10 PlayerLobbyState must be > 0"
+    );
+
+    // Invariant B: QueueId 0 -> 434 (Forces UTgMatchLobby queue cache invalidation)
+    assert_eq!(s8_queue_id, 0);
+    assert_eq!(s10_queue_id, 434);
+
+    // Invariant C: LaunchTime 30 -> 0 (Timer expires, triggers match launch)
+    assert_eq!(s8_launch_time, 30);
+    assert_eq!(s10_launch_time, 0);
+
+    // Invariant D: MatchLobbyState 8 -> 10 (Selecting -> Launching)
+    assert_eq!(s8_match_lobby_state, 8);
+    assert_eq!(s10_match_lobby_state, 10);
+
+    // Invariant E: PlayerQueueState 4 -> 7 (MQ_ACCEPTED -> MQ_LAUNCHING)
+    assert_eq!(s8_player_queue_state, 4);
+    assert_eq!(s10_player_queue_state, 7);
+
+    // 4. Verify authentic ChangeMap RPC frame (0x847de68b)
+    let change_map_frame = immortal_net::create_mcts_change_map_frame(
+        immortal_net::MAP_GAME_ID_SHOOTING_RANGE,
+        immortal_net::MAP_INSTANCE_ID_SHOOTING_RANGE as u64,
+        false,
+    );
+    assert_eq!(change_map_frame.len(), 36);
+    let cm_payload = &change_map_frame[4..];
+    let cm_func_id =
+        u32::from_le_bytes([cm_payload[1], cm_payload[2], cm_payload[3], cm_payload[4]]);
+    assert_eq!(cm_func_id, immortal_net::MCTS_FUNCTION_ID_CHANGE_MAP);
+    assert_eq!(cm_func_id, 0x847de68b);
+    assert_eq!(cm_payload[11], 0); // compel = false
+    let cm_game_id = u32::from_le_bytes([
+        cm_payload[16],
+        cm_payload[17],
+        cm_payload[18],
+        cm_payload[19],
+    ]);
+    assert_eq!(cm_game_id, 1615);
+    let cm_instance_id = u64::from_le_bytes([
+        cm_payload[24],
+        cm_payload[25],
+        cm_payload[26],
+        cm_payload[27],
+        cm_payload[28],
+        cm_payload[29],
+        cm_payload[30],
+        cm_payload[31],
+    ]);
+    assert_eq!(cm_instance_id, 1282927737);
 }
