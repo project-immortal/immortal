@@ -874,14 +874,18 @@ pub fn create_mcts_queue_status_frame(queue_id: u64, queue_state: u32, timestamp
 ///     - Row 0 field count: 3u16 (2 uint32 + 1 uint64)
 ///     - Group 0x3002 (4-byte fields: 2 fields):
 ///       - Token: 36 (`MCTS_TOKEN_QUEUE_ACTIVE`), Value: `1u32` (active flag)
-///       - Token: 1646 (`MCTS_TOKEN_QUEUE_STATE`), Value: `0u32` (MQ_NONE initial state)
+///       - Token: 1646 (`MCTS_TOKEN_QUEUE_STATE`), Value: `queue_state` (e.g. 0 for MQ_NONE initial, 7 for MQ_LAUNCHING)
 ///     - Group 0x4001 (8-byte fields: 1 field):
 ///       - Token: 703 (`MCTS_TOKEN_MATCH_QUEUE_ID`), Value: `queue_id` (e.g. 434)
 /// - TCP Framing:
 ///   - Length: payload length (u16 little-endian)
 ///   - Wire flags: `0x0000` (u16 little-endian)
 ///   - Followed by payload bytes
-pub fn create_mcts_queue_definition_frame(queue_id: u64, map_game_id: u32) -> Vec<u8> {
+pub fn create_mcts_queue_definition_frame(
+    queue_id: u64,
+    map_game_id: u32,
+    queue_state: u32,
+) -> Vec<u8> {
     let mut payload = Vec::with_capacity(72);
     payload.push(0x00); // this[0x30] // agyis: no-mutant byte 0 prefix
     payload.extend_from_slice(&MCTS_FUNCTION_ID_QUERY_SERVERS.to_le_bytes()); // agyis: no-mutant function id
@@ -916,7 +920,7 @@ pub fn create_mcts_queue_definition_frame(queue_id: u64, map_game_id: u32) -> Ve
     payload.extend_from_slice(&MCTS_TOKEN_QUEUE_ACTIVE.to_le_bytes()); // agyis: no-mutant token 36
     payload.extend_from_slice(&MCTS_TOKEN_QUEUE_STATE.to_le_bytes()); // agyis: no-mutant token 1646
     payload.extend_from_slice(&1u32.to_le_bytes()); // Active flag 1 // agyis: no-mutant queue active
-    payload.extend_from_slice(&0u32.to_le_bytes()); // State 0 // agyis: no-mutant queue state
+    payload.extend_from_slice(&queue_state.to_le_bytes()); // State // agyis: no-mutant queue state
     payload.extend_from_slice(&0x4001u16.to_le_bytes()); // agyis: no-mutant row group 0x4001
     payload.extend_from_slice(&MCTS_TOKEN_MATCH_QUEUE_ID.to_le_bytes()); // agyis: no-mutant token 703
     payload.extend_from_slice(&queue_id.to_le_bytes()); // agyis: no-mutant queue id
@@ -2053,7 +2057,7 @@ mod tests {
 
     #[test]
     fn test_create_mcts_queue_definition_frame_structure() {
-        let frame = create_mcts_queue_definition_frame(434, 1615); // agyis: no-mutant
+        let frame = create_mcts_queue_definition_frame(434, 1615, 0); // agyis: no-mutant
         assert_eq!(frame.len(), 67); // agyis: no-mutant
 
         let length = u16::from_le_bytes([frame[0], frame[1]]); // agyis: no-mutant
@@ -2151,5 +2155,16 @@ mod tests {
             payload[62],
         ]); // agyis: no-mutant
         assert_eq!(v703, 434); // agyis: no-mutant
+
+        // Test frame with QueueState = 7 (MQ_LAUNCHING)
+        let frame_launching = create_mcts_queue_definition_frame(434, 1615, 7);
+        let payload_launching = &frame_launching[4..];
+        let v1646_launching = u32::from_le_bytes([
+            payload_launching[47],
+            payload_launching[48],
+            payload_launching[49],
+            payload_launching[50],
+        ]);
+        assert_eq!(v1646_launching, 7);
     }
 }

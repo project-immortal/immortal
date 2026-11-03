@@ -38,7 +38,7 @@ In Project Immortal's cleanroom architecture, the **Gazebo** state machine contr
 ### 2.2 State 10: Match Finalized / Launching
 - **Match Lobby State (`Token 1342`)**: `10` (`MATCH_LOBBY_STATE_LAUNCHING`)
 - **Player Lobby State (`Token 1344`)**: `5` (`PLAYER_LOBBY_STATE_LOCKED`)
-- **Queue ID (`Token 703`)**: `434` (Transitions from `0` in state 8 to `434` in state 10 specifically so `UTgMatchLobby` breaks its cache, executes `FindQueueById(434)`, and copies `QueueState: 7` into `[UTgMatchLobby + 0x1d8]`)
+- **Queue ID (`Token 703`)**: `434` (Transitions from `0` in state 8 to `434` in state 10 specifically so `UTgMatchLobby` breaks its cache, executes `FindQueueById(434)`, and copies `QueueEntry[434].QueueState` into `[UTgMatchLobby + 0x1d8]`)
 - **Launch Seconds (`Token 1690`)**: `0` (Countdown elapsed)
 - **Player Queue State (`Token 2191`)**: `7` (`MQ_LAUNCHING`)
 - **Client Behavior & Launch Gate Verification**:
@@ -49,19 +49,27 @@ In Project Immortal's cleanroom architecture, the **Gazebo** state machine contr
     When `MATCH_STATUS` (Function ID `0x392dcda5`) is processed, `FUN_140d39e50` reads `UTgMatchLobby->QueueState` at offset `+0x1d8`. It evaluates:
     $$(\text{QueueState} - 7) \ \& \ \sim 2 == 0 \iff \text{QueueState} \in \{7, 9\}$$
     If `QueueState` is not 7 (`MQ_LAUNCHING`) or 9, the handler immediately branches to bailout (`0x140d3a1ed`), silently dropping the assignment of map session descriptors at `[this + 0x874]` and `[this + 0x88c]`.
-    Because queue status and definitions are registered for queue ID 434, passing `queue_id = 0` causes `FindQueueById(0)` to return null, preventing `QueueState` from propagating into `[UTgMatchLobby + 0x1d8]`. Transitioning `queue_id` from `0` in state 8 to `434` in state 10 breaks the queue cache check, executes `FindQueueById(434)` (`FUN_1800f4169`), and copies `QueueState: 7` into `[UTgMatchLobby + 0x1d8]`, satisfying the gate and arming the session descriptors for map travel.
+  - **Token 1646 Wire Mechanism via `OnQueryServers` (`0xaf434825`)**:
+    Decompiler analysis (`ShippingPC-ChaosGame.exe` & `MctsInterface.dll`, RCA `MISSION-2026-IMMORTAL-RCA-QUEUE-STATE-001`) reveals:
+    1. `MATCH_STATUS` (0x392dcda5) never writes `QueueState` directly (Token 2191 is unparsed into lobby state).
+    2. `QUEUE_STATUS` (0x2cdbafe1) only updates Token 36 and 912 in `FUN_1400e7500`, discarding Token 1646.
+    3. Token 1646 (`MCTS_TOKEN_QUEUE_STATE`, `0x066e`) is parsed **EXCLUSIVELY** by `FUN_1400e5c50` under `OnQueryServers` (`0xaf434825` / `MCTS_FUNCTION_ID_QUERY_SERVERS`), which updates `QueueEntry[queue_id].QueueState = token_value`.
+    4. Therefore, prior to dispatching State 10 `MATCH_STATUS`, the auth gateway MUST emit `OnQueryServers` (`0xaf434825`) with Token 1646 = 7 to prime `QueueEntry[434].QueueState = 7` in client memory.
+    5. When `MATCH_STATUS` state 10 arrives with `queue_id = 434`, `UTgMatchLobby` breaks its cache check, calls `FindQueueById(434)` (`FUN_1800f4169`), and copies `QueueEntry[434].QueueState` (now 7!) into `[UTgMatchLobby + 0x1d8]`, satisfying the gate `0x140d39f1b` and arming the session descriptors for map travel.
 
 ---
 
 ## 3. Change Detection Mechanics in `UTgMatchLobby` and `MctsInterface.dll`
 
-1. **`CMctsMatchMaking::OnMatchStatus` (`FUN_1800f5390`)**:
+1. **`CMctsMatchMaking::OnQueryServers` (`FUN_1400e5c50`)**:
+   - Parses Table 242 and extracts Token 1646 (`MCTS_TOKEN_QUEUE_STATE`), committing the value into `QueueEntry[queue_id].QueueState`.
+2. **`CMctsMatchMaking::OnMatchStatus` (`FUN_1800f5390`)**:
    - Compares incoming `MATCH_STATUS` tokens against cached session values.
-   - When `QueueId` transitions (`0 -> 434`), `FindQueueById(434)` retrieves the registered queue and synchronizes its `QueueState = 7` into `UTgMatchLobby`.
-2. **`UTgMatchLobby::Tick` (`0x1400d2560`)**:
+   - When `QueueId` transitions (`0 -> 434`), `FindQueueById(434)` retrieves the registered queue and synchronizes its `QueueEntry[434].QueueState` into `[UTgMatchLobby + 0x1d8]`.
+3. **`UTgMatchLobby::Tick` (`0x1400d2560`)**:
    - In each tick, evaluates whether `QueueState == 7` and `MatchLobbyState == 10`.
    - When verified, terminates UI input processing and transitions the engine toward map travel.
-3. **Map Session Descriptors**:
+4. **Map Session Descriptors**:
    - When `QueueState == 7`, `FUN_140d39e50` loads session tokens from session manager `[+0x480]` and stores them at `[rbx + 0x874]` and `[rbx + 0x88c]`.
    - Downstream `ReceiveChangeMap` (`0x141576a00`) requires these descriptors to initialize the transition manifest and execute map travel (`Browse: Shootingrange_P`).
 

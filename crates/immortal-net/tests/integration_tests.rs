@@ -1572,6 +1572,31 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         assert_eq!(champ_id, expected_champ); // agyis: no-mutant
     }
 
+    // (b-queue-def-launching) QUEUE_DEFINITION (Function ID 0xaf434825, Table 242, queue 434, state 7 MQ_LAUNCHING)
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let q_def7_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let q_def7_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(q_def7_flags, 0x0000); // agyis: no-mutant
+    assert_eq!(q_def7_len, 63); // agyis: no-mutant
+    let mut q_def7_payload = vec![0u8; q_def7_len];
+    stream.read_exact(&mut q_def7_payload).await.unwrap();
+    assert_eq!(q_def7_payload[0], 0x00); // agyis: no-mutant
+    let q_def7_func_id = u32::from_le_bytes([
+        q_def7_payload[1],
+        q_def7_payload[2],
+        q_def7_payload[3],
+        q_def7_payload[4],
+    ]); // agyis: no-mutant
+    assert_eq!(q_def7_func_id, immortal_net::MCTS_FUNCTION_ID_QUERY_SERVERS); // agyis: no-mutant
+    assert_eq!(q_def7_func_id, 0xaf434825); // agyis: no-mutant
+    let q_def7_v1646 = u32::from_le_bytes([
+        q_def7_payload[47],
+        q_def7_payload[48],
+        q_def7_payload[49],
+        q_def7_payload[50],
+    ]); // agyis: no-mutant
+    assert_eq!(q_def7_v1646, 7); // agyis: no-mutant
+
     // (b-queue-status-launching) QUEUE_STATUS (Function ID 0x2cdbafe1, Table 242, queue 434, state 7 MQ_LAUNCHING)
     stream.read_exact(&mut header_buf).await.unwrap();
     let q_status7_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;

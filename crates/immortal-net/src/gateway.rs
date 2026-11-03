@@ -247,7 +247,7 @@ async fn handle_connection(
                     .any(|w| w == MCTS_TOKEN_QUEUE_CATEGORY.to_le_bytes());
             if is_query_servers {
                 let queue_def_frame =
-                    create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE);
+                    create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE, 0);
                 write_tx
                     .send(queue_def_frame)
                     .await
@@ -286,7 +286,7 @@ async fn handle_connection(
                     // -> MATCH_STATUS state 10 with members table (queue 434, match 878850364, queue_state 7 MQ_LAUNCHING)
                     // -> Map Transition
                     let queue_def_frame =
-                        create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE);
+                        create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE, 0);
                     if tx.send(queue_def_frame).await.is_err() {
                         return;
                     }
@@ -398,6 +398,26 @@ async fn handle_connection(
                         ))
                         .await;
                     }
+
+                    // Ground truth from cleanroom decompiler analysis (RCA MISSION-2026-IMMORTAL-RCA-QUEUE-STATE-001):
+                    // QUEUE_STATUS (0x2cdbafe1) only updates Token 36 and 912 in FUN_1400e7500, discarding Token 1646.
+                    // Token 1646 (MCTS_TOKEN_QUEUE_STATE) is parsed EXCLUSIVELY by FUN_1400e5c50 under OnQueryServers
+                    // (0xaf434825 / MCTS_FUNCTION_ID_QUERY_SERVERS), which sets QueueEntry[434].QueueState = 7 (MQ_LAUNCHING).
+                    // In ShippingPC-ChaosGame.exe: FUN_140d39e50 at 0x140d39f0d..0x140d39f1b, the client evaluates
+                    // UTgMatchLobby->QueueState at offset 0x1d8, asserting QueueState == 7 or 9 before arming map session
+                    // descriptors [rbx+0x874] and [rbx+0x88c].
+                    // Dispatching OnQueryServers primes QueueEntry[434].QueueState = 7 in client memory. When MATCH_STATUS 10
+                    // arrives with QueueId = 434, UTgMatchLobby breaks its cache, executes FindQueueById(434), and copies
+                    // QueueEntry[434].QueueState (7) into [UTgMatchLobby + 0x1d8], satisfying gate 0x140d39f1b.
+                    let queue_def_launching =
+                        create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE, 7);
+                    if tx.send(queue_def_launching).await.is_err() {
+                        return;
+                    }
+                    info!(
+                        "Dispatched MCTS queue definition priming QueueState = 7 (queue_id 434) for {}",
+                        peer_addr
+                    );
 
                     let queue_status_launching = create_mcts_queue_status_frame(434, 7, 0);
                     if tx.send(queue_status_launching).await.is_err() {
@@ -525,7 +545,7 @@ async fn handle_connection(
                 .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
 
             let queue_def_frame =
-                create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE);
+                create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE, 0);
             write_tx
                 .send(queue_def_frame)
                 .await
