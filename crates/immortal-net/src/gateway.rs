@@ -404,11 +404,14 @@ async fn handle_connection(
                         return;
                     }
 
-                    // Transitioning to QueueId 434 in state 10 breaks the UTgMatchLobby queue cache
-                    // check (since state 8 had QueueId 0), executing FindQueueById(434) and CopyFromMctsQueue
-                    // to propagate QueueState 7 (MQ_LAUNCHING) into UTgMatchLobby.
+                    // Authentic retail traffic (live_paladins_launch.log line 1090) confirms MatchStatus 10 carries
+                    // QueueState: 7 (MQ_LAUNCHING) and QueueId: 0:
+                    // [MATCH LOBBY LOG]: RecievedMatchStatus MCTS, LaunchTime: 0, MatchLobbyState: 10, QueueState: 7, PlayerLobbyState: 5, MatchId 878850364, QueueId 0
+                    // In ShippingPC-ChaosGame.exe: FUN_140d39e50 at 0x140d39f0d..0x140d39f1b, the client evaluates
+                    // UTgMatchLobby->QueueState at offset 0x1d8, asserting QueueState == 7 or 9 before arming map session
+                    // descriptors [rbx+0x874] and [rbx+0x88c].
                     let match_status_10 = create_mcts_match_status_with_members_frame(
-                        434,
+                        0,
                         878850364,
                         10,
                         0,
@@ -438,12 +441,12 @@ async fn handle_connection(
                     // and ShippingPC-ChaosGame.exe (FUN_140d39e50 line 85).
                     // Function ID 0x847de68b is the authentic ChangeMap RPC. Legacy 0xe621824e triggers an explicit
                     // virtual logoff routine (*param_1 + 0xe8)() when Gazebo is active.
-                    // Token 1536 (compel) is set to false (0x00), Token 682 is Shooting Range mapGameId (1615),
-                    // and Token 685 is mapInstanceId (1282927737).
+                    // Token 1536 (compel) is set to true (0x01) to force immediate engine scene transition,
+                    // Token 682 is Shooting Range mapGameId (1615), and Token 685 is mapInstanceId (1282927737).
                     let change_map_frame = create_mcts_change_map_frame(
                         MAP_GAME_ID_SHOOTING_RANGE,
                         MAP_INSTANCE_ID_SHOOTING_RANGE as u64,
-                        false,
+                        true,
                     );
                     if tx.send(change_map_frame).await.is_err() {
                         return;

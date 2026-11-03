@@ -38,14 +38,18 @@ In Project Immortal's cleanroom architecture, the **Gazebo** state machine contr
 ### 2.2 State 10: Match Finalized / Launching
 - **Match Lobby State (`Token 1342`)**: `10` (`MATCH_LOBBY_STATE_LAUNCHING`)
 - **Player Lobby State (`Token 1344`)**: `5` (`PLAYER_LOBBY_STATE_LOCKED`)
-- **Queue ID (`Token 703`)**: `434` (Shooting Range Queue ID)
+- **Queue ID (`Token 703`)**: `0` (Reset to 0, matching authentic retail ground truth `live_paladins_launch.log` line 1090)
 - **Launch Seconds (`Token 1690`)**: `0` (Countdown elapsed)
 - **Player Queue State (`Token 2191`)**: `7` (`MQ_LAUNCHING`)
-- **Client Behavior**:
+- **Client Behavior & Launch Gate Verification**:
   - The transition of `PlayerLobbyState` from `0` to `5` satisfies the launch gate condition:
     $$\text{PlayerLobbyState}_{\text{OLD}} < 1 \quad \land \quad \text{PlayerLobbyState}_{\text{NEW}} > 0 \quad \land \quad \text{MatchLobbyState} \neq 1$$
   - Fires UnrealScript `AUTOPICK` event (`0x3af7`).
-  - Transitioning `QueueId` from `0` to `434` breaks the cached queue check in `UTgMatchLobby`, triggering `CMctsMatchMaking::FindQueueById(434)` (`FUN_1800f4169`) and copying `QueueState == 7` (`MQ_LAUNCHING`) into `[UTgMatchLobby + 0x1d8]`.
+  - **`QueueState 7` Map Session Descriptor Arming Gate (`FUN_140d39e50` at `0x140d39f0d`..`0x140d39f1b`)**:
+    When `MATCH_STATUS` (Function ID `0x392dcda5`) is processed, `FUN_140d39e50` reads `UTgMatchLobby->QueueState` at offset `+0x1d8`. It evaluates:
+    $$(\text{QueueState} - 7) \ \& \ \sim 2 == 0 \iff \text{QueueState} \in \{7, 9\}$$
+    If `QueueState` is not 7 (`MQ_LAUNCHING`) or 9, the handler immediately branches to bailout (`0x140d3a1ed`), silently dropping the assignment of map session descriptors at `[this + 0x874]` and `[this + 0x88c]`.
+    Propagating `create_mcts_queue_status_frame(434, 7, 0)` immediately prior to `match_status_10` ensures `[UTgMatchLobby + 0x1d8] == 7`, satisfying the gate and arming the session descriptors for map travel.
 
 ---
 
@@ -53,11 +57,13 @@ In Project Immortal's cleanroom architecture, the **Gazebo** state machine contr
 
 1. **`CMctsMatchMaking::OnMatchStatus` (`FUN_1800f5390`)**:
    - Compares incoming `MATCH_STATUS` tokens against cached session values.
-   - If `QueueId` changed (`0 -> 434`), `FindQueueById` looks up the corresponding `CMctsQueue` registered via `QUERY_SERVERS` (`0xaf434825`).
-   - Copies queue attributes and flags into `UTgMatchLobby`.
+   - Evaluates queue status and synchronizes queue attributes into `UTgMatchLobby`.
 2. **`UTgMatchLobby::Tick` (`0x1400d2560`)**:
    - In each tick, evaluates whether `QueueState == 7` and `MatchLobbyState == 10`.
    - When verified, terminates UI input processing and transitions the engine toward map travel.
+3. **Map Session Descriptors**:
+   - When `QueueState == 7`, `FUN_140d39e50` loads session tokens from session manager `[+0x480]` and stores them at `[rbx + 0x874]` and `[rbx + 0x88c]`.
+   - Downstream `ReceiveChangeMap` (`0x141576a00`) requires these descriptors to initialize the transition manifest and execute map travel (`Browse: Shootingrange_P`).
 
 ---
 
@@ -72,7 +78,7 @@ In Project Immortal's cleanroom architecture, the **Gazebo** state machine contr
   - Bytes 1..4: `0x847de68b` (Wire LE: `[0x8b, 0xe6, 0x7d, 0x84]`)
   - Bytes 5..6: Total fields count = `3` (`[0x03, 0x00]`)
   - **Group 0x1000** (1 field, header `0x1001`):
-    - Token 1536 (`0x0600`, `MCTS_TOKEN_COMPEL_FLAG`): `0x00` (false) or `0x01` (true)
+    - Token 1536 (`0x0600`, `MCTS_TOKEN_COMPEL_FLAG`): `0x01` (`true`, forces immediate engine map transition)
   - **Group 0x3000** (1 field, header `0x3001`):
     - Token 682 (`0x02aa`, `MCTS_TOKEN_MAP_GAME_ID`): `1615` (Shooting Range, `[0x4f, 0x06, 0x00, 0x00]`)
   - **Group 0x4000** (1 field, header `0x4001`):

@@ -93,10 +93,17 @@
 - **Status**: 🟢 Verified (Exit code 0).
 
 ### Claim 11: MCTS ChangeMap RPC Dispatch (`OBL-MCTS-008` / `0x847de68b`)
-- **Behavioral Requirement**: Transitioning an active Gazebo match lobby into dedicated map travel requires dispatching authentic `ChangeMap` RPC (function hash `0x847de68b` / `2222843531`). The payload contains Token 1536 (`COMPEL` = false, Group `0x1001`), Token 682 (`MAP_GAME_ID` = 1615, Group `0x3001`), and Token 685 (`MAP_INSTANCE_ID` = 1282927737, Group `0x4001`). Unlike legacy function ID `0xe621824e` which triggers the virtual logoff routine `(*param_1 + 0xe8)()` when Gazebo is active (`ShippingPC-ChaosGame.exe: FUN_140d39e50`), `0x847de68b` is routed to `FUN_1800da6e0` in `MctsInterface.dll`, preserving client session state and initiating map progression.
+- **Behavioral Requirement**: Transitioning an active Gazebo match lobby into dedicated map travel requires dispatching authentic `ChangeMap` RPC (function hash `0x847de68b` / `2222843531`). The payload contains Token 1536 (`COMPEL` = true (Token 1536 = 0x01), Group `0x1001`), Token 682 (`MAP_GAME_ID` = 1615, Group `0x3001`), and Token 685 (`MAP_INSTANCE_ID` = 1282927737, Group `0x4001`). Unlike legacy function ID `0xe621824e` which triggers the virtual logoff routine `(*param_1 + 0xe8)()` when Gazebo is active (`ShippingPC-ChaosGame.exe: FUN_140d39e50`), `0x847de68b` is routed to `FUN_1800da6e0` in `MctsInterface.dll`, preserving client session state and initiating map progression.
 - **Evidence Reference**: `EV-BIN-001` (`ShippingPC-ChaosGame.exe: FUN_140d39e50` line 85), `EV-BIN-002` (`MctsInterface.dll: CMctsGameServer::ProcessMarshal` at `0x1800db730` -> `FUN_1800da6e0`), `EV-NET-002` (Flight 021 diagnostic trace `[0037.40]`).
 - **Cleanroom Implementation**: `crates/immortal-net/src/mcts_handshake.rs` (`create_mcts_change_map_frame`, `MCTS_FUNCTION_ID_CHANGE_MAP`), `crates/immortal-net/src/gateway.rs`.
 - **Verification Gate**: `cargo test --package immortal-net` (`test_create_mcts_change_map_frame_structure`, `test_auth_gateway_live_mcts_two_step_exchange`).
+- **Status**: 🟢 Verified (Exit code 0).
+
+### Claim 12: Gazebo QueueState 7 Launch Gate (`OBL-MCTS-009`)
+- **Behavioral Requirement**: In `ShippingPC-ChaosGame.exe`, receipt of `MATCH_STATUS` (Function ID `0x392dcda5`) in Gazebo evaluates `UTgMatchLobby->QueueState` at offset `+0x1d8`. The client enforces that `QueueState == 7` (`MQ_LAUNCHING`) or `9`. If `QueueState` is not 7 or 9, execution bails out at `0x140d39f1b`, failing to arm the map session descriptors (`[rbx+0x874]` and `[rbx+0x88c]`), which causes downstream map travel (`ReceiveChangeMap` at `0x141576a00`) to fail silently. Furthermore, authentic retail traces (`live_paladins_launch.log` line 1090) confirm that `MATCH_STATUS` state 10 carries `QueueId: 0` (resetting from prior matchmaking queue selection) and `create_mcts_change_map_frame` requires `compel = true` (`Token 1536 = 0x01`) to enforce unconditional map travel.
+- **Evidence Reference**: `EV-BIN-001` (`ShippingPC-ChaosGame.exe: FUN_140d39e50` at `0x140d39f0d`..`0x140d39f1b`), `EV-NET-002` (`live_paladins_launch.log:1090`), `EV-BIN-002` (`MctsInterface.dll: FUN_1800da6e0`).
+- **Cleanroom Implementation**: `crates/immortal-net/src/gateway.rs`, `crates/immortal-net/src/mcts_handshake.rs`.
+- **Verification Gate**: `cargo test --package immortal-net` (`test_gazebo_lifecycle_state8_to_state10_transition_invariants`, `test_auth_gateway_live_mcts_two_step_exchange`).
 - **Status**: 🟢 Verified (Exit code 0).
 
 ---

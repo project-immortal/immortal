@@ -1749,7 +1749,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         status10_payload[54],
     ]); // agyis: no-mutant
     assert_eq!(s10_match_id, 878850364); // agyis: no-mutant
-    assert_eq!(s10_queue_id, 434); // agyis: no-mutant
+    assert_eq!(s10_queue_id, 0); // agyis: no-mutant
 
     // Group 0x6000 (1 table: Table 312 DATA_SET_MEMBERS)
     assert_eq!(
@@ -1957,7 +1957,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         &[0x02, 0x00, 0x1e, 0x61, 127, 0, 0, 1]
     ); // agyis: no-mutant
 
-    // (e) CHANGE_MAP wire frame (Function ID 0x847de68b, len 32, compel false, mapGameId 1615, mapInstanceId 1282927737)
+    // (e) CHANGE_MAP wire frame (Function ID 0x847de68b, len 32, compel true, mapGameId 1615, mapInstanceId 1282927737)
     stream.read_exact(&mut header_buf).await.unwrap();
     let change_map_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
     let change_map_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
@@ -1982,7 +1982,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         3
     ); // agyis: no-mutant (3 total fields)
 
-    // Group 0x1000 (1 field): Token 1536 (compel = false / 0x00)
+    // Group 0x1000 (1 field): Token 1536 (compel = true / 0x01)
     assert_eq!(
         u16::from_le_bytes([change_map_payload[7], change_map_payload[8]]),
         0x1001
@@ -1991,7 +1991,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         u16::from_le_bytes([change_map_payload[9], change_map_payload[10]]),
         1536
     ); // agyis: no-mutant
-    assert_eq!(change_map_payload[11], 0); // agyis: no-mutant
+    assert_eq!(change_map_payload[11], 1); // agyis: no-mutant
 
     // Group 0x3000 (1 field): Token 682 (mapGameId = 1615)
     assert_eq!(
@@ -2031,7 +2031,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     ]); // agyis: no-mutant
     assert_eq!(trans_map_instance_id, 1282927737); // agyis: no-mutant
 
-    // 5. Step 5: Live sequence completes at MATCH_STATUS 10 and change_map frame (0x847de68b with compel=false).
+    // 5. Step 5: Live sequence completes at MATCH_STATUS 10 and change_map frame (0x847de68b with compel=true).
     // Subsequent post-login frame (champion select with Fernando) is drained by decoupled reader
     // without emitting bogus encrypted ciphertext ACK and stream remains connected.
     stream.write_all(&champ_frame).await.unwrap();
@@ -2161,8 +2161,8 @@ fn test_gazebo_lifecycle_state8_to_state10_transition_invariants() {
     // Verifies the Gazebo lifecycle state machine transition sequence documented in
     // docs/protocol/mcts_gazebo_lifecycle.md:
     // - State 8: PlayerLobbyState = 0, QueueId = 0, LaunchTime = 30.
-    // - State 10: PlayerLobbyState = 5, QueueId = 434, LaunchTime = 0.
-    // - ChangeMap RPC: Function ID = 0x847de68b, compel = false, mapGameId = 1615, mapInstanceId = 1282927737.
+    // - State 10: PlayerLobbyState = 5, QueueId = 0, LaunchTime = 0, QueueState = 7.
+    // - ChangeMap RPC: Function ID = 0x847de68b, compel = true, mapGameId = 1615, mapInstanceId = 1282927737.
 
     let account_id = 8302401u64;
     let match_id = 878850364u64;
@@ -2229,7 +2229,7 @@ fn test_gazebo_lifecycle_state8_to_state10_transition_invariants() {
 
     // 2. Construct State 10: Match Finalized / Launching
     let frame_10 = immortal_net::create_mcts_match_status_with_members_frame(
-        434,
+        0,
         match_id,
         10,
         0,
@@ -2285,7 +2285,7 @@ fn test_gazebo_lifecycle_state8_to_state10_transition_invariants() {
         payload_10[53],
         payload_10[54],
     ]);
-    assert_eq!(s10_queue_id, 434);
+    assert_eq!(s10_queue_id, 0);
 
     // 3. Assert State Invariant Deltas (Gate Conditions)
     // Invariant A: PlayerLobbyState 0 -> 5 (Satisfies client launch gate condition: OLD < 1 && NEW > 0)
@@ -2298,9 +2298,9 @@ fn test_gazebo_lifecycle_state8_to_state10_transition_invariants() {
         "State 10 PlayerLobbyState must be > 0"
     );
 
-    // Invariant B: QueueId 0 -> 434 (Forces UTgMatchLobby queue cache invalidation)
+    // Invariant B: QueueId is 0 in state 10 (Matching authentic retail live_paladins_launch.log line 1090)
     assert_eq!(s8_queue_id, 0);
-    assert_eq!(s10_queue_id, 434);
+    assert_eq!(s10_queue_id, 0);
 
     // Invariant C: LaunchTime 30 -> 0 (Timer expires, triggers match launch)
     assert_eq!(s8_launch_time, 30);
@@ -2318,7 +2318,7 @@ fn test_gazebo_lifecycle_state8_to_state10_transition_invariants() {
     let change_map_frame = immortal_net::create_mcts_change_map_frame(
         immortal_net::MAP_GAME_ID_SHOOTING_RANGE,
         immortal_net::MAP_INSTANCE_ID_SHOOTING_RANGE as u64,
-        false,
+        true,
     );
     assert_eq!(change_map_frame.len(), 36);
     let cm_payload = &change_map_frame[4..];
@@ -2326,7 +2326,7 @@ fn test_gazebo_lifecycle_state8_to_state10_transition_invariants() {
         u32::from_le_bytes([cm_payload[1], cm_payload[2], cm_payload[3], cm_payload[4]]);
     assert_eq!(cm_func_id, immortal_net::MCTS_FUNCTION_ID_CHANGE_MAP);
     assert_eq!(cm_func_id, 0x847de68b);
-    assert_eq!(cm_payload[11], 0); // compel = false
+    assert_eq!(cm_payload[11], 1); // compel = true
     let cm_game_id = u32::from_le_bytes([
         cm_payload[16],
         cm_payload[17],
