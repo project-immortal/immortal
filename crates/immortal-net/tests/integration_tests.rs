@@ -1749,7 +1749,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         status10_payload[54],
     ]); // agyis: no-mutant
     assert_eq!(s10_match_id, 878850364); // agyis: no-mutant
-    assert_eq!(s10_queue_id, 0); // agyis: no-mutant
+    assert_eq!(s10_queue_id, 434); // agyis: no-mutant
 
     // Group 0x6000 (1 table: Table 312 DATA_SET_MEMBERS)
     assert_eq!(
@@ -2161,7 +2161,7 @@ fn test_gazebo_lifecycle_state8_to_state10_transition_invariants() {
     // Verifies the Gazebo lifecycle state machine transition sequence documented in
     // docs/protocol/mcts_gazebo_lifecycle.md:
     // - State 8: PlayerLobbyState = 0, QueueId = 0, LaunchTime = 30.
-    // - State 10: PlayerLobbyState = 5, QueueId = 0, LaunchTime = 0, QueueState = 7.
+    // - State 10: PlayerLobbyState = 5, QueueId = 434, LaunchTime = 0, QueueState = 7.
     // - ChangeMap RPC: Function ID = 0x847de68b, compel = true, mapGameId = 1615, mapInstanceId = 1282927737.
 
     let account_id = 8302401u64;
@@ -2229,7 +2229,7 @@ fn test_gazebo_lifecycle_state8_to_state10_transition_invariants() {
 
     // 2. Construct State 10: Match Finalized / Launching
     let frame_10 = immortal_net::create_mcts_match_status_with_members_frame(
-        0,
+        434,
         match_id,
         10,
         0,
@@ -2285,7 +2285,7 @@ fn test_gazebo_lifecycle_state8_to_state10_transition_invariants() {
         payload_10[53],
         payload_10[54],
     ]);
-    assert_eq!(s10_queue_id, 0);
+    assert_eq!(s10_queue_id, 434);
 
     // 3. Assert State Invariant Deltas (Gate Conditions)
     // Invariant A: PlayerLobbyState 0 -> 5 (Satisfies client launch gate condition: OLD < 1 && NEW > 0)
@@ -2298,9 +2298,9 @@ fn test_gazebo_lifecycle_state8_to_state10_transition_invariants() {
         "State 10 PlayerLobbyState must be > 0"
     );
 
-    // Invariant B: QueueId is 0 in state 10 (Matching authentic retail live_paladins_launch.log line 1090)
+    // Invariant B: QueueId transitions 0 -> 434 in state 10 (Breaks UTgMatchLobby cache so FindQueueById(434) copies QueueState 7 into [UTgMatchLobby + 0x1d8])
     assert_eq!(s8_queue_id, 0);
-    assert_eq!(s10_queue_id, 0);
+    assert_eq!(s10_queue_id, 434);
 
     // Invariant C: LaunchTime 30 -> 0 (Timer expires, triggers match launch)
     assert_eq!(s8_launch_time, 30);

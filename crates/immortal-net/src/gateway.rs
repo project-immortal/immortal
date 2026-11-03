@@ -404,14 +404,14 @@ async fn handle_connection(
                         return;
                     }
 
-                    // Authentic retail traffic (live_paladins_launch.log line 1090) confirms MatchStatus 10 carries
-                    // QueueState: 7 (MQ_LAUNCHING) and QueueId: 0:
-                    // [MATCH LOBBY LOG]: RecievedMatchStatus MCTS, LaunchTime: 0, MatchLobbyState: 10, QueueState: 7, PlayerLobbyState: 5, MatchId 878850364, QueueId 0
                     // In ShippingPC-ChaosGame.exe: FUN_140d39e50 at 0x140d39f0d..0x140d39f1b, the client evaluates
                     // UTgMatchLobby->QueueState at offset 0x1d8, asserting QueueState == 7 or 9 before arming map session
                     // descriptors [rbx+0x874] and [rbx+0x88c].
+                    // QueueId transitions from 0 (in state 8) to 434 (in state 10) so UTgMatchLobby breaks its cache,
+                    // executes FindQueueById(434), and copies QueueState = 7 (MQ_LAUNCHING) into [UTgMatchLobby + 0x1d8],
+                    // satisfying gate 0x140d39f1b.
                     let match_status_10 = create_mcts_match_status_with_members_frame(
-                        0,
+                        434,
                         878850364,
                         10,
                         0,
