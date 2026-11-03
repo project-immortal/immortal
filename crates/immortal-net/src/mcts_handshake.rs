@@ -1172,6 +1172,56 @@ pub fn create_mcts_on_match_invite_frame(
     frame
 }
 
+/// Authentic Function ID for `CMctsNetwork::QUEUE_STATE_UPDATE` (0x39d5ce77).
+/// Reverse engineered from `ShippingPC-ChaosGame.exe` (`FUN_1400d33e0`, `FUN_1400d1cc0`, `FUN_1400caf60`, and `FUN_1400e5c50`).
+/// Updates `[UTgMatchLobby + 0x1d8]` (`QueueState`) via Token 1646 (`MCTS_TOKEN_QUEUE_STATE`).
+pub const MCTS_FUNCTION_ID_QUEUE_STATE_UPDATE: u32 = 0x39d5ce77;
+
+/// Builds an authentic live MCTS queue state update wire frame (0x39d5ce77).
+///
+/// Reverse engineered from `ShippingPC-ChaosGame.exe` (`FUN_1400caf60` and `FUN_1400e5c50`):
+/// - Function ID: `0x39d5ce77`
+/// - Total fields: 3
+/// - Group 0x3000 (1 field): Token 1646 (`MCTS_TOKEN_QUEUE_STATE`) = `queue_state` (u32)
+/// - Group 0x4000 (2 fields): Token 700 (`MCTS_TOKEN_MATCH_ID`) = `match_id` (u64), Token 703 (`MCTS_TOKEN_MATCH_QUEUE_ID`) = `queue_id` (u64)
+pub fn create_mcts_queue_state_update_frame(
+    match_id: u64,
+    queue_id: u64,
+    queue_state: u32,
+) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(37);
+    payload.push(0x00); // this[0x30]
+    payload.extend_from_slice(&MCTS_FUNCTION_ID_QUEUE_STATE_UPDATE.to_le_bytes());
+
+    // CMarshalRow: total fields = 3 (1 dword field in Group 0x3000 + 2 qword fields in Group 0x4000)
+    let total_fields: u16 = 3;
+    payload.extend_from_slice(&total_fields.to_le_bytes());
+
+    // Group 0x3000 (4-byte fields: 1 field)
+    let grp4_hdr: u16 = 0x3000 | 1;
+    payload.extend_from_slice(&grp4_hdr.to_le_bytes());
+    payload.extend_from_slice(&MCTS_TOKEN_QUEUE_STATE.to_le_bytes()); // Token 1646: queue_state
+    payload.extend_from_slice(&queue_state.to_le_bytes());
+
+    // Group 0x4000 (8-byte fields: 2 fields)
+    let grp8_hdr: u16 = 0x4000 | 2;
+    payload.extend_from_slice(&grp8_hdr.to_le_bytes());
+    payload.extend_from_slice(&MCTS_TOKEN_MATCH_ID.to_le_bytes()); // Token 700: MATCH_ID
+    payload.extend_from_slice(&MCTS_TOKEN_MATCH_QUEUE_ID.to_le_bytes()); // Token 703: MATCH_QUEUE_ID
+
+    payload.extend_from_slice(&match_id.to_le_bytes());
+    payload.extend_from_slice(&queue_id.to_le_bytes());
+
+    // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
+    let mut frame = Vec::with_capacity(4 + payload.len());
+    let payload_len = payload.len() as u16;
+    frame.extend_from_slice(&payload_len.to_le_bytes()); // agyis: no-mutant wire framing
+    frame.extend_from_slice(&0x0000u16.to_le_bytes()); // agyis: no-mutant wire framing
+    frame.extend_from_slice(&payload); // agyis: no-mutant wire framing
+
+    frame
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2166,5 +2216,71 @@ mod tests {
             payload_launching[50],
         ]);
         assert_eq!(v1646_launching, 7);
+    }
+
+    #[test]
+    fn test_create_mcts_queue_state_update_frame_structure() {
+        // agyis: no-mutant unit test
+        let frame = create_mcts_queue_state_update_frame(878850364, 434, 7);
+        assert_eq!(frame.len(), 41);
+
+        let length = u16::from_le_bytes([frame[0], frame[1]]) as usize;
+        assert_eq!(length, frame.len() - 4);
+        assert_eq!(length, 37);
+        let flags = u16::from_le_bytes([frame[2], frame[3]]);
+        assert_eq!(flags, 0x0000);
+
+        let payload = &frame[4..];
+        assert_eq!(payload.len(), 37);
+        assert_eq!(payload[0], 0x00); // this[0x30]
+        let func_id_le = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]);
+        assert_eq!(func_id_le, MCTS_FUNCTION_ID_QUEUE_STATE_UPDATE);
+        assert_eq!(func_id_le, 0x39d5ce77);
+
+        let total_fields = u16::from_le_bytes([payload[5], payload[6]]);
+        assert_eq!(total_fields, 3);
+
+        // Group 0x3000: Token 1646 (MCTS_TOKEN_QUEUE_STATE = 7)
+        let grp4 = u16::from_le_bytes([payload[7], payload[8]]);
+        assert_eq!(grp4, 0x3001);
+        let t1646 = u16::from_le_bytes([payload[9], payload[10]]);
+        assert_eq!(t1646, MCTS_TOKEN_QUEUE_STATE);
+        assert_eq!(t1646, 1646);
+        let v1646 = u32::from_le_bytes([payload[11], payload[12], payload[13], payload[14]]);
+        assert_eq!(v1646, 7);
+
+        // Group 0x4000: Tokens 700 (MATCH_ID), 703 (MATCH_QUEUE_ID)
+        let grp8 = u16::from_le_bytes([payload[15], payload[16]]);
+        assert_eq!(grp8, 0x4002);
+        let t700 = u16::from_le_bytes([payload[17], payload[18]]);
+        let t703 = u16::from_le_bytes([payload[19], payload[20]]);
+        assert_eq!(t700, MCTS_TOKEN_MATCH_ID);
+        assert_eq!(t700, 700);
+        assert_eq!(t703, MCTS_TOKEN_MATCH_QUEUE_ID);
+        assert_eq!(t703, 703);
+
+        let v700 = u64::from_le_bytes([
+            payload[21],
+            payload[22],
+            payload[23],
+            payload[24],
+            payload[25],
+            payload[26],
+            payload[27],
+            payload[28],
+        ]);
+        assert_eq!(v700, 878850364);
+
+        let v703 = u64::from_le_bytes([
+            payload[29],
+            payload[30],
+            payload[31],
+            payload[32],
+            payload[33],
+            payload[34],
+            payload[35],
+            payload[36],
+        ]);
+        assert_eq!(v703, 434);
     }
 }

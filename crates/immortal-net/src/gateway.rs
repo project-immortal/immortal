@@ -155,10 +155,10 @@ pub use crate::mcts_handshake::{
     create_mcts_map_transition_frame, create_mcts_match_invitation_frame,
     create_mcts_match_status_frame, create_mcts_match_status_with_members_frame,
     create_mcts_player_svc_change_map_frame, create_mcts_queue_definition_frame,
-    create_mcts_queue_status_frame, BOT_ID_FERNANDO, BOT_ID_VIKTOR, CHUNK1_HANDSHAKE, CHUNK2_ACK,
-    CHUNK3_SESSION, MAP_GAME_ID_SHOOTING_RANGE, MAP_INSTANCE_ID_SHOOTING_RANGE,
-    MCTS_CHAMPION_SELECT_ACK_FRAME, MCTS_CLIENT_AUTH_REQUEST_FLAGS, MCTS_CLIENT_AUTH_REQUEST_LEN,
-    MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
+    create_mcts_queue_state_update_frame, create_mcts_queue_status_frame, BOT_ID_FERNANDO,
+    BOT_ID_VIKTOR, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MAP_GAME_ID_SHOOTING_RANGE,
+    MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
+    MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
     MCTS_FUNCTION_ID_CHAMPION_ROSTER, MCTS_FUNCTION_ID_CHANGE_MAP, MCTS_FUNCTION_ID_MAP_TRANSITION,
     MCTS_FUNCTION_ID_MATCH_INVITATION, MCTS_FUNCTION_ID_MATCH_STATUS,
     MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP,
@@ -423,6 +423,16 @@ async fn handle_connection(
                     if tx.send(queue_status_launching).await.is_err() {
                         return;
                     }
+
+                    let queue_state_update =
+                        create_mcts_queue_state_update_frame(878850364, 434, 7);
+                    if tx.send(queue_state_update).await.is_err() {
+                        return;
+                    }
+                    info!(
+                        "Dispatched MCTS QueueState update frame 0x39d5ce77 (QueueState: 7) for {}",
+                        peer_addr
+                    );
 
                     // In ShippingPC-ChaosGame.exe: FUN_140d39e50 at 0x140d39f0d..0x140d39f1b, the client evaluates
                     // UTgMatchLobby->QueueState at offset 0x1d8, asserting QueueState == 7 or 9 before arming map session
