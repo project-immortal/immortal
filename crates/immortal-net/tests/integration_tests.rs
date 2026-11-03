@@ -455,7 +455,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(u16::from_le_bytes([qdef_payload[33], qdef_payload[34]]), 1); // agyis: no-mutant
     assert_eq!(u16::from_le_bytes([qdef_payload[35], qdef_payload[36]]), 3); // agyis: no-mutant
 
-    // Row Group 0x3002: Token 36 (1), Token 1646 (0)
+    // Row Group 0x3002: Token 36 (1), Token 1646 (7)
     assert_eq!(
         u16::from_le_bytes([qdef_payload[37], qdef_payload[38]]),
         0x3002
@@ -484,7 +484,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
             qdef_payload[49],
             qdef_payload[50]
         ]),
-        0
+        7
     ); // agyis: no-mutant
 
     // Row Group 0x4001: Token 703 (434)

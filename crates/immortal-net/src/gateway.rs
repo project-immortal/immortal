@@ -247,7 +247,7 @@ async fn handle_connection(
                     .any(|w| w == MCTS_TOKEN_QUEUE_CATEGORY.to_le_bytes());
             if is_query_servers {
                 let queue_def_frame =
-                    create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE, 0);
+                    create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE, 7);
                 write_tx
                     .send(queue_def_frame)
                     .await
@@ -286,7 +286,7 @@ async fn handle_connection(
                     // -> MATCH_STATUS state 10 with members table (queue 434, match 878850364, queue_state 7 MQ_LAUNCHING)
                     // -> Map Transition
                     let queue_def_frame =
-                        create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE, 0);
+                        create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE, 7);
                     if tx.send(queue_def_frame).await.is_err() {
                         return;
                     }
@@ -545,7 +545,7 @@ async fn handle_connection(
                 .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
 
             let queue_def_frame =
-                create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE, 0);
+                create_mcts_queue_definition_frame(434, MAP_GAME_ID_SHOOTING_RANGE, 7);
             write_tx
                 .send(queue_def_frame)
                 .await
