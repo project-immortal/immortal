@@ -1,0 +1,32 @@
+{
+  "flight": {
+    "entrypoint": ".agents/commands/flight.py",
+    "description": "Vector 4 automated flight test runner and watchdog",
+    "type": "python"
+  },
+  "game": {
+    "entrypoint": ".agents/commands/game.py",
+    "description": "Control and inspect Paladins game and server processes",
+    "type": "python"
+  },
+  "mcts": {
+    "entrypoint": ".agents/commands/mcts.py",
+    "description": "Look up or calculate MCTS marshal tokens and group headers",
+    "type": "python"
+  },
+  "record": {
+    "entrypoint": ".agents/commands/record.py",
+    "description": "Hardware-accelerated screen recording and clipping via gpu-screen-recorder",
+    "type": "python"
+  },
+  "input": {
+    "entrypoint": ".agents/commands/input.py",
+    "description": "Game window and uinput automation via ydotoold + xdotool",
+    "type": "python"
+  },
+  "screenshot": {
+    "entrypoint": ".agents/commands/screenshot.py",
+    "description": "Capture game window or desktop screenshot",
+    "type": "python"
+  }
+}

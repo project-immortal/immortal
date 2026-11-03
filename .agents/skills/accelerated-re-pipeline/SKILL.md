@@ -46,6 +46,8 @@ Derived from the **Project Immortal** 18-hour empirical milestone breakthrough (
 1. **Zero Disassembly / Decompiled Code in Git**: Never commit proprietary assembly, decompiler C/C++ pseudo-code, or vendor binary bytes into product repositories.
 2. **Typed Obligation Ledgers**: Link every reverse-engineered claim to an immutable evidence record (function address, observed packet token, or capture timestamp).
 3. **Hermetic Test Grounding**: Implementations must be proven correct against cleanroom unit tests and synthetic fixtures before touching live binaries.
+4. **Pre-Analyzed Decompiler Cache Invariant (PSL-INV-009)**: Never invoke decompiler MCP tools or headless analyzers on binaries >10MB without asserting an active pre-analyzed Ghidra project database (`.gpr` with `-noanalysis -readOnly`) via `agyis re patch-rea --check`.
+
 
 ---
 
@@ -131,7 +133,7 @@ Rather than writing custom one-off scripts or guessing wire contracts, agents op
 
 ---
 
-### Tool 4: Automated Flight Test Runner (`dirty flight`)
+### Tool 4: Automated Flight Test Runner (`agyis flight` / `dirty flight`)
 *Automated 90s flight execution with real-time log watchdog, input injection, and keyframe extraction.*
 
 - **When to Apply**:
@@ -139,8 +141,9 @@ Rather than writing custom one-off scripts or guessing wire contracts, agents op
 - **Operational Workflow**:
   1. **Execute Targeted Flight Test**:
      ```bash
-     # Flight run up to map transition milestone with 110s timeout
-     ./scripts/dirtyroom/dirty flight --target map --timeout 110
+     # Native extensible CLI dispatch (ADR-034)
+     agyis flight --target map --timeout 110
+     ./agyis flight --target map --timeout 110
 
      # Target options:
      #   --target menu    : Stop when Main Menu (Lobby State 2) is reached
@@ -159,6 +162,28 @@ Rather than writing custom one-off scripts or guessing wire contracts, agents op
      - Review execution timeline and milestone table: `scratch/recordings/flight_summary_<TIMESTAMP>.md`
      - Inspect captured milestone keyframes: `scratch/recordings/keyframes_<TIMESTAMP>/`
      - Verify video recording: `scratch/recordings/rec_<TIMESTAMP>.mp4`
+
+---
+
+### Tool 5: Extensible Workspace CLI Commands & RE Suite (ADR-034)
+*Project-specific native command integration discovered via `.agents/commands/manifest.json`.*
+
+- **List Discovered Commands**:
+  ```bash
+  agyis ext list
+  ```
+- **Bespoke Extensions**:
+  - `agyis flight` : Automated flight test runner and watchdog.
+  - `agyis game`   : Control and inspect Paladins game and server daemons (`status`, `start`, `logs`, `kill`).
+  - `agyis mcts`   : Look up or calculate MCTS marshal tokens and group headers.
+  - `agyis record` : Hardware-accelerated screen recording via `gpu-screen-recorder`.
+- **First-Class Cleanroom RE Suite (`agyis re`)**:
+  - `agyis re status`               : Check dirtyroom database metrics, binaries, and Ghidra project status.
+  - `agyis re patch-rea --check`    : Verify upstream REA MCP project acceleration patch status (PSL-INV-009).
+  - `agyis re patch-rea --apply`    : Apply pre-analyzed Ghidra project acceleration patch.
+  - `agyis re find <pattern> [--type all|func|str|rtti] [--limit N]` : Sub-millisecond SQLite queries across 356k functions and 817k strings.
+  - `agyis re decompile <symbol>`   : Zero-timeout headless decompilation.
+
 
 ---
 
@@ -200,14 +225,27 @@ When an automated flight fails or hangs at a specific gate, follow this strict 5
 
 ---
 
-## 4. Project Immortal Dirtyroom Reference Commands
+## 4. Project Immortal Cleanroom Reference Commands
 
 ```bash
-# Flight test to specific milestone
-./scripts/dirtyroom/dirty flight --target map --timeout 90
+# Flight test to specific milestone (native dispatch or via script)
+agyis flight --target map --timeout 110
+./agyis flight --target menu --timeout 50
+
+# Inspect dirtyroom status and REA acceleration
+agyis re status
+agyis re patch-rea --check
+agyis re find "ChaosGame" --limit 5
+
+# Inspect MCTS token
+agyis mcts 0x847de68b
+
+# Game & Server process status
+agyis game status
+agyis game logs client
 
 # Record short agentic verification clip
-./scripts/dirtyroom/dirty record clip --duration 10 --agent
+agyis record clip --duration 10 --agent
 
 # Window geometry & inspect
 ./scripts/dirtyroom/dirty input window

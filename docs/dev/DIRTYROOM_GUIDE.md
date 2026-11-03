@@ -135,30 +135,68 @@ The script will automatically:
 
 ---
 
-## 5. Daily Reverse-Engineering with the `dirty` CLI
+## 5. Daily Reverse-Engineering with `agyis` & `dirty` CLI (ADR-034)
 
-Once scaffolded, the `./scripts/dirtyroom/dirty` CLI provides instantaneous, sub-millisecond query capabilities directly from the terminal without launching heavy GUI tools.
+Once scaffolded, the tools are accessible either through project-native extension commands (`agyis flight`, `agyis game`, `agyis mcts`, `agyis record`, and `agyis re`) or via `./scripts/dirtyroom/dirty`.
+
+### Discover Commands
+```bash
+agyis ext list
+```
 
 ### Check Status & Metrics
 ```bash
+agyis re status
+# Or legacy:
 ./scripts/dirtyroom/dirty status
 ```
 *Output:*
 ```text
-=== Immortal Dirty-Room Status ===
-Dirty Room Root: /home/kuasha/Dev/immortal/.dirtyroom
-Ghidra Project:  /home/kuasha/Dev/immortal/.dirtyroom/ghidra/PaladinsProject.gpr
-  Project Exists: YES
+=== Agyis Cleanroom Reverse Engineering & Dirty-Room Status ===
+Dirty-Room Root: /mnt/fast_data/re_dirtyroom/paladins_8.1.5839.0
 
-Registered Binaries:
-  - ShippingPC-ChaosGame.exe: 63.8 MB (SHA-256: 0c51d381dfe9...)
-  - MctsInterface.dll: 4.5 MB (SHA-256: 90ce02b7b820...)
-  - vivoxsdk_x64.dll: 5.0 MB (SHA-256: 1c4ad378fb8c...)
+REA MCP Acceleration Patch (PSL-INV-009):
+  Status:  APPLIED - REA pre-analyzed Ghidra project acceleration patch is active.
+  REA Root: /home/kuasha/.local/share/pnpm/global/5/.pnpm/rea-agents@6.8.0/node_modules/rea-agents
+
+Ghidra Headless Analyzer:
+  Binary:  /opt/ghidra/support/analyzeHeadless
+  Projects:
+    - PaladinsProject (READY) -> /mnt/fast_data/re_dirtyroom/paladins_8.1.5839.0/ghidra/PaladinsProject.gpr
 
 Indexed Database Metrics:
+  Binaries:     3
+    - ShippingPC-ChaosGame.exe: 63.79 MB (SHA: 0c51d381df...)
+    - MctsInterface.dll: 4.48 MB (SHA: 90ce02b7b8...)
+    - vivoxsdk_x64.dll: 4.96 MB (SHA: 1c4ad378fb...)
   Functions:    356,819
   Strings:      817,179
   RTTI Classes: 848
+```
+
+### Fast Unified Search with `agyis re find` (<5ms)
+Instantly query functions, strings, and RTTI classes across the 130MB SQLite database:
+```bash
+# Query all categories (default limit: 50)
+agyis re find "ChaosGame" --limit 5
+
+# Filter specifically by type: func, str, or rtti
+agyis re find "ProcessHandshake" --type func
+agyis re find "Shootingrange_P" --type str
+agyis re find "CPack" --type rtti
+```
+
+### Automated Flight Runner (`agyis flight`)
+Execute automated flight runs with live log watchdog, UI auto-input, screen recording, and keyframe extraction:
+```bash
+# Run flight to LOBBY_MENU milestone
+agyis flight --target menu --timeout 50
+
+# Run flight to Champion Selection Gazebo
+agyis flight --target gazebo --timeout 60
+
+# Run flight to Map Change
+agyis flight --target map --timeout 110
 ```
 
 ### Search Indexed Strings (<5ms)

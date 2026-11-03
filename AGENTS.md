@@ -18,10 +18,26 @@ These operational rules govern cognitive behavior and human-in-the-loop alignmen
 cargo test                                     # Run complete project test suite
 cargo build                                    # Build project artifacts
 cargo clippy                                   # Code quality & linting checks
+agyis verify --spec                            # Verify cleanroom specifications in docs/specs/**
 
 # 🩺 Environment Diagnostics & Auto-Healing
 agyis doctor                                   # Audit workstation runtimes & auto-heal
+agyis doctor --experimental-rea                # Audit Ghidra, REA MCP & forensic runtimes
 agyis status                                   # Print harness health, active hooks & telemetry
+
+# 🎮 Workspace Bespoke Extensions (ADR-034)
+agyis ext list                                 # Discover project-specific CLI extension commands
+agyis flight [--target <milestone>] [--timeout <N>] # Vector 4 automated flight runner & watchdog
+agyis game [status|start|logs|kill]            # Control and inspect Paladins game & server daemons
+agyis mcts <token|hash>                        # Look up or calculate MCTS marshal tokens
+agyis record [status|start|stop|clip]          # Hardware-accelerated screen recording via gpu-screen-recorder
+
+# 🔬 Cleanroom Reverse Engineering (ADR-028 & PSL-INV-009)
+agyis re status                                # Audit dirtyroom database metrics & Ghidra project
+agyis re patch-rea --check                     # Check REA MCP Ghidra project acceleration status
+agyis re patch-rea --apply                     # Apply zero-timeout Ghidra project acceleration patch
+agyis re find <pattern> [--type all|func|str|rtti] # Sub-millisecond SQLite query across 356k funcs / 817k strings
+agyis re decompile <symbol|addr>               # Zero-timeout headless decompilation
 
 # 🧩 Skills & Subagents Discovery
 agyis skills                                   # List installed modular skills & triggers
