@@ -60,6 +60,7 @@ fn test_all_mcts_token_constants_match_engine_schema() {
             5,
             0x3000,
         ), // Type 5 (INT32)
+        (MCTS_TOKEN_STATUS_CODE, "STATUS_CODE", 5, 0x3000),             // Type 5 (INT32)
         (MCTS_TOKEN_POSITION, "POSITION", 5, 0x3000),                   // Type 5 (INT32)
         (MCTS_TOKEN_QUEUE_CATEGORY, "GROUP_TYPE", 5, 0x3000),           // Type 5 (INT32)
         (MCTS_TOKEN_QUEUE_STATE, "UI_HINT_VALUE_ID", 5, 0x3000),        // Type 5 (INT32)
@@ -94,7 +95,7 @@ fn test_match_status_with_members_frame_schema_conformance() {
     // Frame must have valid header [len, 0x0000]
     let payload_len = u16::from_le_bytes([frame[0], frame[1]]) as usize;
     assert_eq!(frame.len(), 4 + payload_len);
-    assert_eq!(payload_len, 106);
+    assert_eq!(payload_len, 112);
 
     let payload = &frame[4..];
     assert_eq!(payload[0], 0x00);
@@ -103,28 +104,32 @@ fn test_match_status_with_members_frame_schema_conformance() {
         MCTS_FUNCTION_ID_MATCH_STATUS
     );
 
-    // Root row fields: 7
+    // Root row fields: 8
     let total_fields = u16::from_le_bytes([payload[5], payload[6]]);
-    assert_eq!(total_fields, 7);
+    assert_eq!(total_fields, 8);
 
-    // Group 0x3000: 4 fields (Token 1342, 1690, 1344, 2191) - all Type 5 (4 bytes)
+    // Group 0x3000: 5 fields (Token 1342, 1690, 1344, 2191, 1053) - all Type 5 (4 bytes)
     let grp4 = u16::from_le_bytes([payload[7], payload[8]]);
-    assert_eq!(grp4, 0x3004);
+    assert_eq!(grp4, 0x3005);
+    assert_eq!(
+        u16::from_le_bytes([payload[17], payload[18]]),
+        MCTS_TOKEN_STATUS_CODE
+    );
 
     // Group 0x4000: 2 fields (Token 700 MATCH_ID, Token 703 MATCH_QUEUE_ID) - all Type 9 (8 bytes)
-    let grp8 = u16::from_le_bytes([payload[33], payload[34]]);
+    let grp8 = u16::from_le_bytes([payload[39], payload[40]]);
     assert_eq!(grp8, 0x4002);
     assert_eq!(
-        u16::from_le_bytes([payload[35], payload[36]]),
+        u16::from_le_bytes([payload[41], payload[42]]),
         MCTS_TOKEN_MATCH_ID
     );
     assert_eq!(
-        u16::from_le_bytes([payload[37], payload[38]]),
+        u16::from_le_bytes([payload[43], payload[44]]),
         MCTS_TOKEN_MATCH_QUEUE_ID
     );
 
     // Group 0x6000: 1 table (Table 312 DATA_SET_MEMBERS)
-    let grp_tbl = u16::from_le_bytes([payload[55], payload[56]]);
+    let grp_tbl = u16::from_le_bytes([payload[61], payload[62]]);
     assert_eq!(grp_tbl, 0x6001);
 
     // Table 312 Row 0:
@@ -132,49 +137,49 @@ fn test_match_status_with_members_frame_schema_conformance() {
     // - Group 0x3000: Tokens 122, 838, 855, 1344 (all Type 5 int32, 4 bytes)
     // - Group 0x4000: Token 11 (Type 9 int64, 8 bytes!)
     assert_eq!(
-        u16::from_le_bytes([payload[57], payload[58]]),
+        u16::from_le_bytes([payload[63], payload[64]]),
         MCTS_TOKEN_MEMBERS
     );
-    assert_eq!(u16::from_le_bytes([payload[59], payload[60]]), 1); // 1 row
-    assert_eq!(u16::from_le_bytes([payload[61], payload[62]]), 6); // 6 fields
-    assert_eq!(u16::from_le_bytes([payload[63], payload[64]]), 0x1001); // Group 0x1000
+    assert_eq!(u16::from_le_bytes([payload[65], payload[66]]), 1); // 1 row
+    assert_eq!(u16::from_le_bytes([payload[67], payload[68]]), 6); // 6 fields
+    assert_eq!(u16::from_le_bytes([payload[69], payload[70]]), 0x1001); // Group 0x1000
     assert_eq!(
-        u16::from_le_bytes([payload[65], payload[66]]),
+        u16::from_le_bytes([payload[71], payload[72]]),
         MCTS_TOKEN_INVITE_PRIVILEGES
     );
-    assert_eq!(payload[67], 0x00);
-    assert_eq!(u16::from_le_bytes([payload[68], payload[69]]), 0x3004); // Group 0x3000 (4 fields)
+    assert_eq!(payload[73], 0x00);
+    assert_eq!(u16::from_le_bytes([payload[74], payload[75]]), 0x3004); // Group 0x3000 (4 fields)
     assert_eq!(
-        u16::from_le_bytes([payload[70], payload[71]]),
+        u16::from_le_bytes([payload[76], payload[77]]),
         MCTS_TOKEN_BOT_ID
     );
     assert_eq!(
-        u16::from_le_bytes([payload[72], payload[73]]),
+        u16::from_le_bytes([payload[78], payload[79]]),
         MCTS_TOKEN_POSITION
     );
     assert_eq!(
-        u16::from_le_bytes([payload[74], payload[75]]),
+        u16::from_le_bytes([payload[80], payload[81]]),
         MCTS_TOKEN_PROFILE_ID
     );
     assert_eq!(
-        u16::from_le_bytes([payload[76], payload[77]]),
+        u16::from_le_bytes([payload[82], payload[83]]),
         MCTS_TOKEN_PLAYER_LOBBY_STATE
     );
-    assert_eq!(u16::from_le_bytes([payload[94], payload[95]]), 0x4001); // Group 0x4000 (1 field, Type 9!)
+    assert_eq!(u16::from_le_bytes([payload[100], payload[101]]), 0x4001); // Group 0x4000 (1 field, Type 9!)
     assert_eq!(
-        u16::from_le_bytes([payload[96], payload[97]]),
+        u16::from_le_bytes([payload[102], payload[103]]),
         MCTS_TOKEN_PLAYER_ID
     );
     assert_eq!(
         u64::from_le_bytes([
-            payload[98],
-            payload[99],
-            payload[100],
-            payload[101],
-            payload[102],
-            payload[103],
             payload[104],
-            payload[105]
+            payload[105],
+            payload[106],
+            payload[107],
+            payload[108],
+            payload[109],
+            payload[110],
+            payload[111]
         ]),
         8302401u64
     );

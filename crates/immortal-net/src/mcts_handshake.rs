@@ -665,14 +665,15 @@ pub const MCTS_FUNCTION_ID_ON_MATCH_STATUS: u32 = MCTS_FUNCTION_ID_MATCH_STATUS;
 /// Matches reverse engineered `CMctsMatchMaking::OnMatchStatus` and `CMarshalRow::Store` specification:
 /// - Prefix: byte `0x00` (`this[0x30]`)
 /// - Function ID: `0x392dcda5` (`MCTS_FUNCTION_ID_MATCH_STATUS`) in little-endian u32
-/// - CMarshalRow field count: 6 (4 uint32 fields in Group 0x3000 + 2 uint64 fields in Group 0x4000)
+/// - CMarshalRow field count: 7 (5 uint32 fields in Group 0x3000 + 2 uint64 fields in Group 0x4000)
 /// - Group 0x3000 (4-byte fields):
-///   - Header: `0x3004` (group 0x3000 | 4)
+///   - Header: `0x3005` (group 0x3000 | 5)
 ///   - Token 1342 (u16): match_lobby_state
 ///   - Token 1690 (u16): launch_seconds
 ///   - Token 1344 (u16): player_lobby_state
 ///   - Token 2191 (u16): player_queue_state
-///   - Values: match_lobby_state, launch_seconds, player_lobby_state, player_queue_state
+///   - Token 1053 (u16): status_code / queue_state (`player_queue_state`)
+///   - Values: match_lobby_state, launch_seconds, player_lobby_state, player_queue_state, player_queue_state
 /// - Group 0x4000 (8-byte fields):
 ///   - Header: `0x4002` (group 0x4000 | 2)
 ///   - Token 700 (u16): match_id
@@ -694,21 +695,23 @@ pub fn create_mcts_match_status_frame(
     payload.push(0x00); // this[0x30]
     payload.extend_from_slice(&MCTS_FUNCTION_ID_MATCH_STATUS.to_le_bytes());
 
-    // CMarshalRow: total fields = 6 (4 dwords in 0x3000 + 2 qwords in 0x4000)
-    let total_fields: u16 = 6;
+    // CMarshalRow: total fields = 7 (5 dwords in 0x3000 + 2 qwords in 0x4000)
+    let total_fields: u16 = 7;
     payload.extend_from_slice(&total_fields.to_le_bytes());
 
-    // Group 0x3000 (4-byte fields: 4 fields)
-    let grp4_hdr: u16 = 0x3000 | 4;
+    // Group 0x3000 (4-byte fields: 5 fields)
+    let grp4_hdr: u16 = 0x3000 | 5;
     payload.extend_from_slice(&grp4_hdr.to_le_bytes());
     payload.extend_from_slice(&1342u16.to_le_bytes()); // Token 1342: MATCH_LOBBY_STATE
     payload.extend_from_slice(&1690u16.to_le_bytes()); // Token 1690: LAUNCH_SECONDS
     payload.extend_from_slice(&1344u16.to_le_bytes()); // Token 1344: PLAYER_LOBBY_STATE
     payload.extend_from_slice(&2191u16.to_le_bytes()); // Token 2191: PLAYER_QUEUE_STATE
+    payload.extend_from_slice(&MCTS_TOKEN_STATUS_CODE.to_le_bytes()); // Token 1053: STATUS_CODE
 
     payload.extend_from_slice(&match_lobby_state.to_le_bytes());
     payload.extend_from_slice(&launch_seconds.to_le_bytes());
     payload.extend_from_slice(&player_lobby_state.to_le_bytes());
+    payload.extend_from_slice(&player_queue_state.to_le_bytes());
     payload.extend_from_slice(&player_queue_state.to_le_bytes());
 
     // Group 0x4000 (8-byte fields: 2 fields)
@@ -775,6 +778,11 @@ pub const MCTS_TOKEN_LAUNCH_SECONDS: u16 = 1690;
 pub const MCTS_TOKEN_INVITE_PRIVILEGES: u16 = 2143;
 pub const MCTS_TOKEN_POSITION: u16 = 838;
 pub const MCTS_TOKEN_PLAYER_QUEUE_STATE: u16 = 2191;
+
+/// Authentic Token ID for Status Code / Queue State (1053).
+/// Reverse engineered from `ShippingPC-ChaosGame.exe` (`FUN_1400c87f0: 1400c88c6`).
+/// When present in MATCH_STATUS, writes directly to `ActiveMatchLobby + 0x1d8` (offset 0xc0 of sub-object 0x118).
+pub const MCTS_TOKEN_STATUS_CODE: u16 = 1053;
 
 /// Authentic Bot Template ID for Fernando in live shooting range sessions (2285).
 /// Grounded in `live_paladins_launch.log:1095` and cleanroom disassembly of `ShippingPC-ChaosGame.exe: FUN_1414df220`.
@@ -940,14 +948,15 @@ pub fn create_mcts_queue_definition_frame(
 /// Matches reverse engineered `CMarshalRow::Store` and `CMarshalRowSet::Store` specification:
 /// - Prefix: byte `0x00` (`this[0x30]`)
 /// - Function ID: `0x392dcda5` (`MCTS_FUNCTION_ID_MATCH_STATUS`) in little-endian u32
-/// - CMarshalRow field count: 7 (4 uint32 fields in Group 0x3000 + 2 uint64 fields in Group 0x4000 + 1 table in Group 0x6000)
+/// - CMarshalRow field count: 8 (5 uint32 fields in Group 0x3000 + 2 uint64 fields in Group 0x4000 + 1 table in Group 0x6000)
 /// - Group 0x3000 (4-byte fields):
-///   - Header: `0x3004` (group 0x3000 | 4)
+///   - Header: `0x3005` (group 0x3000 | 5)
 ///   - Token 1342 (u16): match_lobby_state
 ///   - Token 1690 (u16): launch_seconds
 ///   - Token 1344 (u16): player_lobby_state
 ///   - Token 2191 (u16): player_queue_state
-///   - Values: match_lobby_state, launch_seconds, player_lobby_state, player_queue_state
+///   - Token 1053 (u16): status_code / queue_state (`player_queue_state`)
+///   - Values: match_lobby_state, launch_seconds, player_lobby_state, player_queue_state, player_queue_state
 /// - Group 0x4000 (8-byte fields):
 ///   - Header: `0x4002` (group 0x4000 | 2)
 ///   - Token 700 (u16): match_id
@@ -992,21 +1001,23 @@ pub fn create_mcts_match_status_with_members_frame(
     payload.push(0x00); // this[0x30]
     payload.extend_from_slice(&MCTS_FUNCTION_ID_MATCH_STATUS.to_le_bytes());
 
-    // CMarshalRow: total fields = 7 (4 dwords in 0x3000 + 2 qwords in 0x4000 + 1 table in 0x6000)
-    let total_fields: u16 = 7;
+    // CMarshalRow: total fields = 8 (5 dwords in 0x3000 + 2 qwords in 0x4000 + 1 table in 0x6000)
+    let total_fields: u16 = 8;
     payload.extend_from_slice(&total_fields.to_le_bytes());
 
-    // Group 0x3000 (4-byte fields: 4 fields)
-    let grp4_hdr: u16 = 0x3000 | 4;
+    // Group 0x3000 (4-byte fields: 5 fields)
+    let grp4_hdr: u16 = 0x3000 | 5;
     payload.extend_from_slice(&grp4_hdr.to_le_bytes());
     payload.extend_from_slice(&1342u16.to_le_bytes()); // Token 1342: MATCH_LOBBY_STATE
     payload.extend_from_slice(&1690u16.to_le_bytes()); // Token 1690: LAUNCH_SECONDS
     payload.extend_from_slice(&1344u16.to_le_bytes()); // Token 1344: PLAYER_LOBBY_STATE
     payload.extend_from_slice(&2191u16.to_le_bytes()); // Token 2191: PLAYER_QUEUE_STATE
+    payload.extend_from_slice(&MCTS_TOKEN_STATUS_CODE.to_le_bytes()); // Token 1053: STATUS_CODE
 
     payload.extend_from_slice(&match_lobby_state.to_le_bytes());
     payload.extend_from_slice(&launch_seconds.to_le_bytes());
     payload.extend_from_slice(&player_lobby_state.to_le_bytes());
+    payload.extend_from_slice(&player_queue_state.to_le_bytes());
     payload.extend_from_slice(&player_queue_state.to_le_bytes());
 
     // Group 0x4000 (8-byte fields: 2 fields)
@@ -1606,11 +1617,11 @@ mod tests {
     fn test_create_mcts_match_status_frame_structure() {
         // agyis: no-mutant unit test
         let frame = create_mcts_match_status_frame(434, 878850364, 1, 120, 5, 7); // agyis: no-mutant
-        assert_eq!(frame.len(), 59); // agyis: no-mutant
+        assert_eq!(frame.len(), 65); // agyis: no-mutant
 
         let length = u16::from_le_bytes([frame[0], frame[1]]) as usize; // agyis: no-mutant
         assert_eq!(length, frame.len() - 4); // agyis: no-mutant
-        assert_eq!(length, 55); // agyis: no-mutant
+        assert_eq!(length, 61); // agyis: no-mutant
         let flags = u16::from_le_bytes([frame[2], frame[3]]); // agyis: no-mutant
         assert_eq!(flags, 0x0000); // agyis: no-mutant
 
@@ -1621,62 +1632,67 @@ mod tests {
         assert_eq!(func_id, 0x392dcda5); // agyis: no-mutant
 
         let total_fields = u16::from_le_bytes([payload[5], payload[6]]); // agyis: no-mutant
-        assert_eq!(total_fields, 6); // agyis: no-mutant
+        assert_eq!(total_fields, 7); // agyis: no-mutant
 
-        // Group 0x3000 check
+        // Group 0x3000 check (5 fields)
         let grp4 = u16::from_le_bytes([payload[7], payload[8]]); // agyis: no-mutant
-        assert_eq!(grp4, 0x3004); // agyis: no-mutant
+        assert_eq!(grp4, 0x3005); // agyis: no-mutant
         let t1342 = u16::from_le_bytes([payload[9], payload[10]]); // agyis: no-mutant
         let t1690 = u16::from_le_bytes([payload[11], payload[12]]); // agyis: no-mutant
         let t1344 = u16::from_le_bytes([payload[13], payload[14]]); // agyis: no-mutant
         let t2191 = u16::from_le_bytes([payload[15], payload[16]]); // agyis: no-mutant
+        let t1053 = u16::from_le_bytes([payload[17], payload[18]]); // agyis: no-mutant
         assert_eq!(t1342, 1342); // agyis: no-mutant
         assert_eq!(t1690, 1690); // agyis: no-mutant
         assert_eq!(t1344, 1344); // agyis: no-mutant
         assert_eq!(t2191, 2191); // agyis: no-mutant
+        assert_eq!(t1053, MCTS_TOKEN_STATUS_CODE); // agyis: no-mutant
+        assert_eq!(t1053, 1053); // agyis: no-mutant
 
-        let v1342 = u32::from_le_bytes([payload[17], payload[18], payload[19], payload[20]]); // agyis: no-mutant
-        let v1690 = u32::from_le_bytes([payload[21], payload[22], payload[23], payload[24]]); // agyis: no-mutant
-        let v1344 = u32::from_le_bytes([payload[25], payload[26], payload[27], payload[28]]); // agyis: no-mutant
-        let v2191 = u32::from_le_bytes([payload[29], payload[30], payload[31], payload[32]]); // agyis: no-mutant
+        let v1342 = u32::from_le_bytes([payload[19], payload[20], payload[21], payload[22]]); // agyis: no-mutant
+        let v1690 = u32::from_le_bytes([payload[23], payload[24], payload[25], payload[26]]); // agyis: no-mutant
+        let v1344 = u32::from_le_bytes([payload[27], payload[28], payload[29], payload[30]]); // agyis: no-mutant
+        let v2191 = u32::from_le_bytes([payload[31], payload[32], payload[33], payload[34]]); // agyis: no-mutant
+        let v1053 = u32::from_le_bytes([payload[35], payload[36], payload[37], payload[38]]); // agyis: no-mutant
         assert_eq!(v1342, 1); // agyis: no-mutant
         assert_eq!(v1690, 120); // agyis: no-mutant
         assert_eq!(v1344, 5); // agyis: no-mutant
         assert_eq!(v2191, 7); // agyis: no-mutant
+        assert_eq!(v1053, 7); // agyis: no-mutant
 
-        // Group 0x4000 check
-        let grp8 = u16::from_le_bytes([payload[33], payload[34]]); // agyis: no-mutant
+        // Group 0x4000 check (2 fields)
+        let grp8 = u16::from_le_bytes([payload[39], payload[40]]); // agyis: no-mutant
         assert_eq!(grp8, 0x4002); // agyis: no-mutant
-        let t700 = u16::from_le_bytes([payload[35], payload[36]]); // agyis: no-mutant
-        let t703 = u16::from_le_bytes([payload[37], payload[38]]); // agyis: no-mutant
+        let t700 = u16::from_le_bytes([payload[41], payload[42]]); // agyis: no-mutant
+        let t703 = u16::from_le_bytes([payload[43], payload[44]]); // agyis: no-mutant
         assert_eq!(t700, 700); // agyis: no-mutant
         assert_eq!(t703, 703); // agyis: no-mutant
 
         let v700 = u64::from_le_bytes([
-            payload[39],
-            payload[40],
-            payload[41],
-            payload[42],
-            payload[43],
-            payload[44],
             payload[45],
             payload[46],
-        ]); // agyis: no-mutant
-        let v703 = u64::from_le_bytes([
             payload[47],
             payload[48],
             payload[49],
             payload[50],
             payload[51],
             payload[52],
+        ]); // agyis: no-mutant
+        let v703 = u64::from_le_bytes([
             payload[53],
             payload[54],
+            payload[55],
+            payload[56],
+            payload[57],
+            payload[58],
+            payload[59],
+            payload[60],
         ]); // agyis: no-mutant
         assert_eq!(v700, 878850364); // agyis: no-mutant
         assert_eq!(v703, 434); // agyis: no-mutant
 
-        // Ground truth: MATCH_STATUS without members has exactly 6 fields and no tables
-        assert_eq!(payload.len(), 55); // agyis: no-mutant
+        // Ground truth: MATCH_STATUS without members has exactly 7 fields and no tables
+        assert_eq!(payload.len(), 61); // agyis: no-mutant
     }
 
     #[test]
@@ -1698,11 +1714,11 @@ mod tests {
             8302401,
             BOT_ID_FERNANDO,
         ); // agyis: no-mutant
-        assert_eq!(frame.len(), 110); // agyis: no-mutant
+        assert_eq!(frame.len(), 116); // agyis: no-mutant
 
         let length = u16::from_le_bytes([frame[0], frame[1]]) as usize; // agyis: no-mutant
         assert_eq!(length, frame.len() - 4); // agyis: no-mutant
-        assert_eq!(length, 106); // agyis: no-mutant
+        assert_eq!(length, 112); // agyis: no-mutant
         let flags = u16::from_le_bytes([frame[2], frame[3]]); // agyis: no-mutant
         assert_eq!(flags, 0x0000); // agyis: no-mutant
 
@@ -1713,99 +1729,104 @@ mod tests {
         assert_eq!(func_id, 0x392dcda5); // agyis: no-mutant
 
         let total_fields = u16::from_le_bytes([payload[5], payload[6]]); // agyis: no-mutant
-        assert_eq!(total_fields, 7); // agyis: no-mutant
+        assert_eq!(total_fields, 8); // agyis: no-mutant
 
-        // Group 0x3000 check (4 fields)
+        // Group 0x3000 check (5 fields)
         let grp4 = u16::from_le_bytes([payload[7], payload[8]]); // agyis: no-mutant
-        assert_eq!(grp4, 0x3004); // agyis: no-mutant
+        assert_eq!(grp4, 0x3005); // agyis: no-mutant
         let t1342 = u16::from_le_bytes([payload[9], payload[10]]); // agyis: no-mutant
         let t1690 = u16::from_le_bytes([payload[11], payload[12]]); // agyis: no-mutant
         let t1344 = u16::from_le_bytes([payload[13], payload[14]]); // agyis: no-mutant
         let t2191 = u16::from_le_bytes([payload[15], payload[16]]); // agyis: no-mutant
+        let t1053 = u16::from_le_bytes([payload[17], payload[18]]); // agyis: no-mutant
         assert_eq!(t1342, 1342); // agyis: no-mutant
         assert_eq!(t1690, 1690); // agyis: no-mutant
         assert_eq!(t1344, 1344); // agyis: no-mutant
         assert_eq!(t2191, 2191); // agyis: no-mutant
+        assert_eq!(t1053, MCTS_TOKEN_STATUS_CODE); // agyis: no-mutant
+        assert_eq!(t1053, 1053); // agyis: no-mutant
 
-        let v1342 = u32::from_le_bytes([payload[17], payload[18], payload[19], payload[20]]); // agyis: no-mutant
-        let v1690 = u32::from_le_bytes([payload[21], payload[22], payload[23], payload[24]]); // agyis: no-mutant
-        let v1344 = u32::from_le_bytes([payload[25], payload[26], payload[27], payload[28]]); // agyis: no-mutant
-        let v2191 = u32::from_le_bytes([payload[29], payload[30], payload[31], payload[32]]); // agyis: no-mutant
+        let v1342 = u32::from_le_bytes([payload[19], payload[20], payload[21], payload[22]]); // agyis: no-mutant
+        let v1690 = u32::from_le_bytes([payload[23], payload[24], payload[25], payload[26]]); // agyis: no-mutant
+        let v1344 = u32::from_le_bytes([payload[27], payload[28], payload[29], payload[30]]); // agyis: no-mutant
+        let v2191 = u32::from_le_bytes([payload[31], payload[32], payload[33], payload[34]]); // agyis: no-mutant
+        let v1053 = u32::from_le_bytes([payload[35], payload[36], payload[37], payload[38]]); // agyis: no-mutant
         assert_eq!(v1342, 10); // agyis: no-mutant
         assert_eq!(v1690, 0); // agyis: no-mutant
         assert_eq!(v1344, 5); // agyis: no-mutant
         assert_eq!(v2191, 7); // agyis: no-mutant
+        assert_eq!(v1053, 7); // agyis: no-mutant
 
         // Group 0x4000 check (2 fields)
-        let grp8 = u16::from_le_bytes([payload[33], payload[34]]); // agyis: no-mutant
+        let grp8 = u16::from_le_bytes([payload[39], payload[40]]); // agyis: no-mutant
         assert_eq!(grp8, 0x4002); // agyis: no-mutant
-        let t700 = u16::from_le_bytes([payload[35], payload[36]]); // agyis: no-mutant
-        let t703 = u16::from_le_bytes([payload[37], payload[38]]); // agyis: no-mutant
+        let t700 = u16::from_le_bytes([payload[41], payload[42]]); // agyis: no-mutant
+        let t703 = u16::from_le_bytes([payload[43], payload[44]]); // agyis: no-mutant
         assert_eq!(t700, 700); // agyis: no-mutant
         assert_eq!(t703, 703); // agyis: no-mutant
 
         let v700 = u64::from_le_bytes([
-            payload[39],
-            payload[40],
-            payload[41],
-            payload[42],
-            payload[43],
-            payload[44],
             payload[45],
             payload[46],
-        ]); // agyis: no-mutant
-        let v703 = u64::from_le_bytes([
             payload[47],
             payload[48],
             payload[49],
             payload[50],
             payload[51],
             payload[52],
+        ]); // agyis: no-mutant
+        let v703 = u64::from_le_bytes([
             payload[53],
             payload[54],
+            payload[55],
+            payload[56],
+            payload[57],
+            payload[58],
+            payload[59],
+            payload[60],
         ]); // agyis: no-mutant
         assert_eq!(v700, 878850364); // agyis: no-mutant
         assert_eq!(v703, 434); // agyis: no-mutant
 
         // Group 0x6000 check (1 table: Table 312 DATA_SET_MEMBERS)
-        let grp_tbl = u16::from_le_bytes([payload[55], payload[56]]); // agyis: no-mutant
+        let grp_tbl = u16::from_le_bytes([payload[61], payload[62]]); // agyis: no-mutant
         assert_eq!(grp_tbl, 0x6001); // agyis: no-mutant
 
         // Table 312 / DATA_SET_MEMBERS
-        let tbl_token = u16::from_le_bytes([payload[57], payload[58]]); // agyis: no-mutant
+        let tbl_token = u16::from_le_bytes([payload[63], payload[64]]); // agyis: no-mutant
         assert_eq!(tbl_token, MCTS_TOKEN_MEMBERS); // agyis: no-mutant
         assert_eq!(tbl_token, 312); // agyis: no-mutant
 
-        let row_count = u16::from_le_bytes([payload[59], payload[60]]); // agyis: no-mutant
+        let row_count = u16::from_le_bytes([payload[65], payload[66]]); // agyis: no-mutant
         assert_eq!(row_count, 1); // agyis: no-mutant
 
         // Row 0 check: field count 6
-        let row_field_count = u16::from_le_bytes([payload[61], payload[62]]); // agyis: no-mutant
+        let row_field_count = u16::from_le_bytes([payload[67], payload[68]]); // agyis: no-mutant
         assert_eq!(row_field_count, 6); // agyis: no-mutant
 
         // Row Group 0x1000: Token 2143 (bool false = 0)
-        let row_grp1 = u16::from_le_bytes([payload[63], payload[64]]); // agyis: no-mutant
+        let row_grp1 = u16::from_le_bytes([payload[69], payload[70]]); // agyis: no-mutant
         assert_eq!(row_grp1, 0x1001); // agyis: no-mutant
-        let t2143 = u16::from_le_bytes([payload[65], payload[66]]); // agyis: no-mutant
+        let t2143 = u16::from_le_bytes([payload[71], payload[72]]); // agyis: no-mutant
         assert_eq!(t2143, 2143); // agyis: no-mutant
-        assert_eq!(payload[67], 0); // bool false (bIsBot = false) // agyis: no-mutant
+        assert_eq!(payload[73], 0); // bool false (bIsBot = false) // agyis: no-mutant
 
         // Row Group 0x3000: Tokens 122, 838, 855, 1344
-        let row_grp4 = u16::from_le_bytes([payload[68], payload[69]]); // agyis: no-mutant
+        let row_grp4 = u16::from_le_bytes([payload[74], payload[75]]); // agyis: no-mutant
         assert_eq!(row_grp4, 0x3004); // agyis: no-mutant
-        let t122 = u16::from_le_bytes([payload[70], payload[71]]); // agyis: no-mutant
-        let t838 = u16::from_le_bytes([payload[72], payload[73]]); // agyis: no-mutant
-        let t855 = u16::from_le_bytes([payload[74], payload[75]]); // agyis: no-mutant
-        let t1344_row = u16::from_le_bytes([payload[76], payload[77]]); // agyis: no-mutant
+        let t122 = u16::from_le_bytes([payload[76], payload[77]]); // agyis: no-mutant
+        let t838 = u16::from_le_bytes([payload[78], payload[79]]); // agyis: no-mutant
+        let t855 = u16::from_le_bytes([payload[80], payload[81]]); // agyis: no-mutant
+        let t1344_row = u16::from_le_bytes([payload[82], payload[83]]); // agyis: no-mutant
         assert_eq!(t122, 122); // agyis: no-mutant
         assert_eq!(t838, 838); // agyis: no-mutant
         assert_eq!(t855, 855); // agyis: no-mutant
         assert_eq!(t1344_row, 1344); // agyis: no-mutant
 
-        let v122 = u32::from_le_bytes([payload[78], payload[79], payload[80], payload[81]]); // agyis: no-mutant
-        let v838 = u32::from_le_bytes([payload[82], payload[83], payload[84], payload[85]]); // agyis: no-mutant
-        let v855 = u32::from_le_bytes([payload[86], payload[87], payload[88], payload[89]]); // agyis: no-mutant
-        let v1344_row = u32::from_le_bytes([payload[90], payload[91], payload[92], payload[93]]); // agyis: no-mutant
+        let v122 = u32::from_le_bytes([payload[84], payload[85], payload[86], payload[87]]); // agyis: no-mutant
+        let v838 = u32::from_le_bytes([payload[88], payload[89], payload[90], payload[91]]); // agyis: no-mutant
+        let v855 = u32::from_le_bytes([payload[92], payload[93], payload[94], payload[95]]); // agyis: no-mutant
+        let v1344_row = u32::from_le_bytes([payload[96], payload[97], payload[98], payload[99]]); // agyis: no-mutant
         assert_eq!(v122, BOT_ID_FERNANDO); // agyis: no-mutant
         assert_eq!(v122, 2285); // agyis: no-mutant
         assert_eq!(v838, 0); // agyis: no-mutant
@@ -1813,22 +1834,22 @@ mod tests {
         assert_eq!(v1344_row, 5); // agyis: no-mutant
 
         // Row Group 0x4000: Token 11 (PLAYER_ID, 8 bytes)
-        let row_grp8 = u16::from_le_bytes([payload[94], payload[95]]); // agyis: no-mutant
+        let row_grp8 = u16::from_le_bytes([payload[100], payload[101]]); // agyis: no-mutant
         assert_eq!(row_grp8, 0x4001); // agyis: no-mutant
-        let t11 = u16::from_le_bytes([payload[96], payload[97]]); // agyis: no-mutant
+        let t11 = u16::from_le_bytes([payload[102], payload[103]]); // agyis: no-mutant
         assert_eq!(t11, 11); // agyis: no-mutant
         let v11 = u64::from_le_bytes([
-            payload[98],
-            payload[99],
-            payload[100],
-            payload[101],
-            payload[102],
-            payload[103],
             payload[104],
             payload[105],
+            payload[106],
+            payload[107],
+            payload[108],
+            payload[109],
+            payload[110],
+            payload[111],
         ]); // agyis: no-mutant
         assert_eq!(v11, 8302401); // agyis: no-mutant
-        assert_eq!(payload.len(), 106); // agyis: no-mutant
+        assert_eq!(payload.len(), 112); // agyis: no-mutant
     }
 
     #[test]
