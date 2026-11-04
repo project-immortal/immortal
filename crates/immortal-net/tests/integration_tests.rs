@@ -2265,21 +2265,68 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(trans_map_instance_id, 1282927737); // agyis: no-mutant
 
     // 5. Step 5: Live sequence completes at MATCH_STATUS 10 and change_map frame (0x847de68b with compel=true).
-    // Subsequent post-login frame (champion select with Fernando) is drained by decoupled reader
-    // without emitting bogus encrypted ciphertext ACK and stream remains connected.
+    // Subsequent post-login frame (champion select with Fernando) reactively dispatches MATCH_STATUS 10,
+    // LaunchMapInstance, and ChangeMap (0x847de68b) without emitting bogus encrypted ciphertext ACK.
     stream.write_all(&champ_frame).await.unwrap();
     stream.flush().await.unwrap();
 
-    let mut probe_buf = [0u8; 1];
-    let probe_res = tokio::time::timeout(
-        std::time::Duration::from_millis(50),
-        stream.read(&mut probe_buf),
-    )
-    .await;
-    assert!(
-        probe_res.is_err(),
-        "Server must not respond to champion select with bogus encrypted ciphertext ACK in unencrypted MCTS"
+    // Expect reactive MATCH_STATUS 10
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let reactive_status10_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let reactive_status10_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(reactive_status10_flags, 0x0000);
+    let mut reactive_status10_payload = vec![0u8; reactive_status10_len];
+    stream
+        .read_exact(&mut reactive_status10_payload)
+        .await
+        .unwrap();
+    let status10_func_id = u32::from_le_bytes([
+        reactive_status10_payload[1],
+        reactive_status10_payload[2],
+        reactive_status10_payload[3],
+        reactive_status10_payload[4],
+    ]);
+    assert_eq!(
+        status10_func_id,
+        immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS
     );
+
+    // Expect reactive LaunchMapInstance frame
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let reactive_lm_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let reactive_lm_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(reactive_lm_flags, 0x0000);
+    let mut reactive_lm_payload = vec![0u8; reactive_lm_len];
+    stream.read_exact(&mut reactive_lm_payload).await.unwrap();
+    let lm_func_id = u32::from_le_bytes([
+        reactive_lm_payload[1],
+        reactive_lm_payload[2],
+        reactive_lm_payload[3],
+        reactive_lm_payload[4],
+    ]);
+    assert_eq!(
+        lm_func_id,
+        immortal_net::MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE
+    );
+
+    // Expect reactive ChangeMap frame
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let reactive_cm_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let reactive_cm_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(reactive_cm_flags, 0x0000);
+    assert_eq!(reactive_cm_len, 32);
+    let mut reactive_cm_payload = vec![0u8; reactive_cm_len];
+    stream.read_exact(&mut reactive_cm_payload).await.unwrap();
+    let cm_func_id = u32::from_le_bytes([
+        reactive_cm_payload[1],
+        reactive_cm_payload[2],
+        reactive_cm_payload[3],
+        reactive_cm_payload[4],
+    ]);
+    assert_eq!(cm_func_id, immortal_net::MCTS_FUNCTION_ID_CHANGE_MAP);
+    assert_eq!(cm_func_id, 0x847de68b);
+
+    let mut probe_buf = [0u8; 1];
 
     // 6. Step 6: Verify arbitrary post-login frame length does not drop connection with InvalidMagic
     // and decoupled reader continuously drains client frames.

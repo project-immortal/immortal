@@ -237,6 +237,50 @@ async fn handle_connection(
                 payload_len, flags, has_fernando, has_shooting_range_req, peer_addr
             );
 
+            // If the client submits a champion selection or draft frame while matchmaking is active,
+            // reactively dispatch the match status 10 confirmation, launch map instance, and ChangeMap (0x847de68b).
+            if (has_fernando || payload_len >= 1000) && matchmaking_started {
+                let bot_id = if has_fernando {
+                    BOT_ID_FERNANDO
+                } else {
+                    BOT_ID_VIKTOR
+                };
+                let match_status_10 = create_mcts_match_status_with_members_frame(
+                    434,
+                    878850364,
+                    10,
+                    0,
+                    5,
+                    7,
+                    config.account_id,
+                    bot_id,
+                );
+                let launch_map_frame =
+                    create_mcts_launch_map_instance_frame(434, 878850364, 60, [127, 0, 0, 1], 7777);
+                let change_map_frame = create_mcts_change_map_frame(
+                    MAP_GAME_ID_SHOOTING_RANGE,
+                    MAP_INSTANCE_ID_SHOOTING_RANGE as u64,
+                    true,
+                );
+
+                write_tx
+                    .send(match_status_10)
+                    .await
+                    .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
+                write_tx
+                    .send(launch_map_frame)
+                    .await
+                    .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
+                write_tx
+                    .send(change_map_frame)
+                    .await
+                    .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
+                info!(
+                    "Reactively dispatched MatchStatus 10, LaunchMapInstance, and ChangeMap 0x847de68b upon champion selection from {}",
+                    peer_addr
+                );
+            }
+
             // Respond if client requests queue catalog definitions (Function ID 0xaf434825 or RequestList)
             let is_query_servers = (payload.len() >= 4
                 && payload
