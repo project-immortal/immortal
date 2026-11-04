@@ -1885,12 +1885,12 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     ]); // agyis: no-mutant
     assert_eq!(s10_player_id, 8302401); // agyis: no-mutant
 
-    // (c2) QUEUE_STATE_UPDATE frame (Function ID 0x39d5ce77, QueueState = 7)
+    // (c2) QUEUE_STATE_UPDATE frame (Function ID 0x39d5ce77, QueueState = 7, Table 242)
     stream.read_exact(&mut header_buf).await.unwrap();
     let q_update_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
     let q_update_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
     assert_eq!(q_update_flags, 0x0000); // agyis: no-mutant
-    assert_eq!(q_update_len, 37); // agyis: no-mutant
+    assert_eq!(q_update_len, 45); // agyis: no-mutant
     let mut q_update_payload = vec![0u8; q_update_len];
     stream.read_exact(&mut q_update_payload).await.unwrap();
     assert_eq!(q_update_payload[0], 0x00); // agyis: no-mutant
@@ -1905,49 +1905,52 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     ); // agyis: no-mutant
     assert_eq!(
         u16::from_le_bytes([q_update_payload[5], q_update_payload[6]]),
-        3
-    ); // agyis: no-mutant (3 total fields)
+        1
+    ); // agyis: no-mutant (1 table field)
     assert_eq!(
         u16::from_le_bytes([q_update_payload[7], q_update_payload[8]]),
-        0x3001
+        0x6001
     ); // agyis: no-mutant
     assert_eq!(
         u16::from_le_bytes([q_update_payload[9], q_update_payload[10]]),
+        immortal_net::MCTS_TOKEN_QUEUE_STATUS
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([q_update_payload[11], q_update_payload[12]]),
+        1
+    ); // agyis: no-mutant (row count = 1)
+    assert_eq!(
+        u16::from_le_bytes([q_update_payload[13], q_update_payload[14]]),
+        3
+    ); // agyis: no-mutant (row fields = 3)
+    assert_eq!(
+        u16::from_le_bytes([q_update_payload[15], q_update_payload[16]]),
+        0x3001
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([q_update_payload[17], q_update_payload[18]]),
         immortal_net::MCTS_TOKEN_QUEUE_STATE
     ); // agyis: no-mutant
     assert_eq!(
         u32::from_le_bytes([
-            q_update_payload[11],
-            q_update_payload[12],
-            q_update_payload[13],
-            q_update_payload[14],
+            q_update_payload[19],
+            q_update_payload[20],
+            q_update_payload[21],
+            q_update_payload[22],
         ]),
         7
     ); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([q_update_payload[15], q_update_payload[16]]),
+        u16::from_le_bytes([q_update_payload[23], q_update_payload[24]]),
         0x4002
     ); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([q_update_payload[17], q_update_payload[18]]),
+        u16::from_le_bytes([q_update_payload[25], q_update_payload[26]]),
         immortal_net::MCTS_TOKEN_MATCH_ID
     ); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([q_update_payload[19], q_update_payload[20]]),
+        u16::from_le_bytes([q_update_payload[27], q_update_payload[28]]),
         immortal_net::MCTS_TOKEN_MATCH_QUEUE_ID
-    ); // agyis: no-mutant
-    assert_eq!(
-        u64::from_le_bytes([
-            q_update_payload[21],
-            q_update_payload[22],
-            q_update_payload[23],
-            q_update_payload[24],
-            q_update_payload[25],
-            q_update_payload[26],
-            q_update_payload[27],
-            q_update_payload[28],
-        ]),
-        878850364
     ); // agyis: no-mutant
     assert_eq!(
         u64::from_le_bytes([
@@ -1959,6 +1962,19 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
             q_update_payload[34],
             q_update_payload[35],
             q_update_payload[36],
+        ]),
+        878850364
+    ); // agyis: no-mutant
+    assert_eq!(
+        u64::from_le_bytes([
+            q_update_payload[37],
+            q_update_payload[38],
+            q_update_payload[39],
+            q_update_payload[40],
+            q_update_payload[41],
+            q_update_payload[42],
+            q_update_payload[43],
+            q_update_payload[44],
         ]),
         434
     ); // agyis: no-mutant
