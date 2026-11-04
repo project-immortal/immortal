@@ -1667,84 +1667,6 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     ]); // agyis: no-mutant
     assert_eq!(q7_v703, 434); // agyis: no-mutant
 
-    // (b2) QUEUE_STATE_UPDATE frame (Function ID 0x39d5ce77, QueueState = 7)
-    stream.read_exact(&mut header_buf).await.unwrap();
-    let q_update_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
-    let q_update_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
-    assert_eq!(q_update_flags, 0x0000); // agyis: no-mutant
-    assert_eq!(q_update_len, 37); // agyis: no-mutant
-    let mut q_update_payload = vec![0u8; q_update_len];
-    stream.read_exact(&mut q_update_payload).await.unwrap();
-    assert_eq!(q_update_payload[0], 0x00); // agyis: no-mutant
-    assert_eq!(
-        u32::from_le_bytes([
-            q_update_payload[1],
-            q_update_payload[2],
-            q_update_payload[3],
-            q_update_payload[4],
-        ]),
-        immortal_net::MCTS_FUNCTION_ID_QUEUE_STATE_UPDATE
-    ); // agyis: no-mutant
-    assert_eq!(
-        u16::from_le_bytes([q_update_payload[5], q_update_payload[6]]),
-        3
-    ); // agyis: no-mutant (3 total fields)
-    assert_eq!(
-        u16::from_le_bytes([q_update_payload[7], q_update_payload[8]]),
-        0x3001
-    ); // agyis: no-mutant
-    assert_eq!(
-        u16::from_le_bytes([q_update_payload[9], q_update_payload[10]]),
-        immortal_net::MCTS_TOKEN_QUEUE_STATE
-    ); // agyis: no-mutant
-    assert_eq!(
-        u32::from_le_bytes([
-            q_update_payload[11],
-            q_update_payload[12],
-            q_update_payload[13],
-            q_update_payload[14],
-        ]),
-        7
-    ); // agyis: no-mutant
-    assert_eq!(
-        u16::from_le_bytes([q_update_payload[15], q_update_payload[16]]),
-        0x4002
-    ); // agyis: no-mutant
-    assert_eq!(
-        u16::from_le_bytes([q_update_payload[17], q_update_payload[18]]),
-        immortal_net::MCTS_TOKEN_MATCH_ID
-    ); // agyis: no-mutant
-    assert_eq!(
-        u16::from_le_bytes([q_update_payload[19], q_update_payload[20]]),
-        immortal_net::MCTS_TOKEN_MATCH_QUEUE_ID
-    ); // agyis: no-mutant
-    assert_eq!(
-        u64::from_le_bytes([
-            q_update_payload[21],
-            q_update_payload[22],
-            q_update_payload[23],
-            q_update_payload[24],
-            q_update_payload[25],
-            q_update_payload[26],
-            q_update_payload[27],
-            q_update_payload[28],
-        ]),
-        878850364
-    ); // agyis: no-mutant
-    assert_eq!(
-        u64::from_le_bytes([
-            q_update_payload[29],
-            q_update_payload[30],
-            q_update_payload[31],
-            q_update_payload[32],
-            q_update_payload[33],
-            q_update_payload[34],
-            q_update_payload[35],
-            q_update_payload[36],
-        ]),
-        434
-    ); // agyis: no-mutant
-
     // (c) MATCH_STATUS state 10 with DATA_SET_MEMBERS table (Token 312)
     stream.read_exact(&mut header_buf).await.unwrap();
     let status10_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
@@ -1962,6 +1884,132 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         status10_payload[105],
     ]); // agyis: no-mutant
     assert_eq!(s10_player_id, 8302401); // agyis: no-mutant
+
+    // (c2) QUEUE_STATE_UPDATE frame (Function ID 0x39d5ce77, QueueState = 7)
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let q_update_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let q_update_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(q_update_flags, 0x0000); // agyis: no-mutant
+    assert_eq!(q_update_len, 37); // agyis: no-mutant
+    let mut q_update_payload = vec![0u8; q_update_len];
+    stream.read_exact(&mut q_update_payload).await.unwrap();
+    assert_eq!(q_update_payload[0], 0x00); // agyis: no-mutant
+    assert_eq!(
+        u32::from_le_bytes([
+            q_update_payload[1],
+            q_update_payload[2],
+            q_update_payload[3],
+            q_update_payload[4],
+        ]),
+        immortal_net::MCTS_FUNCTION_ID_QUEUE_STATE_UPDATE
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([q_update_payload[5], q_update_payload[6]]),
+        3
+    ); // agyis: no-mutant (3 total fields)
+    assert_eq!(
+        u16::from_le_bytes([q_update_payload[7], q_update_payload[8]]),
+        0x3001
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([q_update_payload[9], q_update_payload[10]]),
+        immortal_net::MCTS_TOKEN_QUEUE_STATE
+    ); // agyis: no-mutant
+    assert_eq!(
+        u32::from_le_bytes([
+            q_update_payload[11],
+            q_update_payload[12],
+            q_update_payload[13],
+            q_update_payload[14],
+        ]),
+        7
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([q_update_payload[15], q_update_payload[16]]),
+        0x4002
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([q_update_payload[17], q_update_payload[18]]),
+        immortal_net::MCTS_TOKEN_MATCH_ID
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([q_update_payload[19], q_update_payload[20]]),
+        immortal_net::MCTS_TOKEN_MATCH_QUEUE_ID
+    ); // agyis: no-mutant
+    assert_eq!(
+        u64::from_le_bytes([
+            q_update_payload[21],
+            q_update_payload[22],
+            q_update_payload[23],
+            q_update_payload[24],
+            q_update_payload[25],
+            q_update_payload[26],
+            q_update_payload[27],
+            q_update_payload[28],
+        ]),
+        878850364
+    ); // agyis: no-mutant
+    assert_eq!(
+        u64::from_le_bytes([
+            q_update_payload[29],
+            q_update_payload[30],
+            q_update_payload[31],
+            q_update_payload[32],
+            q_update_payload[33],
+            q_update_payload[34],
+            q_update_payload[35],
+            q_update_payload[36],
+        ]),
+        434
+    ); // agyis: no-mutant
+
+    // (c3) MATCH_STATUS tick frame (Function ID 0x392dcda5, len 106)
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let tick_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let tick_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(tick_flags, 0x0000); // agyis: no-mutant
+    assert_eq!(tick_len, 106); // agyis: no-mutant
+    let mut tick_payload = vec![0u8; tick_len];
+    stream.read_exact(&mut tick_payload).await.unwrap();
+    assert_eq!(tick_payload[0], 0x00); // agyis: no-mutant
+    assert_eq!(
+        u32::from_le_bytes([
+            tick_payload[1],
+            tick_payload[2],
+            tick_payload[3],
+            tick_payload[4],
+        ]),
+        immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS
+    ); // agyis: no-mutant
+    assert_eq!(u16::from_le_bytes([tick_payload[5], tick_payload[6]]), 7); // agyis: no-mutant (7 total fields)
+    let tick_state = u32::from_le_bytes([
+        tick_payload[17],
+        tick_payload[18],
+        tick_payload[19],
+        tick_payload[20],
+    ]); // agyis: no-mutant
+    let tick_launch = u32::from_le_bytes([
+        tick_payload[21],
+        tick_payload[22],
+        tick_payload[23],
+        tick_payload[24],
+    ]); // agyis: no-mutant
+    let tick_player_lobby = u32::from_le_bytes([
+        tick_payload[25],
+        tick_payload[26],
+        tick_payload[27],
+        tick_payload[28],
+    ]); // agyis: no-mutant
+    let tick_player_queue = u32::from_le_bytes([
+        tick_payload[29],
+        tick_payload[30],
+        tick_payload[31],
+        tick_payload[32],
+    ]); // agyis: no-mutant
+    assert_eq!(tick_state, 10); // agyis: no-mutant
+    assert_eq!(tick_launch, 0); // agyis: no-mutant
+    assert_eq!(tick_player_lobby, 5); // agyis: no-mutant
+    assert_eq!(tick_player_queue, 7); // agyis: no-mutant
 
     // (d) PLAYER_SVC_LAUNCH_MAP_INSTANCE wire frame (Function ID 0x4bee2ed8, len 53, queue_id 434, match_id 878850364, timeout 60, sockaddr 127.0.0.1:7777)
     stream.read_exact(&mut header_buf).await.unwrap();

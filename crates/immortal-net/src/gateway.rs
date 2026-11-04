@@ -424,22 +424,9 @@ async fn handle_connection(
                         return;
                     }
 
-                    let queue_state_update =
-                        create_mcts_queue_state_update_frame(878850364, 434, 7);
-                    if tx.send(queue_state_update).await.is_err() {
-                        return;
-                    }
-                    info!(
-                        "Dispatched MCTS QueueState update frame 0x39d5ce77 (QueueState: 7) for {}",
-                        peer_addr
-                    );
-
-                    // In ShippingPC-ChaosGame.exe: FUN_140d39e50 at 0x140d39f0d..0x140d39f1b, the client evaluates
-                    // UTgMatchLobby->QueueState at offset 0x1d8, asserting QueueState == 7 or 9 before arming map session
-                    // descriptors [rbx+0x874] and [rbx+0x88c].
-                    // QueueId transitions from 0 (in state 8) to 434 (in state 10) so UTgMatchLobby breaks its cache,
-                    // executes FindQueueById(434), and copies QueueState = 7 (MQ_LAUNCHING) into [UTgMatchLobby + 0x1d8],
-                    // satisfying gate 0x140d39f1b.
+                    // In ShippingPC-ChaosGame.exe: FUN_1400caf60 line 1400cb238 asserts MatchLobby->QueueId != 0
+                    // before processing 0x39d5ce77 and copying QueueState = 7 to [UTgMatchLobby + 0x1d8].
+                    // Therefore, MATCH_STATUS 10 (which transitions QueueId from 0 to 434) MUST be dispatched FIRST.
                     let match_status_10 = create_mcts_match_status_with_members_frame(
                         434,
                         878850364,
@@ -450,11 +437,26 @@ async fn handle_connection(
                         cfg.account_id,
                         BOT_ID_VIKTOR,
                     );
+                    if tx.send(match_status_10.clone()).await.is_err() {
+                        return;
+                    }
+
+                    let queue_state_update =
+                        create_mcts_queue_state_update_frame(878850364, 434, 7);
+                    if tx.send(queue_state_update).await.is_err() {
+                        return;
+                    }
+                    info!(
+                        "Dispatched MCTS QueueState update frame 0x39d5ce77 (QueueState: 7) for {}",
+                        peer_addr
+                    );
+
+                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
                     if tx.send(match_status_10).await.is_err() {
                         return;
                     }
 
-                    tokio::time::sleep(tokio::time::Duration::from_millis(900)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(850)).await;
 
                     let launch_map_frame = create_mcts_launch_map_instance_frame(
                         434,
