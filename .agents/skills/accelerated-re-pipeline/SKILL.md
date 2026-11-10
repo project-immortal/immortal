@@ -38,7 +38,7 @@ Derived from the **Project Immortal** 18-hour empirical milestone breakthrough (
 |  Vector 1: schema_conformance_test (0.01s static linter on Rust/Go/C++ codecs)  |
 |  Vector 2: golden_conformance_test (0.00s offline replay of genuine frames)    |
 |  Vector 3: Cohesive State Machine & Gating Milestones                          |
-|  Vector 4: Automated Flight Runner (`dirty flight` + Watchdog + Telemetry)     |
+|  Vector 4: Automated Flight Runner (`agyis flight` + Watchdog + Telemetry)    |
 +--------------------------------------------------------------------------------+
 ```
 
@@ -133,7 +133,7 @@ Rather than writing custom one-off scripts or guessing wire contracts, agents op
 
 ---
 
-### Tool 4: Automated Flight Test Runner (`agyis flight` / `dirty flight`)
+### Tool 4: Automated Flight Test Runner (`agyis flight`)
 *Automated 90s flight execution with real-time log watchdog, input injection, and keyframe extraction.*
 
 - **When to Apply**:
@@ -157,7 +157,7 @@ Rather than writing custom one-off scripts or guessing wire contracts, agents op
      - Launches background server daemon with log capture (`scratch/flight_server.log`).
      - Initializes hardware screen recording using the agentic preset (480p 3fps MP4, ~200KB per 10s).
      - Launches client under Proton and attaches real-time non-blocking log watchdog.
-     - Automatically handles interactive UI gates (e.g. clicking Accept on match invite via `dirty input`).
+     - Automatically handles interactive UI gates (e.g. clicking Accept on match invite via `agyis input`).
   3. **Inspect Flight Telemetry & Evidence**:
      - Review execution timeline and milestone table: `scratch/recordings/flight_summary_<TIMESTAMP>.md`
      - Inspect captured milestone keyframes: `scratch/recordings/keyframes_<TIMESTAMP>/`
@@ -173,16 +173,20 @@ Rather than writing custom one-off scripts or guessing wire contracts, agents op
   agyis ext list
   ```
 - **Bespoke Extensions**:
-  - `agyis flight` : Automated flight test runner and watchdog.
-  - `agyis game`   : Control and inspect Paladins game and server daemons (`status`, `start`, `logs`, `kill`).
-  - `agyis mcts`   : Look up or calculate MCTS marshal tokens and group headers.
-  - `agyis record` : Hardware-accelerated screen recording via `gpu-screen-recorder`.
+  - `agyis flight`     : Automated flight test runner and watchdog.
+  - `agyis game`       : Control and inspect Paladins game and server daemons (`status`, `start`, `logs`, `kill`).
+  - `agyis input`      : Game window & uinput automation via ydotoold + xdotool (`window`, `click`, `key`, `type`, `console`).
+  - `agyis mcts`       : Look up or calculate MCTS marshal tokens and group headers.
+  - `agyis record`     : Hardware-accelerated screen recording via `gpu-screen-recorder`.
+  - `agyis screenshot` : Capture game window or desktop screenshot (`--window`, `--output`).
 - **First-Class Cleanroom RE Suite (`agyis re`)**:
   - `agyis re status`               : Check dirtyroom database metrics, binaries, and Ghidra project status.
   - `agyis re patch-rea --check`    : Verify upstream REA MCP project acceleration patch status (PSL-INV-009).
   - `agyis re patch-rea --apply`    : Apply pre-analyzed Ghidra project acceleration patch.
   - `agyis re find <pattern> [--type all|func|str|rtti] [--limit N]` : Sub-millisecond SQLite queries across 356k functions and 817k strings.
   - `agyis re decompile <symbol>`   : Zero-timeout headless decompilation.
+  - `agyis re disasm <symbol|addr>` : Zero-timeout headless disassembly (v1.0.0-rc10).
+  - `agyis re xrefs <symbol|addr>`  : Function cross-references analysis (v1.0.0-rc10).
 
 
 ---
@@ -208,7 +212,7 @@ When an automated flight fails or hangs at a specific gate, follow this strict 5
 [Step 4: Schema & Golden Fix] ---> Check Vector 1 schema & Vector 2 golden pcap for field mismatch
              |
              v
-[Step 5: Automated Verification] -> `cargo test --all` -> `./scripts/dirtyroom/dirty flight`
+[Step 5: Automated Verification] -> `cargo test --all` -> `agyis flight`
 ```
 
 ### Common Wire Deserialization Traps (Learned Lessons):
@@ -248,11 +252,11 @@ agyis game logs client
 agyis record clip --duration 10 --agent
 
 # Window geometry & inspect
-./scripts/dirtyroom/dirty input window
+agyis input window
 
 # Automated mouse click (normalized 0.0-1.0 coords)
-./scripts/dirtyroom/dirty input click 0.5 0.75 --relative
+agyis input click 0.5 0.75 --relative
 
 # Screen grab inspection
-./scripts/dirtyroom/dirty screenshot
+agyis screenshot
 ```

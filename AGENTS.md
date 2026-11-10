@@ -1,4 +1,8 @@
 <!-- Added by AGYIS-HARNESS -->
+---
+trigger: always_on
+description: Universal agent rules and Project Immortal workspace guidelines
+---
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright (c) 2026 Arafat Zahan (@kuasha420) -->
 <!-- Corporate Stewardship & Infrastructure: Purrfect Software Limited (PSL) -->
@@ -22,15 +26,17 @@ agyis verify --spec                            # Verify cleanroom specifications
 
 # 🩺 Environment Diagnostics & Auto-Healing
 agyis doctor                                   # Audit workstation runtimes & auto-heal
-agyis doctor --experimental-rea                # Audit Ghidra, REA MCP & forensic runtimes
+agyis doctor --re                              # Audit Ghidra, REA MCP & forensic runtimes (alias: --experimental-rea)
 agyis status                                   # Print harness health, active hooks & telemetry
 
 # 🎮 Workspace Bespoke Extensions (ADR-034)
 agyis ext list                                 # Discover project-specific CLI extension commands
 agyis flight [--target <milestone>] [--timeout <N>] # Vector 4 automated flight runner & watchdog
 agyis game [status|start|logs|kill]            # Control and inspect Paladins game & server daemons
+agyis input [window|click|key|type|console]     # Game window & uinput automation via ydotoold + xdotool
 agyis mcts <token|hash>                        # Look up or calculate MCTS marshal tokens
 agyis record [status|start|stop|clip]          # Hardware-accelerated screen recording via gpu-screen-recorder
+agyis screenshot [--window] [--output <path>]  # Capture game window or desktop screenshot
 
 # 🔬 Cleanroom Reverse Engineering (ADR-028 & PSL-INV-009)
 agyis re status                                # Audit dirtyroom database metrics & Ghidra project
@@ -38,6 +44,8 @@ agyis re patch-rea --check                     # Check REA MCP Ghidra project ac
 agyis re patch-rea --apply                     # Apply zero-timeout Ghidra project acceleration patch
 agyis re find <pattern> [--type all|func|str|rtti] # Sub-millisecond SQLite query across 356k funcs / 817k strings
 agyis re decompile <symbol|addr>               # Zero-timeout headless decompilation
+agyis re disasm <symbol|addr>                  # Zero-timeout headless disassembly (v1.0.0-rc10)
+agyis re xrefs <symbol|addr>                   # Function cross-references analysis (v1.0.0-rc10)
 
 # 🧩 Skills & Subagents Discovery
 agyis skills                                   # List installed modular skills & triggers
