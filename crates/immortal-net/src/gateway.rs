@@ -220,6 +220,7 @@ async fn handle_connection(
             if payload_len > 0 {
                 reader.read_exact(&mut payload).await?;
             }
+            post_login_count += 1;
 
             if payload_len > 0 && payload_len <= 64 {
                 debug!(
@@ -229,7 +230,8 @@ async fn handle_connection(
             }
 
             let has_fernando = payload.windows(2).any(|w| w == [0x9b, 0x08] || w == [0x08, 0x9b]) // agyis: no-mutant diagnostic logging
-                || payload.windows(2).any(|w| w == 2203u16.to_le_bytes() || w == 2203u16.to_be_bytes()); // agyis: no-mutant diagnostic logging
+                || payload.windows(2).any(|w| w == 2203u16.to_le_bytes() || w == 2203u16.to_be_bytes()) // agyis: no-mutant diagnostic logging
+                || payload.windows(2).any(|w| w == (BOT_ID_FERNANDO as u16).to_le_bytes() || w == (BOT_ID_FERNANDO as u16).to_be_bytes());
             let has_shooting_range_req = payload.windows(2).any(|w| w == 434u16.to_le_bytes())
                 || payload
                     .windows(4)
@@ -241,7 +243,7 @@ async fn handle_connection(
 
             // If the client submits a champion selection or draft frame while matchmaking is active,
             // reactively dispatch the match status 10 confirmation, match composition, launch map instance, and ChangeMap (0x847de68b).
-            if (has_fernando || payload_len >= 1000) && matchmaking_started {
+            if (has_fernando || payload_len >= 10000) && post_login_count > 5 && matchmaking_started {
                 let bot_id = if has_fernando {
                     BOT_ID_FERNANDO
                 } else {
@@ -314,8 +316,7 @@ async fn handle_connection(
                     MAP_GAME_ID_SHOOTING_RANGE, peer_addr
                 );
             }
-
-            post_login_count += 1;
+ 
             if (post_login_count == 1 || has_shooting_range_req) && !matchmaking_started {
                 matchmaking_started = true;
                 let tx = write_tx.clone();
@@ -513,6 +514,17 @@ async fn handle_connection(
                         return;
                     }
 
+                    let match_composition_frame = create_mcts_match_composition_frame(
+                        878850364,
+                        434,
+                        "IMMORTAL_SHOOTING_RANGE_PORTAL_SESSION",
+                        cfg.account_id,
+                        BOT_ID_FERNANDO,
+                    );
+                    if tx.send(match_composition_frame).await.is_err() {
+                        return;
+                    }
+
                     tokio::time::sleep(tokio::time::Duration::from_millis(850)).await;
 
                     let launch_map_frame = create_mcts_launch_map_instance_frame(
@@ -542,7 +554,7 @@ async fn handle_connection(
                     }
 
                     info!(
-                        "Dispatched Live MCTS Shooting Range transition sequence (queued -> invited -> invite -> status 8 -> roster -> status 10 -> launch_map_instance -> change_map 0x847de68b) for {}",
+                        "Dispatched Live MCTS Shooting Range transition sequence (queued -> invited -> invite -> status 8 -> roster -> status 10 -> match_composition -> launch_map_instance -> change_map 0x847de68b) for {}",
                         peer_addr
                     );
                 });

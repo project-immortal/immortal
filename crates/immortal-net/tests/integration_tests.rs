@@ -2093,6 +2093,30 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(tick_player_queue, 7); // agyis: no-mutant
     assert_eq!(tick_status_code, 7); // agyis: no-mutant
 
+    // (c4) MATCH_COMPOSITION wire frame (Function ID 0x392dcda5, len 105, Table 1583 DATA_SET_MATCH_COMPOSITION)
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let auto_mc_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let auto_mc_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(auto_mc_flags, 0x0000); // agyis: no-mutant
+    assert_eq!(auto_mc_len, 105); // agyis: no-mutant
+    let mut auto_mc_payload = vec![0u8; auto_mc_len];
+    stream.read_exact(&mut auto_mc_payload).await.unwrap();
+    assert_eq!(auto_mc_payload[0], 0x00); // agyis: no-mutant
+    let auto_mc_func_id = u32::from_le_bytes([
+        auto_mc_payload[1],
+        auto_mc_payload[2],
+        auto_mc_payload[3],
+        auto_mc_payload[4],
+    ]); // agyis: no-mutant
+    assert_eq!(
+        auto_mc_func_id,
+        immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([auto_mc_payload[9], auto_mc_payload[10]]),
+        immortal_net::MCTS_TOKEN_MATCH_COMPOSITION
+    ); // agyis: no-mutant
+
     // (d) PLAYER_SVC_LAUNCH_MAP_INSTANCE wire frame (Function ID 0x4bee2ed8, len 53, queue_id 434, match_id 878850364, timeout 60, sockaddr 127.0.0.1:7777)
     stream.read_exact(&mut header_buf).await.unwrap();
     let launch_map_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
@@ -2265,8 +2289,38 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(trans_map_instance_id, 1282927737); // agyis: no-mutant
 
     // 5. Step 5: Live sequence completes at MATCH_STATUS 10 and change_map frame (0x847de68b with compel=true).
-    // Subsequent post-login frame (champion select with Fernando) reactively dispatches MATCH_STATUS 10,
-    // LaunchMapInstance, and ChangeMap (0x847de68b) without emitting bogus encrypted ciphertext ACK.
+    // Verify RCA-1: Client sends 1631-byte manifest initialization frame (post_login_count == 2).
+    // The server must NOT prematurely trigger reactive champion selection / draft dispatch.
+    let mut manifest_frame = Vec::with_capacity(1635);
+    manifest_frame.extend_from_slice(&1631u16.to_le_bytes());
+    manifest_frame.extend_from_slice(&0x0000u16.to_le_bytes());
+    manifest_frame.extend_from_slice(&vec![0x33u8; 1631]);
+    stream.write_all(&manifest_frame).await.unwrap();
+    stream.flush().await.unwrap();
+
+    let mut no_reactive_buf = [0u8; 1];
+    let probe_rca1 = tokio::time::timeout(
+        std::time::Duration::from_millis(50),
+        stream.read(&mut no_reactive_buf),
+    )
+    .await;
+    assert!(
+        probe_rca1.is_err(),
+        "1631-byte manifest frame at post_login_count == 2 must not trigger premature reactive draft dispatch"
+    );
+
+    // Send intermediate post-login frames 3, 4, 5 so post_login_count advances to 5
+    for _ in 3..=5 {
+        let mut dummy_frame = Vec::with_capacity(23);
+        dummy_frame.extend_from_slice(&19u16.to_le_bytes());
+        dummy_frame.extend_from_slice(&0x0000u16.to_le_bytes());
+        dummy_frame.extend_from_slice(&vec![0x11u8; 19]);
+        stream.write_all(&dummy_frame).await.unwrap();
+        stream.flush().await.unwrap();
+    }
+
+    // Subsequent post-login frame (champion select with Fernando at post_login_count > 5) reactively dispatches
+    // MATCH_STATUS 10, MatchComposition, LaunchMapInstance, and ChangeMap (0x847de68b) without emitting bogus encrypted ciphertext ACK.
     stream.write_all(&champ_frame).await.unwrap();
     stream.flush().await.unwrap();
 
