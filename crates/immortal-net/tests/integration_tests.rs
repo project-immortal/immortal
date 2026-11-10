@@ -2093,12 +2093,12 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(tick_player_queue, 7); // agyis: no-mutant
     assert_eq!(tick_status_code, 7); // agyis: no-mutant
 
-    // (c4) MATCH_COMPOSITION wire frame (Function ID 0x392dcda5, len 105, Table 1583 DATA_SET_MATCH_COMPOSITION)
+    // (c4) MATCH_COMPOSITION wire frame (Function ID 0x392dcda5, len 159, Table 1583 DATA_SET_MATCH_COMPOSITION)
     stream.read_exact(&mut header_buf).await.unwrap();
     let auto_mc_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
     let auto_mc_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
     assert_eq!(auto_mc_flags, 0x0000); // agyis: no-mutant
-    assert_eq!(auto_mc_len, 105); // agyis: no-mutant
+    assert_eq!(auto_mc_len, 159); // agyis: no-mutant
     let mut auto_mc_payload = vec![0u8; auto_mc_len];
     stream.read_exact(&mut auto_mc_payload).await.unwrap();
     assert_eq!(auto_mc_payload[0], 0x00); // agyis: no-mutant
@@ -2113,7 +2113,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS
     ); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([auto_mc_payload[9], auto_mc_payload[10]]),
+        u16::from_le_bytes([auto_mc_payload[63], auto_mc_payload[64]]),
         immortal_net::MCTS_TOKEN_MATCH_COMPOSITION
     ); // agyis: no-mutant
 
@@ -2319,88 +2319,21 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         stream.flush().await.unwrap();
     }
 
-    // Subsequent post-login frame (champion select with Fernando at post_login_count > 5) reactively dispatches
-    // MATCH_STATUS 10, MatchComposition, LaunchMapInstance, and ChangeMap (0x847de68b) without emitting bogus encrypted ciphertext ACK.
+    // Subsequent post-login frame (champion select with Fernando at post_login_count > 5) when transition
+    // has already been dispatched must NOT trigger a duplicate RPC burst.
     stream.write_all(&champ_frame).await.unwrap();
     stream.flush().await.unwrap();
 
-    // Expect reactive MATCH_STATUS 10
-    stream.read_exact(&mut header_buf).await.unwrap();
-    let reactive_status10_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
-    let reactive_status10_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
-    assert_eq!(reactive_status10_flags, 0x0000);
-    let mut reactive_status10_payload = vec![0u8; reactive_status10_len];
-    stream
-        .read_exact(&mut reactive_status10_payload)
-        .await
-        .unwrap();
-    let status10_func_id = u32::from_le_bytes([
-        reactive_status10_payload[1],
-        reactive_status10_payload[2],
-        reactive_status10_payload[3],
-        reactive_status10_payload[4],
-    ]);
-    assert_eq!(
-        status10_func_id,
-        immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS
+    let mut dup_probe_buf = [0u8; 1];
+    let probe_dup = tokio::time::timeout(
+        std::time::Duration::from_millis(50),
+        stream.read(&mut dup_probe_buf),
+    )
+    .await;
+    assert!(
+        probe_dup.is_err(),
+        "Server must not fire duplicate RPC burst upon champion selection when map transition was already dispatched"
     );
-
-    // Expect reactive Match Composition frame
-    stream.read_exact(&mut header_buf).await.unwrap();
-    let reactive_mc_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
-    let reactive_mc_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
-    assert_eq!(reactive_mc_flags, 0x0000);
-    let mut reactive_mc_payload = vec![0u8; reactive_mc_len];
-    stream.read_exact(&mut reactive_mc_payload).await.unwrap();
-    let mc_func_id = u32::from_le_bytes([
-        reactive_mc_payload[1],
-        reactive_mc_payload[2],
-        reactive_mc_payload[3],
-        reactive_mc_payload[4],
-    ]);
-    assert_eq!(
-        mc_func_id,
-        immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS
-    );
-    assert_eq!(
-        u16::from_le_bytes([reactive_mc_payload[9], reactive_mc_payload[10]]),
-        immortal_net::MCTS_TOKEN_MATCH_COMPOSITION
-    );
-
-    // Expect reactive LaunchMapInstance frame
-    stream.read_exact(&mut header_buf).await.unwrap();
-    let reactive_lm_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
-    let reactive_lm_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
-    assert_eq!(reactive_lm_flags, 0x0000);
-    let mut reactive_lm_payload = vec![0u8; reactive_lm_len];
-    stream.read_exact(&mut reactive_lm_payload).await.unwrap();
-    let lm_func_id = u32::from_le_bytes([
-        reactive_lm_payload[1],
-        reactive_lm_payload[2],
-        reactive_lm_payload[3],
-        reactive_lm_payload[4],
-    ]);
-    assert_eq!(
-        lm_func_id,
-        immortal_net::MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE
-    );
-
-    // Expect reactive ChangeMap frame
-    stream.read_exact(&mut header_buf).await.unwrap();
-    let reactive_cm_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
-    let reactive_cm_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
-    assert_eq!(reactive_cm_flags, 0x0000);
-    assert_eq!(reactive_cm_len, 32);
-    let mut reactive_cm_payload = vec![0u8; reactive_cm_len];
-    stream.read_exact(&mut reactive_cm_payload).await.unwrap();
-    let cm_func_id = u32::from_le_bytes([
-        reactive_cm_payload[1],
-        reactive_cm_payload[2],
-        reactive_cm_payload[3],
-        reactive_cm_payload[4],
-    ]);
-    assert_eq!(cm_func_id, immortal_net::MCTS_FUNCTION_ID_CHANGE_MAP);
-    assert_eq!(cm_func_id, 0x847de68b);
 
     let mut probe_buf = [0u8; 1];
 

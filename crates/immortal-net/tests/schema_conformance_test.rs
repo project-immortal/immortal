@@ -218,51 +218,84 @@ fn test_match_composition_frame_schema_conformance() {
         MCTS_FUNCTION_ID_MATCH_STATUS
     );
 
-    // Root row fields: 2 (1 Table in 0x6000 + 1 String in 0xa000)
+    // Root row fields: 9 (5 in Group 0x3000 + 2 in Group 0x4000 + 1 Table in Group 0x6000 + 1 String in Group 0xa000)
     let total_fields = u16::from_le_bytes([payload[5], payload[6]]);
-    assert_eq!(total_fields, 2);
+    assert_eq!(total_fields, 9);
+
+    // Group 0x3000: 5 fields (MatchStatus 10 state fields)
+    assert_eq!(u16::from_le_bytes([payload[7], payload[8]]), 0x3005);
+    assert_eq!(u16::from_le_bytes([payload[9], payload[10]]), MCTS_TOKEN_MATCH_LOBBY_STATE);
+    assert_eq!(u16::from_le_bytes([payload[11], payload[12]]), MCTS_TOKEN_LAUNCH_SECONDS);
+    assert_eq!(u16::from_le_bytes([payload[13], payload[14]]), MCTS_TOKEN_PLAYER_LOBBY_STATE);
+    assert_eq!(u16::from_le_bytes([payload[15], payload[16]]), MCTS_TOKEN_PLAYER_QUEUE_STATE);
+    assert_eq!(u16::from_le_bytes([payload[17], payload[18]]), MCTS_TOKEN_STATUS_CODE);
+
+    assert_eq!(u32::from_le_bytes([payload[19], payload[20], payload[21], payload[22]]), 10);
+    assert_eq!(u32::from_le_bytes([payload[23], payload[24], payload[25], payload[26]]), 0);
+    assert_eq!(u32::from_le_bytes([payload[27], payload[28], payload[29], payload[30]]), 5);
+    assert_eq!(u32::from_le_bytes([payload[31], payload[32], payload[33], payload[34]]), 7);
+    assert_eq!(u32::from_le_bytes([payload[35], payload[36], payload[37], payload[38]]), 7);
+
+    // Group 0x4000: 2 fields (MatchId, MatchQueueId)
+    assert_eq!(u16::from_le_bytes([payload[39], payload[40]]), 0x4002);
+    assert_eq!(u16::from_le_bytes([payload[41], payload[42]]), MCTS_TOKEN_MATCH_ID);
+    assert_eq!(u16::from_le_bytes([payload[43], payload[44]]), MCTS_TOKEN_MATCH_QUEUE_ID);
+    assert_eq!(
+        u64::from_le_bytes([
+            payload[45], payload[46], payload[47], payload[48],
+            payload[49], payload[50], payload[51], payload[52],
+        ]),
+        878850364
+    );
+    assert_eq!(
+        u64::from_le_bytes([
+            payload[53], payload[54], payload[55], payload[56],
+            payload[57], payload[58], payload[59], payload[60],
+        ]),
+        434
+    );
 
     // Group 0x6000: 1 table (Table 1583 DATA_SET_MATCH_COMPOSITION)
-    let grp_tbl = u16::from_le_bytes([payload[7], payload[8]]);
+    let grp_tbl = u16::from_le_bytes([payload[61], payload[62]]);
     assert_eq!(grp_tbl, 0x6001);
     assert_eq!(
-        u16::from_le_bytes([payload[9], payload[10]]),
+        u16::from_le_bytes([payload[63], payload[64]]),
         MCTS_TOKEN_MATCH_COMPOSITION
     );
-    assert_eq!(u16::from_le_bytes([payload[11], payload[12]]), 1); // 1 row
-    assert_eq!(u16::from_le_bytes([payload[13], payload[14]]), 5); // 5 row fields
+    assert_eq!(u16::from_le_bytes([payload[65], payload[66]]), 1); // 1 row
+    assert_eq!(u16::from_le_bytes([payload[67], payload[68]]), 5); // 5 row fields
 
     // Table 1583 Row 0:
     // - Group 0x3000: Tokens 122 (BOT_ID), 1092 (TASK_FORCE) - Type 5 (int32, 4 bytes)
     // - Group 0x4000: Tokens 11 (PLAYER_ID), 700 (MATCH_ID), 703 (MATCH_QUEUE_ID) - Type 9 (int64, 8 bytes)
-    assert_eq!(u16::from_le_bytes([payload[15], payload[16]]), 0x3002);
+    assert_eq!(u16::from_le_bytes([payload[69], payload[70]]), 0x3002);
     assert_eq!(
-        u16::from_le_bytes([payload[17], payload[18]]),
+        u16::from_le_bytes([payload[71], payload[72]]),
         MCTS_TOKEN_BOT_ID
     );
     assert_eq!(
-        u16::from_le_bytes([payload[19], payload[20]]),
+        u16::from_le_bytes([payload[73], payload[74]]),
         MCTS_TOKEN_TASK_FORCE
     );
 
-    assert_eq!(u16::from_le_bytes([payload[29], payload[30]]), 0x4003);
+    assert_eq!(u16::from_le_bytes([payload[83], payload[84]]), 0x4003);
     assert_eq!(
-        u16::from_le_bytes([payload[31], payload[32]]),
+        u16::from_le_bytes([payload[85], payload[86]]),
         MCTS_TOKEN_PLAYER_ID
     );
     assert_eq!(
-        u16::from_le_bytes([payload[33], payload[34]]),
+        u16::from_le_bytes([payload[87], payload[88]]),
         MCTS_TOKEN_MATCH_ID
     );
     assert_eq!(
-        u16::from_le_bytes([payload[35], payload[36]]),
+        u16::from_le_bytes([payload[89], payload[90]]),
         MCTS_TOKEN_MATCH_QUEUE_ID
     );
 
     // Group 0xa000: 1 string (Token 2287 PORTAL_SESSION_ID)
-    assert_eq!(u16::from_le_bytes([payload[61], payload[62]]), 0xa001);
+    assert_eq!(u16::from_le_bytes([payload[115], payload[116]]), 0xa001);
     assert_eq!(
-        u16::from_le_bytes([payload[63], payload[64]]),
+        u16::from_le_bytes([payload[117], payload[118]]),
         MCTS_TOKEN_PORTAL_SESSION_ID
     );
 }

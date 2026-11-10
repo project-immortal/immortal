@@ -12,6 +12,7 @@ use crate::error::NetError;
 use crate::framing::{CPackFrame, MagicToken, HEADER_LEN, MAX_PAYLOAD_LEN};
 use crate::marshal::{LoginRequest, LoginResponse, MatchTicket};
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -193,6 +194,7 @@ async fn handle_connection(
     let mut post_login_count: usize = 0;
     let mut login_completed = false;
     let mut matchmaking_started = false;
+    let transition_dispatched = Arc::new(AtomicBool::new(false));
 
     loop {
         let mut header = [0u8; HEADER_LEN];
@@ -243,7 +245,12 @@ async fn handle_connection(
 
             // If the client submits a champion selection or draft frame while matchmaking is active,
             // reactively dispatch the match status 10 confirmation, match composition, launch map instance, and ChangeMap (0x847de68b).
-            if (has_fernando || payload_len >= 10000) && post_login_count > 5 && matchmaking_started {
+            if (has_fernando || payload_len >= 10000)
+                && post_login_count > 5
+                && matchmaking_started
+                && !transition_dispatched.load(Ordering::SeqCst)
+            {
+                transition_dispatched.store(true, Ordering::SeqCst);
                 let bot_id = if has_fernando {
                     BOT_ID_FERNANDO
                 } else {
@@ -321,6 +328,7 @@ async fn handle_connection(
                 matchmaking_started = true;
                 let tx = write_tx.clone();
                 let cfg = Arc::clone(&config);
+                let transition_flag = Arc::clone(&transition_dispatched);
                 tokio::spawn(async move {
                     // Calibrated settling cadence: give client HUD time to finish scene and vendor loading before match launch
                     if cfg.post_login_settle_delay_ms > 0 {
@@ -526,6 +534,11 @@ async fn handle_connection(
                     }
 
                     tokio::time::sleep(tokio::time::Duration::from_millis(850)).await;
+
+                    if transition_flag.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    transition_flag.store(true, Ordering::SeqCst);
 
                     let launch_map_frame = create_mcts_launch_map_instance_frame(
                         434,
