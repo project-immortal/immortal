@@ -2291,6 +2291,28 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS
     );
 
+    // Expect reactive Match Composition frame
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let reactive_mc_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let reactive_mc_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
+    assert_eq!(reactive_mc_flags, 0x0000);
+    let mut reactive_mc_payload = vec![0u8; reactive_mc_len];
+    stream.read_exact(&mut reactive_mc_payload).await.unwrap();
+    let mc_func_id = u32::from_le_bytes([
+        reactive_mc_payload[1],
+        reactive_mc_payload[2],
+        reactive_mc_payload[3],
+        reactive_mc_payload[4],
+    ]);
+    assert_eq!(
+        mc_func_id,
+        immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS
+    );
+    assert_eq!(
+        u16::from_le_bytes([reactive_mc_payload[9], reactive_mc_payload[10]]),
+        immortal_net::MCTS_TOKEN_MATCH_COMPOSITION
+    );
+
     // Expect reactive LaunchMapInstance frame
     stream.read_exact(&mut header_buf).await.unwrap();
     let reactive_lm_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;

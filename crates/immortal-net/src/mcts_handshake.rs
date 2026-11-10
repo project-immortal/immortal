@@ -771,13 +771,19 @@ pub const MCTS_TOKEN_MAP_INSTANCE_ID: u16 = 685;
 pub const MCTS_TOKEN_MATCH_ID: u16 = 700;
 pub const MCTS_TOKEN_MATCH_QUEUE_ID: u16 = 703;
 pub const MCTS_TOKEN_PROFILE_ID: u16 = 855;
+/// Token 1092 (0x0444): TASK_FORCE (Group 0x3000 int32, Type 5)
+pub const MCTS_TOKEN_TASK_FORCE: u16 = 1092;
 pub const MCTS_TOKEN_MATCH_LOBBY_STATE: u16 = 1342;
 pub const MCTS_TOKEN_PLAYER_LOBBY_STATE: u16 = 1344;
 pub const MCTS_TOKEN_COMPEL_FLAG: u16 = 1536;
+/// Token 1583 (0x062f): DATA_SET_MATCH_COMPOSITION (Group 0x6000 RowSet, Type 13)
+pub const MCTS_TOKEN_MATCH_COMPOSITION: u16 = 1583;
 pub const MCTS_TOKEN_LAUNCH_SECONDS: u16 = 1690;
 pub const MCTS_TOKEN_INVITE_PRIVILEGES: u16 = 2143;
 pub const MCTS_TOKEN_POSITION: u16 = 838;
 pub const MCTS_TOKEN_PLAYER_QUEUE_STATE: u16 = 2191;
+/// Token 2287 (0x08ef): PORTAL_SESSION_ID (Group 0xa000 String, Type 12)
+pub const MCTS_TOKEN_PORTAL_SESSION_ID: u16 = 2287;
 
 /// Authentic Token ID for Status Code / Queue State (1053).
 /// Reverse engineered from `ShippingPC-ChaosGame.exe` (`FUN_1400c87f0: 1400c88c6`).
@@ -1101,6 +1107,106 @@ pub fn create_mcts_match_status_with_queue_and_members_frame(
         account_id,
         bot_id,
     )
+}
+
+/// Builds an authentic live MCTS `MATCH_STATUS` wire frame containing Match Composition table (Table 1583) and Portal Session ID (Token 2287).
+///
+/// Matches reverse engineered `CMarshalRow::Store` and `CMarshalRowSet::Store` specification:
+/// - Prefix: byte `0x00` (`this[0x30]`)
+/// - Function ID: `0x392dcda5` (`MCTS_FUNCTION_ID_MATCH_STATUS`) in little-endian u32
+/// - CMarshalRow field count: 2 (1 table field in Group 0x6000 + 1 string field in Group 0xa000)
+/// - Group 0x6000 (Table / Rowset fields):
+///   - Header: `0x6001` (group 0x6000 | 1)
+///   - Table Token: 1583 (`MCTS_TOKEN_MATCH_COMPOSITION`)
+///     - Row count: 1 (u16)
+///     - Row 0 (CMarshalRow):
+///       - Field count: 5 (u16)
+///       - Group 0x3000 (4-byte fields: 2 fields):
+///         - Header: `0x3002` (group 0x3000 | 2)
+///         - Token 122 (u16): BOT_ID / CHAMPION_ID (`champion_id`)
+///         - Token 1092 (u16): TASK_FORCE (`1u32`)
+///         - Values: `champion_id`, `1u32`
+///       - Group 0x4000 (8-byte fields: 3 fields):
+///         - Header: `0x4003` (group 0x4000 | 3)
+///         - Token 11 (u16): PLAYER_ID (`account_id`)
+///         - Token 700 (u16): MATCH_ID (`match_id`)
+///         - Token 703 (u16): MATCH_QUEUE_ID (`queue_id as u64`)
+///         - Values: `account_id`, `match_id`, `queue_id as u64`
+/// - Group 0xa000 (UTF-8 string fields: 1 field):
+///   - Header: `0xa001` (group 0xa000 | 1)
+///   - Token 2287 (u16): PORTAL_SESSION_ID (`portal_session_id`)
+///   - Length: u16 little-endian
+///   - Followed by raw UTF-8 string bytes
+/// - TCP Framing:
+///   - Length: payload length (u16 little-endian)
+///   - Wire flags: `0x0000` (u16 little-endian)
+///   - Followed by payload bytes
+pub fn create_mcts_match_composition_frame(
+    match_id: u64,
+    queue_id: u32,
+    portal_session_id: &str,
+    account_id: u64,
+    champion_id: u32,
+) -> Vec<u8> {
+    let portal_bytes = portal_session_id.as_bytes();
+    let mut payload = Vec::with_capacity(64 + portal_bytes.len());
+    payload.push(0x00); // this[0x30]
+    payload.extend_from_slice(&MCTS_FUNCTION_ID_MATCH_STATUS.to_le_bytes());
+
+    // CMarshalRow: total fields = 2 (1 table in 0x6000 + 1 string in 0xa000)
+    let total_fields: u16 = 2;
+    payload.extend_from_slice(&total_fields.to_le_bytes());
+
+    // Group 0x6000 (Table field: 1 table - Table 1583 DATA_SET_MATCH_COMPOSITION)
+    let grp_table_hdr: u16 = 0x6001;
+    payload.extend_from_slice(&grp_table_hdr.to_le_bytes());
+
+    // Table 1583: DATA_SET_MATCH_COMPOSITION
+    payload.extend_from_slice(&MCTS_TOKEN_MATCH_COMPOSITION.to_le_bytes());
+
+    // CMarshalRowSet: row count = 1
+    let row_count: u16 = 1;
+    payload.extend_from_slice(&row_count.to_le_bytes());
+
+    // Row 0: CMarshalRow with 5 fields (2 in 0x3000 + 3 in 0x4000)
+    let row_fields: u16 = 5;
+    payload.extend_from_slice(&row_fields.to_le_bytes());
+
+    // Row Group 0x3000 (4-byte fields: 2 fields)
+    let row_grp4_hdr: u16 = 0x3000 | 2;
+    payload.extend_from_slice(&row_grp4_hdr.to_le_bytes());
+    payload.extend_from_slice(&MCTS_TOKEN_BOT_ID.to_le_bytes()); // Token 122: BOT_ID / CHAMPION_ID
+    payload.extend_from_slice(&MCTS_TOKEN_TASK_FORCE.to_le_bytes()); // Token 1092: TASK_FORCE
+
+    payload.extend_from_slice(&champion_id.to_le_bytes());
+    payload.extend_from_slice(&1u32.to_le_bytes()); // Team 1
+
+    // Row Group 0x4000 (8-byte fields: 3 fields)
+    let row_grp8_hdr: u16 = 0x4000 | 3;
+    payload.extend_from_slice(&row_grp8_hdr.to_le_bytes());
+    payload.extend_from_slice(&MCTS_TOKEN_PLAYER_ID.to_le_bytes()); // Token 11: PLAYER_ID
+    payload.extend_from_slice(&MCTS_TOKEN_MATCH_ID.to_le_bytes()); // Token 700: MATCH_ID
+    payload.extend_from_slice(&MCTS_TOKEN_MATCH_QUEUE_ID.to_le_bytes()); // Token 703: MATCH_QUEUE_ID
+
+    payload.extend_from_slice(&account_id.to_le_bytes());
+    payload.extend_from_slice(&match_id.to_le_bytes());
+    payload.extend_from_slice(&(queue_id as u64).to_le_bytes());
+
+    // Group 0xa000 (1 string field: Token 2287 PORTAL_SESSION_ID)
+    let grp_str_hdr: u16 = 0xa001;
+    payload.extend_from_slice(&grp_str_hdr.to_le_bytes());
+    payload.extend_from_slice(&MCTS_TOKEN_PORTAL_SESSION_ID.to_le_bytes());
+    payload.extend_from_slice(&(portal_bytes.len() as u16).to_le_bytes());
+    payload.extend_from_slice(portal_bytes);
+
+    // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
+    let mut frame = Vec::with_capacity(4 + payload.len());
+    let payload_len = payload.len() as u16;
+    frame.extend_from_slice(&payload_len.to_le_bytes()); // agyis: no-mutant wire framing
+    frame.extend_from_slice(&0x0000u16.to_le_bytes()); // agyis: no-mutant wire framing
+    frame.extend_from_slice(&payload); // agyis: no-mutant wire framing
+
+    frame
 }
 
 /// Authentic Function ID for `CMctsNetwork::ON_MATCH_INVITE` (0x1ad4a846, MATCH_EXPIRED_INVITE).
@@ -2327,5 +2433,106 @@ mod tests {
             payload[44],
         ]);
         assert_eq!(v703, 434);
+    }
+
+    #[test]
+    fn test_create_mcts_match_composition_frame_structure() {
+        let match_id = 878850364u64;
+        let queue_id = 434u32;
+        let portal_session_id = "IMMORTAL_SHOOTING_RANGE_PORTAL_SESSION";
+        let account_id = 109775243102792335u64;
+        let champion_id = BOT_ID_FERNANDO;
+
+        let frame = create_mcts_match_composition_frame(
+            match_id,
+            queue_id,
+            portal_session_id,
+            account_id,
+            champion_id,
+        );
+
+        let payload_len = u16::from_le_bytes([frame[0], frame[1]]) as usize;
+        let flags = u16::from_le_bytes([frame[2], frame[3]]);
+        assert_eq!(flags, 0x0000);
+        assert_eq!(frame.len(), 4 + payload_len);
+
+        let payload = &frame[4..];
+        assert_eq!(payload[0], 0x00);
+
+        let func_id = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]);
+        assert_eq!(func_id, MCTS_FUNCTION_ID_MATCH_STATUS);
+
+        let total_fields = u16::from_le_bytes([payload[5], payload[6]]);
+        assert_eq!(total_fields, 2);
+
+        // Group 0x6000: 1 table
+        let grp_tbl = u16::from_le_bytes([payload[7], payload[8]]);
+        assert_eq!(grp_tbl, 0x6001);
+
+        let table_token = u16::from_le_bytes([payload[9], payload[10]]);
+        assert_eq!(table_token, MCTS_TOKEN_MATCH_COMPOSITION);
+        assert_eq!(table_token, 1583);
+
+        let row_count = u16::from_le_bytes([payload[11], payload[12]]);
+        assert_eq!(row_count, 1);
+
+        let row_fields = u16::from_le_bytes([payload[13], payload[14]]);
+        assert_eq!(row_fields, 5);
+
+        // Row Group 0x3000: 2 fields
+        let row_grp4 = u16::from_le_bytes([payload[15], payload[16]]);
+        assert_eq!(row_grp4, 0x3002);
+        let t_bot = u16::from_le_bytes([payload[17], payload[18]]);
+        assert_eq!(t_bot, MCTS_TOKEN_BOT_ID);
+        let t_task_force = u16::from_le_bytes([payload[19], payload[20]]);
+        assert_eq!(t_task_force, MCTS_TOKEN_TASK_FORCE);
+        assert_eq!(t_task_force, 1092);
+
+        let v_bot = u32::from_le_bytes([payload[21], payload[22], payload[23], payload[24]]);
+        assert_eq!(v_bot, champion_id);
+        let v_task_force = u32::from_le_bytes([payload[25], payload[26], payload[27], payload[28]]);
+        assert_eq!(v_task_force, 1);
+
+        // Row Group 0x4000: 3 fields
+        let row_grp8 = u16::from_le_bytes([payload[29], payload[30]]);
+        assert_eq!(row_grp8, 0x4003);
+        let t_player = u16::from_le_bytes([payload[31], payload[32]]);
+        assert_eq!(t_player, MCTS_TOKEN_PLAYER_ID);
+        let t_match = u16::from_le_bytes([payload[33], payload[34]]);
+        assert_eq!(t_match, MCTS_TOKEN_MATCH_ID);
+        let t_queue = u16::from_le_bytes([payload[35], payload[36]]);
+        assert_eq!(t_queue, MCTS_TOKEN_MATCH_QUEUE_ID);
+
+        let v_player = u64::from_le_bytes([
+            payload[37], payload[38], payload[39], payload[40], payload[41], payload[42],
+            payload[43], payload[44],
+        ]);
+        assert_eq!(v_player, account_id);
+        let v_match = u64::from_le_bytes([
+            payload[45], payload[46], payload[47], payload[48], payload[49], payload[50],
+            payload[51], payload[52],
+        ]);
+        assert_eq!(v_match, match_id);
+        let v_queue = u64::from_le_bytes([
+            payload[53], payload[54], payload[55], payload[56], payload[57], payload[58],
+            payload[59], payload[60],
+        ]);
+        assert_eq!(v_queue, queue_id as u64);
+
+        // Group 0xa000: 1 string
+        let grp_str = u16::from_le_bytes([payload[61], payload[62]]);
+        assert_eq!(grp_str, 0xa001);
+        let t_portal = u16::from_le_bytes([payload[63], payload[64]]);
+        assert_eq!(t_portal, MCTS_TOKEN_PORTAL_SESSION_ID);
+        assert_eq!(t_portal, 2287);
+
+        let str_len = u16::from_le_bytes([payload[65], payload[66]]) as usize;
+        assert_eq!(str_len, portal_session_id.len());
+        let str_val = std::str::from_utf8(&payload[67..67 + str_len]).expect("valid utf8");
+        assert_eq!(str_val, portal_session_id);
+
+        // Assert zero trailing bytes
+        assert_eq!(payload.len(), 67 + str_len);
+        assert_eq!(frame.len(), 4 + 67 + str_len);
     }
 }

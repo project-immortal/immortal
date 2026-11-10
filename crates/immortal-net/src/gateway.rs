@@ -152,8 +152,9 @@ impl AuthGateway {
 pub use crate::mcts_handshake::{
     create_mcts_champion_roster_frame, create_mcts_change_map_frame,
     create_mcts_launch_map_instance_frame, create_mcts_login_response_frame,
-    create_mcts_map_transition_frame, create_mcts_match_invitation_frame,
-    create_mcts_match_status_frame, create_mcts_match_status_with_members_frame,
+    create_mcts_map_transition_frame, create_mcts_match_composition_frame,
+    create_mcts_match_invitation_frame, create_mcts_match_status_frame,
+    create_mcts_match_status_with_members_frame,
     create_mcts_player_svc_change_map_frame, create_mcts_queue_definition_frame,
     create_mcts_queue_state_update_frame, create_mcts_queue_status_frame, BOT_ID_FERNANDO,
     BOT_ID_VIKTOR, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MAP_GAME_ID_SHOOTING_RANGE,
@@ -166,8 +167,9 @@ pub use crate::mcts_handshake::{
     MCTS_FUNCTION_ID_QUEUE_STATUS, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP,
     MCTS_FUNCTION_ID_TERMINATE_SESSION, MCTS_HANDSHAKE_CHUNK1, MCTS_HANDSHAKE_CHUNK2_ACK,
     MCTS_HANDSHAKE_CHUNK3_SESSION, MCTS_HELLO_RESPONSE_FRAME, MCTS_HELLO_RESPONSE_PAYLOAD,
-    MCTS_TOKEN_ACCOUNT_ID, MCTS_TOKEN_INVITED_MEMBERS, MCTS_TOKEN_MEMBERS,
-    MCTS_TOKEN_QUEUE_CATEGORY, MCTS_TOKEN_TIMEOUT_WARNING, MCTS_WIRE_FLAG_CHUNK,
+    MCTS_TOKEN_ACCOUNT_ID, MCTS_TOKEN_INVITED_MEMBERS, MCTS_TOKEN_MATCH_COMPOSITION,
+    MCTS_TOKEN_MEMBERS, MCTS_TOKEN_PORTAL_SESSION_ID, MCTS_TOKEN_QUEUE_CATEGORY,
+    MCTS_TOKEN_TASK_FORCE, MCTS_TOKEN_TIMEOUT_WARNING, MCTS_WIRE_FLAG_CHUNK,
 };
 
 async fn handle_connection(
@@ -238,7 +240,7 @@ async fn handle_connection(
             );
 
             // If the client submits a champion selection or draft frame while matchmaking is active,
-            // reactively dispatch the match status 10 confirmation, launch map instance, and ChangeMap (0x847de68b).
+            // reactively dispatch the match status 10 confirmation, match composition, launch map instance, and ChangeMap (0x847de68b).
             if (has_fernando || payload_len >= 1000) && matchmaking_started {
                 let bot_id = if has_fernando {
                     BOT_ID_FERNANDO
@@ -255,6 +257,13 @@ async fn handle_connection(
                     config.account_id,
                     bot_id,
                 );
+                let match_composition_frame = create_mcts_match_composition_frame(
+                    878850364,
+                    434,
+                    "IMMORTAL_SHOOTING_RANGE_PORTAL_SESSION",
+                    config.account_id,
+                    bot_id,
+                );
                 let launch_map_frame =
                     create_mcts_launch_map_instance_frame(434, 878850364, 60, [127, 0, 0, 1], 7777);
                 let change_map_frame = create_mcts_change_map_frame(
@@ -268,6 +277,10 @@ async fn handle_connection(
                     .await
                     .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
                 write_tx
+                    .send(match_composition_frame)
+                    .await
+                    .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
+                write_tx
                     .send(launch_map_frame)
                     .await
                     .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
@@ -276,7 +289,7 @@ async fn handle_connection(
                     .await
                     .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
                 info!(
-                    "Reactively dispatched MatchStatus 10, LaunchMapInstance, and ChangeMap 0x847de68b upon champion selection from {}",
+                    "Reactively dispatched MatchStatus 10, MatchComposition, LaunchMapInstance, and ChangeMap 0x847de68b upon champion selection from {}",
                     peer_addr
                 );
             }
