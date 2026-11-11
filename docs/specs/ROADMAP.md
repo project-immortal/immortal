@@ -70,8 +70,8 @@ timeline
     title Project Immortal Strategic Development Timeline (Target: 3-Month Standalone Drop-In)
     Milestone 0 : Cleanroom Tooling & Database : Headless Ghidra Pipeline : 356k Functions Indexed : Complete
     Milestone 1 : MCTS Auth & Lobby Unfreeze : TCP 9000 Gateway : Retail Main Menu Unblocked (Lobby State 2) : Complete
-    Milestone 2 : Map Orchestration & Sandbox : LaunchMapInstance Framing : Scaleform Travel Trigger : Month 1 (Active)
-    Milestone 3 : UDP 7777 Protocol Driver : CPack UDP Handshake : Channel 0 Control State Machine : Month 1 (In Progress)
+    Milestone 2 : Map Orchestration & Sandbox : 0x15c61937 + ChangeMap 1615 Verified : UDP 7777 Packets Arriving (Flight 033)
+    Milestone 3 : UDP 7777 Protocol Driver : Live UDP Ingress Active : Blocked on UNK-UDP-001 (data[1..6] Framing)
     Milestone 4 : World Simulation & Fernando : Actor Channel 2 Replication : 60 Hz Position & Velocity Streaming : Month 2
     Milestone 5 : Combat & Fernando Abilities : Flame Lance, Shield, Fireball, Immortal : Hitbox Authority : Month 2.5
     Milestone 6 : Drop-in Linux Server : Multi-Champion Support : Dedicated Server Packaging : Month 3 (Gold)
@@ -100,22 +100,22 @@ timeline
   - **Live Verification**: Retail client successfully logs in and renders the full interactive 3D Main Menu (`LobbyMapV4_P` in Direct3D 11 under GE-Proton9-15) with active "PLAY" button and unlocked champions.
 
 #### Milestone 2: Map Instance Orchestration & Sandbox Travel 🏝️
-- **Status**: **IN PROGRESS (Current Active Epoch)**
-- **Objectives**: Direct the live retail client from Lobby State 2 into the 3D Shooting Range sandbox (`Shootingrange_P`) on UDP 7777.
+- **Status**: **VERIFICATION GATE (MCTS Handoff & UDP Ingress Verified in Flight 033)**
+- **Objectives**: Direct the live retail client from Lobby State 2 / Gazebo into the 3D Shooting Range sandbox (`Shootingrange_P`) on UDP 7777.
 - **Key Deliverables**:
-  - `PLAYER_SVC_LAUNCH_MAP_INSTANCE` (`0x4bee2ed8`) framing with `sockaddr_in` (Token 877) and match ID (Token 700).
-  - Reverse engineering of Scaleform UI event paths (`PLAYER_SVC_GO_PLAY` `0x15c61937` and UI click dispatch).
-  - Client level travel trigger (`UEngine::LoadMap`).
-  - Capture and verification of targeted window screenshot showing 3D Shooting Range map rendering.
+  - `MAP_INSTANCE_ASSIGNED` (`0x15c61937` with Table `1583`, Token `2287`, Token `588`, Token `682 = 1615`, Token `685`), `LaunchMapInstance` (`0x4bee2ed8`), and `ChangeMap` (`0x847de68b`).
+  - Post-login `0x07FE` (`2046`-byte) zero-length chunk framing in `crates/immortal-net/src/gateway.rs`.
+  - **Flight 033 Verification**: Verified `Match composition cached [96E3D70]`, `ReceiveChangeMap: mapGameId 1615`, and live client UDP `7777` datagram arrival via `agyis flight --target range --timeout 120`.
+  - Final `BROWSE_RANGE` visual verification gated on resolving `UNK-UDP-001` (`data[1..6]` framing in M3).
 
 #### Milestone 3: UDP 7777 Protocol Handshake & Connection Driver 📡
-- **Status**: **IN PROGRESS (Core Codecs Implemented)**
+- **Status**: **IN PROGRESS (Live UDP Ingress Active; Blocked on `UNK-UDP-001`)**
 - **Objectives**: Establish cleanroom UE3 network connection driver handling the low-level UDP handshake.
 - **Key Deliverables**:
   - `crates/immortal-net/src/udp_framing.rs`: `CPack` UDP framing, HMAC-SHA256 packet authentication.
   - `crates/immortal-server/src/game_server.rs`: UDP socket server handling `NMT_Hello`, `NMT_Challenge`, `NMT_Login`, and `NMT_Welcome`.
   - Channel 0 (Control Channel) bitstream serialization.
-  - Session ticket validation binding the UDP connection to the TCP 9000 login ticket.
+  - **Flight 033 Blocker (`UNK-UDP-001`)**: Live client datagrams on UDP `7777` carry non-zero bytes in `data[1..6]` (e.g., `[00, 8a, ce, 31, c6, f6, 00, 80, ...]`) rather than `[0; 5]`, blocking `NMT_Welcome` dispatch and leaving the client browsing `0.0.0.0:7777/LobbyMapV4_P?...`.
 
 #### Milestone 4: Authoritative Simulation & Champion Replication 🛡️
 - **Status**: **SCHEDULED (Target: Month 1–2)**
@@ -168,7 +168,7 @@ Cross-referenced with [`docs/specs/TECHNICAL_ROADBLOCKS.md`](technical_roadblock
 ## 5. Living Governance & Verification Standard
 
 Every milestone and pull request must satisfy the project's **Universal Automated Verification Standard** before landing:
-1. **Automated Verification Contract (INV-001)**: `cargo test --all` must exit 0 with sub-second SLA (<2.0s).
-2. **Compiler & Linter Hygiene**: `cargo clippy --all -- -D warnings` must compile with zero diagnostics.
-3. **Documentation Sync**: `mdbook build docs` must succeed without broken includes or missing anchors.
-4. **Cleanroom Dual-Auditor Gate (INV-008)**: Independent verification by `agyis_reviewer` (boundary audit) and `agyis_auditor` (benchmark & certification) prior to release.
+1. **Automated Verification Contract (INV-001)**: `cargo test --all` (and `cargo test --workspace --verbose`) must exit 0.
+2. **Formatting & Linter Hygiene**: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` must succeed with zero diagnostics.
+3. **Documentation Sync**: `(cd docs && mdbook build && mdbook test)` must succeed without broken includes, untagged fences, or test failures.
+4. **End-to-End Flight & Cleanroom Dual-Auditor Gate (INV-008)**: Automated flight validation (`agyis flight --target range --timeout 120`), `agyis verify --spec`, `agyis audit aff`, and independent verification by `agyis_reviewer` and `agyis_auditor` prior to release.

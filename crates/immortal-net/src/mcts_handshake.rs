@@ -1191,7 +1191,10 @@ pub fn create_mcts_match_composition_frame(
     payload.extend_from_slice(&MCTS_TOKEN_MAP_HOST_NET_ADDR.to_le_bytes()); // Token 588: HOST_NET_ADDR
     payload.extend_from_slice(&MCTS_TOKEN_MAP_INSTANCE_ID.to_le_bytes()); // Token 685: MAP_INSTANCE_ID
 
-    payload.extend_from_slice(&encode_sockaddr_in([127, 0, 0, 1], crate::DEFAULT_GAME_PORT));
+    payload.extend_from_slice(&encode_sockaddr_in(
+        [127, 0, 0, 1],
+        crate::DEFAULT_GAME_PORT,
+    ));
     payload.extend_from_slice(&(MAP_INSTANCE_ID_SHOOTING_RANGE as u64).to_le_bytes());
 
     // Group 0x6000 (Table field: 1 table - Table 1583 DATA_SET_MATCH_COMPOSITION)
@@ -2530,14 +2533,17 @@ mod tests {
             MCTS_TOKEN_MAP_INSTANCE_ID
         );
         assert_eq!(u16::from_le_bytes([payload[19], payload[20]]), 685);
-        assert_eq!(
-            &payload[21..29],
-            &[0x02, 0x00, 0x1e, 0x61, 127, 0, 0, 1]
-        );
+        assert_eq!(&payload[21..29], &[0x02, 0x00, 0x1e, 0x61, 127, 0, 0, 1]);
         assert_eq!(
             u64::from_le_bytes([
-                payload[29], payload[30], payload[31], payload[32],
-                payload[33], payload[34], payload[35], payload[36],
+                payload[29],
+                payload[30],
+                payload[31],
+                payload[32],
+                payload[33],
+                payload[34],
+                payload[35],
+                payload[36],
             ]),
             MAP_INSTANCE_ID_SHOOTING_RANGE as u64
         );
@@ -2581,18 +2587,36 @@ mod tests {
         assert_eq!(t_queue, MCTS_TOKEN_MATCH_QUEUE_ID);
 
         let v_player = u64::from_le_bytes([
-            payload[67], payload[68], payload[69], payload[70],
-            payload[71], payload[72], payload[73], payload[74],
+            payload[67],
+            payload[68],
+            payload[69],
+            payload[70],
+            payload[71],
+            payload[72],
+            payload[73],
+            payload[74],
         ]);
         assert_eq!(v_player, account_id);
         let v_match = u64::from_le_bytes([
-            payload[75], payload[76], payload[77], payload[78],
-            payload[79], payload[80], payload[81], payload[82],
+            payload[75],
+            payload[76],
+            payload[77],
+            payload[78],
+            payload[79],
+            payload[80],
+            payload[81],
+            payload[82],
         ]);
         assert_eq!(v_match, match_id);
         let v_queue = u64::from_le_bytes([
-            payload[83], payload[84], payload[85], payload[86],
-            payload[87], payload[88], payload[89], payload[90],
+            payload[83],
+            payload[84],
+            payload[85],
+            payload[86],
+            payload[87],
+            payload[88],
+            payload[89],
+            payload[90],
         ]);
         assert_eq!(v_queue, queue_id as u64);
 

@@ -27,7 +27,7 @@ This document formalizes that roadmap transition: defining the exact technical p
 
 In cleanroom emulator and server preservation projects (such as Dolphin, TrinityCore, or City of Heroes), development follows a two-phase trajectory:
 
-```
+```text
 [Phase 1: The Monolithic Pioneer Tunnel]  ──► [CRITICAL MASS] ──► [Phase 2: The Parallel Assembly Line]
  • 1-2 core architects                       "First Playable"       • 20+ core devs & community contributors
  • Reverse engineering opaque protocols      Fernando walks/shoots  • Modular Champion Factory (~59 heroes)
@@ -79,7 +79,7 @@ Once Critical Mass is unlocked, work divides cleanly across four independent, hi
 *Paladins* features **~59 Champions** spanning four distinct roles: Front Line, Damage, Support, and Flank.
 
 Each champion is encapsulated as an isolated submodule under `crates/immortal-champions/`:
-```
+```text
 crates/immortal-champions/
 ├── fernando/     <-- Golden reference implementation
 ├── cassie/       <-- Contributor A (Bow, Dodge Roll, Disengage, Blast Shot, Scout)
@@ -138,8 +138,8 @@ When Milestone 4 concludes and Critical Mass is unlocked:
 | :---: | :--- | :---: | :--- |
 | **M0** | Cleanroom Tooling & Binary Intelligence | **Done** | Complete |
 | **M1** | MCTS Auth & 3D Main Menu Unfreeze | **Done** | Complete |
-| **M2** | Map Instance Orchestration & Sandbox Travel | **Active** | 1 Milestone away |
-| **M3** | UDP 7777 Protocol Handshake Driver | **In Progress** | Implemented & Integrating |
+| **M2** | Map Instance Orchestration & Sandbox Travel | **Verification Gate** | MCTS `0x15c61937` / `ChangeMap 1615` / `0x07FE` verified (Flight 033) |
+| **M3** | UDP 7777 Protocol Handshake Driver | **Active** | Live UDP `7777` arriving; blocked on `UNK-UDP-001` (`data[1..6]`) |
 | **M4** | **Authoritative Simulation & Fernando (Critical Mass)** | **Scheduled** | **CRITICAL MASS GATE** |
 
-We are currently bridging Milestone 1 to Milestone 2. Once the live client boots into `Shootingrange_P` and Fernando materializes, the gateway opens for the entire community and developer team to build together.
+We are currently completing Milestone 2/3 verification via `agyis flight --target range --timeout 120`: MCTS `0x15c61937` + Table `1583` + `ReceiveChangeMap: mapGameId 1615` are verified and live UDP `7777` packets arrive, leaving `UNK-UDP-001` (`data[1..6]` `PComNetConn` framing) as the final gate before `Shootingrange_P` boots and Fernando materializes.

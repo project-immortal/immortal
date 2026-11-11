@@ -46,7 +46,7 @@ Project Immortal adheres strictly to the **Cleanroom Reverse Engineering Standar
 
 ### The Invariants
 1. **Zero Asset Pollution**: The `.dirtyroom/` folder is gitignored. Disassembly listings, decompiled C stubs, binary dumps, and Ghidra `.rep` directories must never cross the git boundary.
-2. **Obligation Ledger Gate**: Every behavioral claim or network packet format derived from the dirty room must be logged in [`docs/specs/CLEANROOM_LEDGER.md`](file:///home/kuasha/Dev/immortal/docs/specs/CLEANROOM_LEDGER.md).
+2. **Obligation Ledger Gate**: Every behavioral claim or network packet format derived from the dirty room must be logged in [`docs/specs/CLEANROOM_LEDGER.md`](../specs/cleanroom_ledger.md).
 3. **Reproducibility**: Any developer with a licensed copy of Paladins and standard open-source tools (Ghidra, OpenJDK, Python 3, SQLite 3) can generate the exact same dirty-room database and tooling.
 
 ---
@@ -135,19 +135,26 @@ The script will automatically:
 
 ---
 
-## 5. Daily Reverse-Engineering with `agyis` & `dirty` CLI (ADR-034)
+## 5. Daily Reverse-Engineering with `agyis` CLI Extensions (ADR-034)
 
-Once scaffolded, the tools are accessible either through project-native extension commands (`agyis flight`, `agyis game`, `agyis mcts`, `agyis record`, and `agyis re`) or via `./scripts/dirtyroom/dirty`.
+Once scaffolded, the **primary workflow commands** are exposed via project-native `agyis` extensions (`agyis re`, `agyis flight`, `agyis game`, `agyis mcts`, `agyis record`, `agyis screenshot`). The older `./scripts/dirtyroom/dirty` wrapper is retained only as a legacy/fallback reference.
 
 ### Discover Commands
 ```bash
 agyis ext list
 ```
 
+### Primary Workflow Commands (`agyis`)
+- **`agyis re [status|find|decompile|disasm|xrefs]`**: SQLite index lookup, Ghidra headless decompilation, disassembly, and cross-references.
+- **`agyis flight [--target <milestone>] [--timeout <N>]`**: Automated flight runner with log watchdog and milestone verification (e.g., `agyis flight --target range --timeout 120`).
+- **`agyis game [status|start|logs|kill]`**: Control and inspect the cleanroom server daemon and Paladins retail client.
+- **`agyis mcts <token|hash>`**: Inspect or compute MCTS marshal tokens and function hashes.
+- **`agyis record [status|start|stop|clip]`** & **`agyis screenshot [--window] [--output <path>]`**: Hardware-accelerated session recording and window screenshots.
+
 ### Check Status & Metrics
 ```bash
 agyis re status
-# Or legacy:
+# Legacy/fallback reference:
 ./scripts/dirtyroom/dirty status
 ```
 *Output:*
@@ -157,7 +164,7 @@ Dirty-Room Root: /mnt/fast_data/re_dirtyroom/paladins_8.1.5839.0
 
 REA MCP Acceleration Patch (PSL-INV-009):
   Status:  APPLIED - REA pre-analyzed Ghidra project acceleration patch is active.
-  REA Root: /home/kuasha/.local/share/pnpm/global/5/.pnpm/rea-agents@6.8.0/node_modules/rea-agents
+  REA Root: $HOME/.local/share/pnpm/global/.../node_modules/rea-agents
 
 Ghidra Headless Analyzer:
   Binary:  /opt/ghidra/support/analyzeHeadless
@@ -310,12 +317,12 @@ Launch and manage the local test matrix:
 When you discover new protocol structures, packet schemas, or function behaviors in the dirty room, follow this 3-step handoff:
 
 1. **Record the Evidence**:
-   - In [`docs/specs/CLEANROOM_LEDGER.md`](file:///home/kuasha/Dev/immortal/docs/specs/CLEANROOM_LEDGER.md), add a new claim with:
+   - In [`docs/specs/CLEANROOM_LEDGER.md`](../specs/cleanroom_ledger.md), add a new claim with:
      - Binary name & SHA-256.
      - Virtual Address (`0x...`).
      - Observed behavior (described in high-level prose, *not* verbatim disassembled/decompiled code).
 2. **Author the Cleanroom Specification**:
-   - Translate the observed packet schema into abstract byte definitions in [`docs/specs/G2_SERVER_PROTOCOL.md`](file:///home/kuasha/Dev/immortal/docs/specs/G2_SERVER_PROTOCOL.md).
+   - Translate the observed packet schema into abstract byte definitions in [`docs/specs/G2_SERVER_PROTOCOL.md`](../specs/g2_server_protocol.md).
 3. **Implement in Pure Rust**:
    - Write the implementation in `crates/immortal-net` or `crates/immortal-core`.
    - Add hermetic unit tests with synthetic packet fixtures.

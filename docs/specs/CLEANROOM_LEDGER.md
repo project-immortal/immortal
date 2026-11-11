@@ -106,6 +106,20 @@
 - **Verification Gate**: `cargo test --package immortal-net` (`test_gazebo_lifecycle_state8_to_state10_transition_invariants`, `test_create_mcts_queue_definition_frame_structure`, `test_auth_gateway_live_mcts_two_step_exchange`).
 - **Status**: 🟢 Verified (Exit code 0).
 
+### Claim 13: MCTS `MAP_INSTANCE_ASSIGNED` (`0x15c61937`), Table `1583` Match Composition & Bail-Out Exclusions (`OBL-MCTS-010`)
+- **Behavioral Requirement**: `ShippingPC-ChaosGame.exe` statically links the MCTS client SDK (does not import `MctsInterface.dll`) and requires Function ID `0x15c61937` (`MCTS_FUNCTION_ID_MAP_INSTANCE_ASSIGNED`) to cache match composition and commit travel to `mapGameId = 1615`. The payload must supply Token `682` (`MAP_GAME_ID` = `1615`), Token `588` (`HOST_NET_ADDR` 8-byte `sockaddr_in`), Token `685` (`MAP_INSTANCE_ID`), Table `1583` (`DATA_SET_MATCH_COMPOSITION`), and Token `2287` (`PORTAL_SESSION_ID`), while omitting bail-out/offline triggers (omit or `0` Token `1116`, omit Token `2838`, omit offline codes `{15413, 15500, 15415}` in Token `2637`).
+- **Evidence Reference**: `EV-BIN-001` (static-linked MCTS SDK in `ShippingPC-ChaosGame.exe`), Flight 033 client logs (`Match composition cached [96E3D70]`, `ReceiveChangeMap: mapGameId 1615`), and `EV-NET-002`.
+- **Cleanroom Implementation**: `crates/immortal-net/src/mcts_handshake.rs` (`create_mcts_match_composition_frame`, `MCTS_FUNCTION_ID_MAP_INSTANCE_ASSIGNED`), `crates/immortal-net/src/gateway.rs`.
+- **Verification Gate**: `cargo test --package immortal-net` (`test_create_mcts_match_composition_frame_structure`, `test_auth_gateway_live_mcts_two_step_exchange`).
+- **Status**: 🟢 Verified (Exit code 0).
+
+### Claim 14: MCTS TCP `0x07FE` Post-Login Zero-Length Chunk Framing (`OBL-MCTS-011`)
+- **Behavioral Requirement**: Once post-login framing begins on TCP port `9000`, an incoming 4-byte framing header whose length field `field0 == 0` (such as `[00, 00, 08, 01]`) encodes a full `0x07FE` (`2046`-byte, `MAX_PAYLOAD_LEN`) payload chunk rather than a zero-byte frame.
+- **Evidence Reference**: Flight 032/033 live MCTS TCP captures and `EV-NET-001`.
+- **Cleanroom Implementation**: `crates/immortal-net/src/gateway.rs` (`handle_client` post-login framing loop) and `crates/immortal-net/src/framing.rs` (`MAX_PAYLOAD_LEN`).
+- **Verification Gate**: `cargo test --package immortal-net` (post-login `0x07fe` chunk integration tests).
+- **Status**: 🟢 Verified (Exit code 0).
+
 ---
 
 ## 3. Residual Unknowns Ledger
@@ -114,3 +128,4 @@
 | :--- | :--- | :--- | :--- | :--- |
 | `UNK-MCTS-001` | Structure of MCTS "hello" packet expected by `0x14002eec0` | Client rejects handshake Chunk 1 and times out after 15s | Decompiled pseudocode of `0x14002eec0` | Exact field layout, function ID, and magic framing identified from Ghidra |
 | `UNK-MCTS-002` | MCTS Function hash map for catalog rowsets | Required to stream Token 100/102/105 rows to populate UI | Ghidra MSVC RTTI and marshal dispatch table | Symbol table cross-reference linking hash values to C++ handlers |
+| `UNK-UDP-001` | Non-zero bytes in live `PComNetConn` UDP header `data[1..6]` (`[8a, ce, 31, c6, f6]` / `[8b, ce, 31, c6, f6]`) observed on port `7777` in Flight 033 | Server skips `NMT_Welcome` dispatch while client falls back to `DevNet: Browse: 0.0.0.0:7777/LobbyMapV4_P?...` | Ghidra analysis of `PComNetConn::ReceivedPacket` / UDP packet header parser & Flight 033 PCAP | Exact semantic meaning and acceptance condition for `data[1..6]` verified in `immortal-server` so `NMT_Welcome` triggers `BROWSE_RANGE` |

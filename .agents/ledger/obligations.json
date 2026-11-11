@@ -47,5 +47,19 @@
     "claim": "Client connects to Level URL ShootingRange?game=ChaosGame.ChaosGameInfo over Channel 0 NMT_Welcome (0x01) and opens Actor Channel 2 for PlayerController",
     "evidence_criteria": "Decompilation of ShippingPC-ChaosGame.exe UControlChannel::ReceivedBunch and string references at 0x18033a170-0x18033a310",
     "status": "satisfied"
+  },
+  {
+    "id": "OBL-G2-006",
+    "subject": "mcts_map_instance_assigned",
+    "claim": "Function ID 0x15c61937 (MAP_INSTANCE_ASSIGNED) supplies Tokens 682/588/685, Table 1583 (DATA_SET_MATCH_COMPOSITION), and Token 2287 (PORTAL_SESSION_ID) while omitting bail-out tokens 1116/2838/2637 to cache match composition and trigger ReceiveChangeMap: mapGameId 1615",
+    "evidence_criteria": "Static-linked MCTS SDK inspection in ShippingPC-ChaosGame.exe, Flight 033 client logs (Match composition cached [96E3D70], ReceiveChangeMap: mapGameId 1615), and immortal-net integration tests",
+    "status": "satisfied"
+  },
+  {
+    "id": "OBL-G2-007",
+    "subject": "mcts_tcp_0x07fe_chunk_framing",
+    "claim": "Post-login MCTS TCP headers with field0 == 0 (e.g., [00, 00, 08, 01]) encode a full 0x07FE (2046-byte) payload chunk rather than an empty frame",
+    "evidence_criteria": "Flight 032/033 live MCTS TCP stream captures and immortal-net post-login framing tests",
+    "status": "satisfied"
   }
 ]

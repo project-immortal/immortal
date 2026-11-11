@@ -2361,7 +2361,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         let mut dummy_frame = Vec::with_capacity(23);
         dummy_frame.extend_from_slice(&19u16.to_le_bytes());
         dummy_frame.extend_from_slice(&0x0000u16.to_le_bytes());
-        dummy_frame.extend_from_slice(&vec![0x11u8; 19]);
+        dummy_frame.extend_from_slice(&[0x11u8; 19]);
         stream.write_all(&dummy_frame).await.unwrap();
         stream.flush().await.unwrap();
     }
@@ -2772,7 +2772,8 @@ async fn test_auth_gateway_post_login_zero_length_chunked_frame_reads_max_payloa
     query_frame.extend_from_slice(&15u16.to_le_bytes());
     query_frame.extend_from_slice(&0x0108u16.to_le_bytes());
     let mut query_payload = vec![0x00u8; 15];
-    query_payload[1..5].copy_from_slice(&immortal_net::MCTS_FUNCTION_ID_QUERY_SERVERS.to_le_bytes());
+    query_payload[1..5]
+        .copy_from_slice(&immortal_net::MCTS_FUNCTION_ID_QUERY_SERVERS.to_le_bytes());
     query_frame.extend_from_slice(&query_payload);
     stream.write_all(&query_frame).await.unwrap();
     stream.flush().await.unwrap();
@@ -2994,5 +2995,3 @@ async fn test_auth_gateway_no_duplicate_composition_during_850ms_window() {
     drop(stream);
     handle.shutdown().await.unwrap();
 }
-
-

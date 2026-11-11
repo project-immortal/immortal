@@ -68,6 +68,9 @@ Every packet frame begins with a 4-byte header:
 | `Payload Length` | `uint16` (LE) | `0x0001`–`0x07FE` | Length in bytes of the following payload data (max 2,046 bytes per chunk). |
 | `Payload Data` | `[u8]` | Variable | The serialized `CMarshal` package body. |
 
+### 3.2 Post-Login `0x07FE` (`2046`-Byte) Chunk Framing
+After login completes on TCP port `9000`, live client captures (`Flight 032/033`) show a distinct post-login wire framing convention where the 4-byte header has `field0 == 0` (for example `[00, 00, 08, 01]`). In this post-login state, `field0 == 0` encodes a full **`0x07FE` (`2046`-byte, `MAX_PAYLOAD_LEN`)** chunk payload rather than an empty frame, and the gateway (`crates/immortal-net/src/gateway.rs`) consumes `2046` payload bytes before parsing subsequent frames.
+
 ---
 
 ## 4. Layer 2: RPC Serialization (`CMarshal`)
@@ -109,6 +112,17 @@ Empirical ground truth from packet captures (`pcaps/paladins_live_session.pcap`,
    - Populates Tokens `100`, `102`, and `105` with baseline Fernando unlocked inventory.
    - Sets Token `500 = MatchTicket` pointing to `127.0.0.1:7777`.
 
+### 4.5 Map Instance Assignment (`0x15c61937` / `MAP_INSTANCE_ASSIGNED`) & Static-Link SDK Boundary
+Runtime and binary analysis confirmed that `ShippingPC-ChaosGame.exe` statically links the MCTS client SDK and does **not** import `MctsInterface.dll` at runtime. During Gazebo-to-match transition, the gateway dispatches Function ID **`0x15c61937`** (`MCTS_FUNCTION_ID_MAP_INSTANCE_ASSIGNED` via `create_mcts_match_composition_frame` in `crates/immortal-net/src/mcts_handshake.rs`):
+
+- **Group `0x3000` (`0x3001`)**: Token **`682`** (`MAP_GAME_ID` = `1615`, `Shootingrange_P`).
+- **Group `0x4000` (`0x4002`)**:
+  - Token **`588`** (`HOST_NET_ADDR`): 8-byte `sockaddr_in` pointing to `127.0.0.1:7777`.
+  - Token **`685`** (`MAP_INSTANCE_ID`): `1282927737` (`u64`).
+- **Group `0x6000` (`0x6001`) — Table `1583` (`DATA_SET_MATCH_COMPOSITION`)**: Populates the client's local match composition cache (Token `122` `BOT_ID`, Token `1092` `TASK_FORCE = 1`, Token `11` `PLAYER_ID`, Token `700` `MATCH_ID`, Token `703` `MATCH_QUEUE_ID`).
+- **Group `0xa000` (`0xa001`)**: Token **`2287`** (`PORTAL_SESSION_ID`), UTF-8 portal session string (`<= 0x50` bytes).
+- **Mandatory Bail-Out Exclusions**: Omit (or keep `0`) Token `1116`, omit Token `2838`, and omit offline status codes `{15413, 15500, 15415}` in Token `2637` so the client caches match composition (`Match composition cached [96E3D70]`) and commits `ReceiveChangeMap: mapGameId 1615`.
+
 ---
 
 ## 5. Layer 3: UDP Session & Wire Envelope (`CPackUdp` / `PComNetConn`)
@@ -141,6 +155,8 @@ Live packet capture analysis (`pcaps/paladins_live_session.pcap`) and cleanroom 
 4. **Server Sequence Increment**: 1 byte (`u8`) server sequence number, monotonically incremented with each outgoing datagram.
 5. **Bunch Payload**: Serialized UE3 channel bunches (Channel 0 control messages, actor replication).
 6. **Trailing Bit-Reader Termination Marker**: Trailing byte `0x01` marking the bitstream termination for the engine's `FBitReader`.
+
+> **Flight 033 Empirical Observation (`UNK-UDP-001`)**: While initial handshakes and synthetic conformance fixtures use `[0; 5]` across `data[1..6]`, live client datagrams arriving on UDP port `7777` in Flight 033 carry non-zero bytes in `data[1..6]` (for example `[00, 8a, ce, 31, c6, f6, 00, 80, ...]` and `[00, 8b, ce, 31, c6, f6, ...]`). Because the cleanroom UDP driver currently filters for a zero prefix in `data[1..6]`, these live packets are skipped before `NMT_Welcome` can fire; this discrepancy is tracked as Residual Unknown `UNK-UDP-001` in [`CLEANROOM_LEDGER.md`](cleanroom_ledger.md).
 
 ### 5.2 CPackUdp Datagram Envelope (Legacy / Crypto Dispatch)
 

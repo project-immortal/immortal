@@ -13,6 +13,7 @@
 - [Technical Roadblocks & De-risking](specs/technical_roadblocks.md)
 - [G1: UPK & Asset Extraction Pipeline](specs/g1_asset_pipeline.md)
 - [G2: Server Protocol & UE3 Bunches](specs/g2_server_protocol.md)
+- [MCTS Gazebo Lifecycle & Map Instance Protocol](specs/mcts_gazebo_lifecycle.md)
 
 ---
 

@@ -53,17 +53,16 @@ Paladins' user interface is powered by Autodesk Scaleform GFx (Flash/ActionScrip
 
 ---
 
-## 4. UE3 Map Travel Handshake (`NMT_Hello` → `NMT_Welcome`)
+## 4. UE3 Map Travel Handshake (`NMT_Hello` → `NMT_Welcome`) & `UNK-UDP-001`
 
 ### The Challenge
-When transitioning from the 2D UI into the 3D map (`Shootingrange_P` or `LobbyMapV4_P`), UE3 switches transport from MCTS TCP 9000 to the game server UDP 7777:
+When transitioning from the 2D/Gazebo UI into the 3D map (`Shootingrange_P`), the gateway first emits `0x15c61937` (`MAP_INSTANCE_ASSIGNED` with Table `1583`), `LaunchMapInstance` (`0x4bee2ed8`), and `ChangeMap` (`0x847de68b`). Flight 033 verified `Match composition cached [96E3D70]`, `ReceiveChangeMap: mapGameId 1615`, and live client UDP `7777` datagram arrival, but `BROWSE_RANGE` / `NMT_Welcome` is currently blocked by **`UNK-UDP-001`**:
+- Live client datagrams on UDP `7777` carry non-zero header bytes in `data[1..6]` (e.g., `[00, 8a, ce, 31, c6, f6, 00, 80, ...]`) instead of `[0; 5]`, so `immortal-server` currently drops/skips them before dispatching `NMT_Welcome`.
 - The client sends `NMT_Hello` on Control Channel 0 with client version (`8.1.5839.0`).
-- The server must reply with `NMT_Challenge` containing a cryptographic cookie.
-- The client answers with `NMT_Login` containing the player's session token and URL travel string (`?Name=Fernando#IMMORTAL_SESSION_001`).
-- The server validates the ticket and replies with `NMT_Welcome`, specifying the level name (`Shootingrange_P`) and player pawn index.
+- The server must validate `data[1..6]` framing, reply with `NMT_Challenge` / `NMT_Welcome` specifying the level URL (`Shootingrange_P?...&Team=0`), and open Actor Channel 2.
 
-### De-risking Invariant & Strategy (`OBL-NET-005`)
-Any control message ID mismatch aborts travel back to the main menu. This handshake is hermetically isolated and tested in `crates/immortal-net/src/handshake.rs` and `crates/immortal-server/src/game_server.rs`.
+### De-risking Invariant & Strategy (`OBL-NET-005`, `UNK-UDP-001`)
+Any header framing or control message mismatch causes the client to fall back to `DevNet: Browse: 0.0.0.0:7777/LobbyMapV4_P?...`. Both `0x15c61937` / `0x07FE` MCTS framing (`crates/immortal-net`) and the UDP handshake (`crates/immortal-server/src/game_server.rs`) are covered by hermetic unit and integration suites (`cargo test --workspace`).
 
 ---
 
