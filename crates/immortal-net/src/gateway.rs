@@ -161,16 +161,18 @@ pub use crate::mcts_handshake::{
     BOT_ID_VIKTOR, CHUNK1_HANDSHAKE, CHUNK2_ACK, CHUNK3_SESSION, MAP_GAME_ID_SHOOTING_RANGE,
     MAP_INSTANCE_ID_SHOOTING_RANGE, MCTS_CHAMPION_SELECT_ACK_FRAME, MCTS_CLIENT_AUTH_REQUEST_FLAGS,
     MCTS_CLIENT_AUTH_REQUEST_LEN, MCTS_CLIENT_CRYPTO_TICKET_FLAGS, MCTS_CLIENT_CRYPTO_TICKET_LEN,
-    MCTS_FUNCTION_ID_CHAMPION_ROSTER, MCTS_FUNCTION_ID_CHANGE_MAP, MCTS_FUNCTION_ID_MAP_TRANSITION,
+    MCTS_FUNCTION_ID_CHAMPION_ROSTER, MCTS_FUNCTION_ID_CHANGE_MAP,
+    MCTS_FUNCTION_ID_MAP_INSTANCE_ASSIGNED, MCTS_FUNCTION_ID_MAP_TRANSITION,
     MCTS_FUNCTION_ID_MATCH_INVITATION, MCTS_FUNCTION_ID_MATCH_STATUS,
     MCTS_FUNCTION_ID_ON_LOGIN_RESPONSE, MCTS_FUNCTION_ID_PLAYER_SVC_CHANGE_MAP,
     MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE, MCTS_FUNCTION_ID_QUERY_SERVERS,
     MCTS_FUNCTION_ID_QUEUE_STATUS, MCTS_FUNCTION_ID_RECEIVE_CHANGE_MAP,
     MCTS_FUNCTION_ID_TERMINATE_SESSION, MCTS_HANDSHAKE_CHUNK1, MCTS_HANDSHAKE_CHUNK2_ACK,
     MCTS_HANDSHAKE_CHUNK3_SESSION, MCTS_HELLO_RESPONSE_FRAME, MCTS_HELLO_RESPONSE_PAYLOAD,
-    MCTS_TOKEN_ACCOUNT_ID, MCTS_TOKEN_INVITED_MEMBERS, MCTS_TOKEN_MATCH_COMPOSITION,
-    MCTS_TOKEN_MEMBERS, MCTS_TOKEN_PORTAL_SESSION_ID, MCTS_TOKEN_QUEUE_CATEGORY,
-    MCTS_TOKEN_TASK_FORCE, MCTS_TOKEN_TIMEOUT_WARNING, MCTS_WIRE_FLAG_CHUNK,
+    MCTS_TOKEN_ACCOUNT_ID, MCTS_TOKEN_INVITED_MEMBERS, MCTS_TOKEN_MAP_HOST_NET_ADDR,
+    MCTS_TOKEN_MATCH_COMPOSITION, MCTS_TOKEN_MEMBERS, MCTS_TOKEN_PORTAL_SESSION_ID,
+    MCTS_TOKEN_QUEUE_CATEGORY, MCTS_TOKEN_TASK_FORCE, MCTS_TOKEN_TIMEOUT_WARNING,
+    MCTS_WIRE_FLAG_CHUNK,
 };
 
 async fn handle_connection(
@@ -216,15 +218,19 @@ async fn handle_connection(
         let field1 = u16::from_le_bytes([header[2], header[3]]);
 
         if login_completed {
-            let payload_len = field0 as usize;
+            // Post-login frames with field0 == 0 encode a full MAX_PAYLOAD_LEN (0x7fe / 2046 byte)
+            // chunk payload rather than an empty frame.
+            let payload_len = if field0 == 0 {
+                MAX_PAYLOAD_LEN
+            } else {
+                field0 as usize
+            };
             let flags = field1;
             let mut payload = vec![0u8; payload_len];
-            if payload_len > 0 {
-                reader.read_exact(&mut payload).await?;
-            }
+            reader.read_exact(&mut payload).await?;
             post_login_count += 1;
 
-            if payload_len > 0 && payload_len <= 64 {
+            if payload_len <= 64 {
                 debug!(
                     "Frame payload hex ({} bytes, flags 0x{:04x}): {:02x?}",
                     payload_len, flags, payload
@@ -243,14 +249,16 @@ async fn handle_connection(
                 payload_len, flags, has_fernando, has_shooting_range_req, peer_addr
             );
 
-            // If the client submits a champion selection or draft frame while matchmaking is active,
-            // reactively dispatch the match status 10 confirmation, match composition, launch map instance, and ChangeMap (0x847de68b).
-            if (has_fernando || payload_len >= 10000)
+            // If the client submits a champion selection or full-chunk draft frame while matchmaking is active,
+            // reactively dispatch the match status 10 confirmation, MapInstanceAssigned (0x15c61937),
+            // launch map instance, and ChangeMap (0x847de68b).
+            if (has_fernando || payload_len >= MAX_PAYLOAD_LEN)
                 && post_login_count > 5
                 && matchmaking_started
-                && !transition_dispatched.load(Ordering::SeqCst)
+                && transition_dispatched
+                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
             {
-                transition_dispatched.store(true, Ordering::SeqCst);
                 let bot_id = if has_fernando {
                     BOT_ID_FERNANDO
                 } else {
@@ -298,8 +306,8 @@ async fn handle_connection(
                     .await
                     .map_err(|e| NetError::Io(std::io::Error::other(e.to_string())))?;
                 info!(
-                    "Reactively dispatched MatchStatus 10, MatchComposition, LaunchMapInstance, and ChangeMap 0x847de68b upon champion selection from {}",
-                    peer_addr
+                    "Reactively dispatched MatchStatus 10, MapInstanceAssigned (0x{:08x}), LaunchMapInstance, and ChangeMap 0x847de68b upon champion selection from {}",
+                    MCTS_FUNCTION_ID_MAP_INSTANCE_ASSIGNED, peer_addr
                 );
             }
 
@@ -493,6 +501,10 @@ async fn handle_connection(
                     // In ShippingPC-ChaosGame.exe: FUN_1400caf60 line 1400cb238 asserts MatchLobby->QueueId != 0
                     // before processing 0x39d5ce77 and copying QueueState = 7 to [UTgMatchLobby + 0x1d8].
                     // Therefore, MATCH_STATUS 10 (which transitions QueueId from 0 to 434) MUST be dispatched FIRST.
+                    if transition_flag.load(Ordering::SeqCst) {
+                        return;
+                    }
+
                     let match_status_10 = create_mcts_match_status_with_members_frame(
                         434,
                         878850364,
@@ -522,6 +534,13 @@ async fn handle_connection(
                         return;
                     }
 
+                    if transition_flag
+                        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_err()
+                    {
+                        return;
+                    }
+
                     let match_composition_frame = create_mcts_match_composition_frame(
                         878850364,
                         434,
@@ -534,11 +553,6 @@ async fn handle_connection(
                     }
 
                     tokio::time::sleep(tokio::time::Duration::from_millis(850)).await;
-
-                    if transition_flag.load(Ordering::SeqCst) {
-                        return;
-                    }
-                    transition_flag.store(true, Ordering::SeqCst);
 
                     let launch_map_frame = create_mcts_launch_map_instance_frame(
                         434,
@@ -567,8 +581,8 @@ async fn handle_connection(
                     }
 
                     info!(
-                        "Dispatched Live MCTS Shooting Range transition sequence (queued -> invited -> invite -> status 8 -> roster -> status 10 -> match_composition -> launch_map_instance -> change_map 0x847de68b) for {}",
-                        peer_addr
+                        "Dispatched Live MCTS Shooting Range transition sequence (queued -> invited -> invite -> status 8 -> roster -> status 10 -> map_instance_assigned 0x{:08x} -> launch_map_instance -> change_map 0x847de68b) for {}",
+                        MCTS_FUNCTION_ID_MAP_INSTANCE_ASSIGNED, peer_addr
                     );
                 });
             }

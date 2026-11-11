@@ -341,6 +341,20 @@ pub fn create_mcts_player_svc_change_map_frame(
     frame
 }
 
+/// Encodes an IPv4 address and port into an 8-byte MCTS `sockaddr_in` wire payload.
+fn encode_sockaddr_in(ip: [u8; 4], port: u16) -> [u8; 8] {
+    [
+        0x02,
+        0x00,
+        (port >> 8) as u8,
+        (port & 0xff) as u8,
+        ip[0],
+        ip[1],
+        ip[2],
+        ip[3],
+    ]
+}
+
 /// Builds an authentic live MCTS `PLAYER_SVC_LAUNCH_MAP_INSTANCE` wire frame (0x4bee2ed8).
 ///
 /// Reverse engineered from `MctsInterface.dll: ProcessMarshal` (0x1800ccdd0 -> FUN_1800ce310 -> FUN_1800da6e0):
@@ -389,17 +403,7 @@ pub fn create_mcts_launch_map_instance_frame(
     payload.extend_from_slice(&877u16.to_le_bytes()); // Token 877 (0x036d): sockaddr_in
     payload.extend_from_slice(&0u64.to_le_bytes());
     payload.extend_from_slice(&match_id.to_le_bytes());
-    let sockaddr: [u8; 8] = [
-        0x02,
-        0x00,
-        (port >> 8) as u8,
-        (port & 0xff) as u8,
-        ip[0],
-        ip[1],
-        ip[2],
-        ip[3],
-    ];
-    payload.extend_from_slice(&sockaddr);
+    payload.extend_from_slice(&encode_sockaddr_in(ip, port));
 
     // TCP Framing: [u16 length, u16 wire_flags = 0x0000]
     let mut frame = Vec::with_capacity(4 + payload.len());
@@ -766,6 +770,8 @@ pub const MCTS_TOKEN_TIMESTAMP: u16 = 912;
 /// Canonical MCTS Token definitions grounded in `s_pFields` engine dictionary (3731 entries).
 pub const MCTS_TOKEN_BOT_ID: u16 = 122;
 pub const MCTS_TOKEN_CHAMPION_ROSTER: u16 = 249;
+/// Token 588 (0x024c): HOST_NET_ADDR (Group 0x4000 8-byte sockaddr_in)
+pub const MCTS_TOKEN_MAP_HOST_NET_ADDR: u16 = 588;
 pub const MCTS_TOKEN_MAP_GAME_ID: u16 = 682;
 pub const MCTS_TOKEN_MAP_INSTANCE_ID: u16 = 685;
 pub const MCTS_TOKEN_MATCH_ID: u16 = 700;
@@ -1109,26 +1115,27 @@ pub fn create_mcts_match_status_with_queue_and_members_frame(
     )
 }
 
-/// Builds an authentic live MCTS `MATCH_STATUS` wire frame containing Match Composition table (Table 1583),
-/// Portal Session ID (Token 2287), and MatchStatus 10 state fields so OnMatchStatus never demotes MatchLobbyState to 0.
+/// Authentic Function ID for Map Instance Assignment / Match Composition & ChangeMap ingress (`0x15c61937`).
+/// Wire LE bytes: `[0x37, 0x19, 0xc6, 0x15]`.
+/// Populates the client map instance state (`HOST_NET_ADDR`, `MAP_GAME_ID`, `MAP_INSTANCE_ID`),
+/// caches `DATA_SET_MATCH_COMPOSITION` (Table 1583) and `PORTAL_SESSION_ID` (Token 2287),
+/// and triggers map travel (`ReceiveChangeMap`).
+pub const MCTS_FUNCTION_ID_MAP_INSTANCE_ASSIGNED: u32 = 0x15c61937;
+
+/// Builds an authentic live MCTS Map Instance Assignment / Match Composition wire frame (`0x15c61937`).
 ///
-/// Matches reverse engineered `CMctsMatchMaking::OnMatchStatus` and `CMarshalRow::Store` specification:
-/// - Prefix: byte `0x00` (`this[0x30]`)
-/// - Function ID: `0x392dcda5` (`MCTS_FUNCTION_ID_MATCH_STATUS`) in little-endian u32
-/// - CMarshalRow field count: 9 (5 uint32 in Group 0x3000 + 2 uint64 in Group 0x4000 + 1 table in Group 0x6000 + 1 string in Group 0xa000)
-/// - Group 0x3000 (4-byte fields: 5 fields):
-///   - Header: `0x3005` (group 0x3000 | 5)
-///   - Token 1342 (u16): MATCH_LOBBY_STATE (10)
-///   - Token 1690 (u16): LAUNCH_SECONDS (0)
-///   - Token 1344 (u16): PLAYER_LOBBY_STATE (5)
-///   - Token 2191 (u16): PLAYER_QUEUE_STATE (7)
-///   - Token 1053 (u16): STATUS_CODE (7)
-///   - Values: 10, 0, 5, 7, 7
+/// Omits travel bail-out/override tokens (`1116`, `2838`, `2637`) so the client caches match
+/// composition and initiates travel to the assigned dedicated instance server (`127.0.0.1:7777`):
+/// - Prefix: byte `0x00`
+/// - Function ID: `0x15c61937` (`MCTS_FUNCTION_ID_MAP_INSTANCE_ASSIGNED`) in little-endian u32
+/// - CMarshalRow field count: 5 (1 uint32 in Group 0x3000 + 2 8-byte fields in Group 0x4000 + 1 table in Group 0x6000 + 1 string in Group 0xa000)
+/// - Group 0x3000 (4-byte fields: 1 field):
+///   - Header: `0x3001` (group 0x3000 | 1)
+///   - Token 682 (`MCTS_TOKEN_MAP_GAME_ID`): `MAP_GAME_ID_SHOOTING_RANGE` (`1615u32`)
 /// - Group 0x4000 (8-byte fields: 2 fields):
 ///   - Header: `0x4002` (group 0x4000 | 2)
-///   - Token 700 (u16): MATCH_ID (`match_id`)
-///   - Token 703 (u16): MATCH_QUEUE_ID (`queue_id as u64`)
-///   - Values: `match_id`, `queue_id as u64`
+///   - Token 588 (`MCTS_TOKEN_MAP_HOST_NET_ADDR`): 8-byte `sockaddr_in` for `127.0.0.1:7777`
+///   - Token 685 (`MCTS_TOKEN_MAP_INSTANCE_ID`): `MAP_INSTANCE_ID_SHOOTING_RANGE as u64` (`1282927737u64`)
 /// - Group 0x6000 (Table / Rowset fields: 1 table):
 ///   - Header: `0x6001` (group 0x6000 | 1)
 ///   - Table Token: 1583 (`MCTS_TOKEN_MATCH_COMPOSITION`)
@@ -1137,20 +1144,17 @@ pub fn create_mcts_match_status_with_queue_and_members_frame(
 ///       - Field count: 5 (u16)
 ///       - Group 0x3000 (4-byte fields: 2 fields):
 ///         - Header: `0x3002` (group 0x3000 | 2)
-///         - Token 122 (u16): BOT_ID / CHAMPION_ID (`champion_id`)
-///         - Token 1092 (u16): TASK_FORCE (`1u32`)
-///         - Values: `champion_id`, `1u32`
+///         - Token 122 (`MCTS_TOKEN_BOT_ID`): `champion_id`
+///         - Token 1092 (`MCTS_TOKEN_TASK_FORCE`): `1u32`
 ///       - Group 0x4000 (8-byte fields: 3 fields):
 ///         - Header: `0x4003` (group 0x4000 | 3)
-///         - Token 11 (u16): PLAYER_ID (`account_id`)
-///         - Token 700 (u16): MATCH_ID (`match_id`)
-///         - Token 703 (u16): MATCH_QUEUE_ID (`queue_id as u64`)
-///         - Values: `account_id`, `match_id`, `queue_id as u64`
+///         - Token 11 (`MCTS_TOKEN_PLAYER_ID`): `account_id`
+///         - Token 700 (`MCTS_TOKEN_MATCH_ID`): `match_id`
+///         - Token 703 (`MCTS_TOKEN_MATCH_QUEUE_ID`): `queue_id as u64`
 /// - Group 0xa000 (UTF-8 string fields: 1 field):
 ///   - Header: `0xa001` (group 0xa000 | 1)
-///   - Token 2287 (u16): PORTAL_SESSION_ID (`portal_session_id`)
-///   - Length: u16 little-endian
-///   - Followed by raw UTF-8 string bytes
+///   - Token 2287 (`MCTS_TOKEN_PORTAL_SESSION_ID`): `portal_session_id`
+///   - Length: u16 little-endian, followed by raw UTF-8 string bytes
 /// - TCP Framing:
 ///   - Length: payload length (u16 little-endian)
 ///   - Wire flags: `0x0000` (u16 little-endian)
@@ -1163,37 +1167,32 @@ pub fn create_mcts_match_composition_frame(
     champion_id: u32,
 ) -> Vec<u8> {
     let portal_bytes = portal_session_id.as_bytes();
-    let mut payload = Vec::with_capacity(128 + portal_bytes.len());
-    payload.push(0x00); // this[0x30]
-    payload.extend_from_slice(&MCTS_FUNCTION_ID_MATCH_STATUS.to_le_bytes());
+    debug_assert!(
+        portal_bytes.len() <= 0x50,
+        "PORTAL_SESSION_ID exceeds 0x50-byte client buffer"
+    );
+    let mut payload = Vec::with_capacity(97 + portal_bytes.len());
+    payload.push(0x00); // protocol frame prefix
+    payload.extend_from_slice(&MCTS_FUNCTION_ID_MAP_INSTANCE_ASSIGNED.to_le_bytes()); // Function ID 0x15c61937
 
-    // CMarshalRow: total fields = 9 (5 dwords in 0x3000 + 2 qwords in 0x4000 + 1 table in 0x6000 + 1 string in 0xa000)
-    let total_fields: u16 = 9;
+    // CMarshalRow: total fields = 5 (1 dword in 0x3000 + 2 qwords in 0x4000 + 1 table in 0x6000 + 1 string in 0xa000)
+    let total_fields: u16 = 5;
     payload.extend_from_slice(&total_fields.to_le_bytes());
 
-    // Group 0x3000 (4-byte fields: 5 fields)
-    let grp4_hdr: u16 = 0x3000 | 5;
+    // Group 0x3000 (4-byte fields: 1 field)
+    let grp4_hdr: u16 = 0x3000 | 1;
     payload.extend_from_slice(&grp4_hdr.to_le_bytes());
-    payload.extend_from_slice(&1342u16.to_le_bytes()); // Token 1342: MATCH_LOBBY_STATE
-    payload.extend_from_slice(&1690u16.to_le_bytes()); // Token 1690: LAUNCH_SECONDS
-    payload.extend_from_slice(&1344u16.to_le_bytes()); // Token 1344: PLAYER_LOBBY_STATE
-    payload.extend_from_slice(&2191u16.to_le_bytes()); // Token 2191: PLAYER_QUEUE_STATE
-    payload.extend_from_slice(&MCTS_TOKEN_STATUS_CODE.to_le_bytes()); // Token 1053: STATUS_CODE
-
-    payload.extend_from_slice(&10u32.to_le_bytes()); // MATCH_LOBBY_STATE = 10
-    payload.extend_from_slice(&0u32.to_le_bytes()); // LAUNCH_SECONDS = 0
-    payload.extend_from_slice(&5u32.to_le_bytes()); // PLAYER_LOBBY_STATE = 5
-    payload.extend_from_slice(&7u32.to_le_bytes()); // PLAYER_QUEUE_STATE = 7
-    payload.extend_from_slice(&7u32.to_le_bytes()); // STATUS_CODE = 7
+    payload.extend_from_slice(&MCTS_TOKEN_MAP_GAME_ID.to_le_bytes()); // Token 682: MAP_GAME_ID
+    payload.extend_from_slice(&MAP_GAME_ID_SHOOTING_RANGE.to_le_bytes()); // Shooting Range (1615)
 
     // Group 0x4000 (8-byte fields: 2 fields)
     let grp8_hdr: u16 = 0x4000 | 2;
     payload.extend_from_slice(&grp8_hdr.to_le_bytes());
-    payload.extend_from_slice(&700u16.to_le_bytes()); // Token 700: MATCH_ID
-    payload.extend_from_slice(&703u16.to_le_bytes()); // Token 703: MATCH_QUEUE_ID
+    payload.extend_from_slice(&MCTS_TOKEN_MAP_HOST_NET_ADDR.to_le_bytes()); // Token 588: HOST_NET_ADDR
+    payload.extend_from_slice(&MCTS_TOKEN_MAP_INSTANCE_ID.to_le_bytes()); // Token 685: MAP_INSTANCE_ID
 
-    payload.extend_from_slice(&match_id.to_le_bytes());
-    payload.extend_from_slice(&(queue_id as u64).to_le_bytes());
+    payload.extend_from_slice(&encode_sockaddr_in([127, 0, 0, 1], crate::DEFAULT_GAME_PORT));
+    payload.extend_from_slice(&(MAP_INSTANCE_ID_SHOOTING_RANGE as u64).to_le_bytes());
 
     // Group 0x6000 (Table field: 1 table - Table 1583 DATA_SET_MATCH_COMPOSITION)
     let grp_table_hdr: u16 = 0x6001;
@@ -1233,7 +1232,7 @@ pub fn create_mcts_match_composition_frame(
     // Group 0xa000 (1 string field: Token 2287 PORTAL_SESSION_ID)
     let grp_str_hdr: u16 = 0xa001;
     payload.extend_from_slice(&grp_str_hdr.to_le_bytes());
-    payload.extend_from_slice(&MCTS_TOKEN_PORTAL_SESSION_ID.to_le_bytes());
+    payload.extend_from_slice(&MCTS_TOKEN_PORTAL_SESSION_ID.to_le_bytes()); // Token 2287: PORTAL_SESSION_ID
     payload.extend_from_slice(&(portal_bytes.len() as u16).to_le_bytes());
     payload.extend_from_slice(portal_bytes);
 
@@ -2493,114 +2492,124 @@ mod tests {
         let flags = u16::from_le_bytes([frame[2], frame[3]]);
         assert_eq!(flags, 0x0000);
         assert_eq!(frame.len(), 4 + payload_len);
+        assert_eq!(payload_len, 97 + portal_session_id.len());
 
         let payload = &frame[4..];
         assert_eq!(payload[0], 0x00);
 
         let func_id = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]);
-        assert_eq!(func_id, MCTS_FUNCTION_ID_MATCH_STATUS);
+        assert_eq!(func_id, MCTS_FUNCTION_ID_MAP_INSTANCE_ASSIGNED);
+        assert_eq!(func_id, 0x15c61937);
 
         let total_fields = u16::from_le_bytes([payload[5], payload[6]]);
-        assert_eq!(total_fields, 9);
+        assert_eq!(total_fields, 5);
 
-        // Group 0x3000: 5 fields (MatchStatus 10 state fields)
+        // Group 0x3000: 1 field (Token 682 MAP_GAME_ID)
         let grp4 = u16::from_le_bytes([payload[7], payload[8]]);
-        assert_eq!(grp4, 0x3005);
-        assert_eq!(u16::from_le_bytes([payload[9], payload[10]]), 1342); // MATCH_LOBBY_STATE
-        assert_eq!(u16::from_le_bytes([payload[11], payload[12]]), 1690); // LAUNCH_SECONDS
-        assert_eq!(u16::from_le_bytes([payload[13], payload[14]]), 1344); // PLAYER_LOBBY_STATE
-        assert_eq!(u16::from_le_bytes([payload[15], payload[16]]), 2191); // PLAYER_QUEUE_STATE
-        assert_eq!(u16::from_le_bytes([payload[17], payload[18]]), MCTS_TOKEN_STATUS_CODE); // STATUS_CODE
+        assert_eq!(grp4, 0x3001);
+        assert_eq!(
+            u16::from_le_bytes([payload[9], payload[10]]),
+            MCTS_TOKEN_MAP_GAME_ID
+        );
+        assert_eq!(u16::from_le_bytes([payload[9], payload[10]]), 682);
+        assert_eq!(
+            u32::from_le_bytes([payload[11], payload[12], payload[13], payload[14]]),
+            MAP_GAME_ID_SHOOTING_RANGE
+        );
 
-        assert_eq!(u32::from_le_bytes([payload[19], payload[20], payload[21], payload[22]]), 10);
-        assert_eq!(u32::from_le_bytes([payload[23], payload[24], payload[25], payload[26]]), 0);
-        assert_eq!(u32::from_le_bytes([payload[27], payload[28], payload[29], payload[30]]), 5);
-        assert_eq!(u32::from_le_bytes([payload[31], payload[32], payload[33], payload[34]]), 7);
-        assert_eq!(u32::from_le_bytes([payload[35], payload[36], payload[37], payload[38]]), 7);
-
-        // Group 0x4000: 2 fields (MatchId, MatchQueueId)
-        let grp8 = u16::from_le_bytes([payload[39], payload[40]]);
+        // Group 0x4000: 2 fields (Token 588 HOST_NET_ADDR, Token 685 MAP_INSTANCE_ID)
+        let grp8 = u16::from_le_bytes([payload[15], payload[16]]);
         assert_eq!(grp8, 0x4002);
-        assert_eq!(u16::from_le_bytes([payload[41], payload[42]]), MCTS_TOKEN_MATCH_ID);
-        assert_eq!(u16::from_le_bytes([payload[43], payload[44]]), MCTS_TOKEN_MATCH_QUEUE_ID);
-
-        assert_eq!(u64::from_le_bytes([
-            payload[45], payload[46], payload[47], payload[48],
-            payload[49], payload[50], payload[51], payload[52],
-        ]), match_id);
-        assert_eq!(u64::from_le_bytes([
-            payload[53], payload[54], payload[55], payload[56],
-            payload[57], payload[58], payload[59], payload[60],
-        ]), queue_id as u64);
+        assert_eq!(
+            u16::from_le_bytes([payload[17], payload[18]]),
+            MCTS_TOKEN_MAP_HOST_NET_ADDR
+        );
+        assert_eq!(u16::from_le_bytes([payload[17], payload[18]]), 588);
+        assert_eq!(
+            u16::from_le_bytes([payload[19], payload[20]]),
+            MCTS_TOKEN_MAP_INSTANCE_ID
+        );
+        assert_eq!(u16::from_le_bytes([payload[19], payload[20]]), 685);
+        assert_eq!(
+            &payload[21..29],
+            &[0x02, 0x00, 0x1e, 0x61, 127, 0, 0, 1]
+        );
+        assert_eq!(
+            u64::from_le_bytes([
+                payload[29], payload[30], payload[31], payload[32],
+                payload[33], payload[34], payload[35], payload[36],
+            ]),
+            MAP_INSTANCE_ID_SHOOTING_RANGE as u64
+        );
 
         // Group 0x6000: 1 table
-        let grp_tbl = u16::from_le_bytes([payload[61], payload[62]]);
+        let grp_tbl = u16::from_le_bytes([payload[37], payload[38]]);
         assert_eq!(grp_tbl, 0x6001);
 
-        let table_token = u16::from_le_bytes([payload[63], payload[64]]);
+        let table_token = u16::from_le_bytes([payload[39], payload[40]]);
         assert_eq!(table_token, MCTS_TOKEN_MATCH_COMPOSITION);
         assert_eq!(table_token, 1583);
 
-        let row_count = u16::from_le_bytes([payload[65], payload[66]]);
+        let row_count = u16::from_le_bytes([payload[41], payload[42]]);
         assert_eq!(row_count, 1);
 
-        let row_fields = u16::from_le_bytes([payload[67], payload[68]]);
+        let row_fields = u16::from_le_bytes([payload[43], payload[44]]);
         assert_eq!(row_fields, 5);
 
         // Row Group 0x3000: 2 fields
-        let row_grp4 = u16::from_le_bytes([payload[69], payload[70]]);
+        let row_grp4 = u16::from_le_bytes([payload[45], payload[46]]);
         assert_eq!(row_grp4, 0x3002);
-        let t_bot = u16::from_le_bytes([payload[71], payload[72]]);
+        let t_bot = u16::from_le_bytes([payload[47], payload[48]]);
         assert_eq!(t_bot, MCTS_TOKEN_BOT_ID);
-        let t_task_force = u16::from_le_bytes([payload[73], payload[74]]);
+        let t_task_force = u16::from_le_bytes([payload[49], payload[50]]);
         assert_eq!(t_task_force, MCTS_TOKEN_TASK_FORCE);
         assert_eq!(t_task_force, 1092);
 
-        let v_bot = u32::from_le_bytes([payload[75], payload[76], payload[77], payload[78]]);
+        let v_bot = u32::from_le_bytes([payload[51], payload[52], payload[53], payload[54]]);
         assert_eq!(v_bot, champion_id);
-        let v_task_force = u32::from_le_bytes([payload[79], payload[80], payload[81], payload[82]]);
+        let v_task_force = u32::from_le_bytes([payload[55], payload[56], payload[57], payload[58]]);
         assert_eq!(v_task_force, 1);
 
         // Row Group 0x4000: 3 fields
-        let row_grp8 = u16::from_le_bytes([payload[83], payload[84]]);
+        let row_grp8 = u16::from_le_bytes([payload[59], payload[60]]);
         assert_eq!(row_grp8, 0x4003);
-        let t_player = u16::from_le_bytes([payload[85], payload[86]]);
+        let t_player = u16::from_le_bytes([payload[61], payload[62]]);
         assert_eq!(t_player, MCTS_TOKEN_PLAYER_ID);
-        let t_match = u16::from_le_bytes([payload[87], payload[88]]);
+        let t_match = u16::from_le_bytes([payload[63], payload[64]]);
         assert_eq!(t_match, MCTS_TOKEN_MATCH_ID);
-        let t_queue = u16::from_le_bytes([payload[89], payload[90]]);
+        let t_queue = u16::from_le_bytes([payload[65], payload[66]]);
         assert_eq!(t_queue, MCTS_TOKEN_MATCH_QUEUE_ID);
 
         let v_player = u64::from_le_bytes([
-            payload[91], payload[92], payload[93], payload[94],
-            payload[95], payload[96], payload[97], payload[98],
+            payload[67], payload[68], payload[69], payload[70],
+            payload[71], payload[72], payload[73], payload[74],
         ]);
         assert_eq!(v_player, account_id);
         let v_match = u64::from_le_bytes([
-            payload[99], payload[100], payload[101], payload[102],
-            payload[103], payload[104], payload[105], payload[106],
+            payload[75], payload[76], payload[77], payload[78],
+            payload[79], payload[80], payload[81], payload[82],
         ]);
         assert_eq!(v_match, match_id);
         let v_queue = u64::from_le_bytes([
-            payload[107], payload[108], payload[109], payload[110],
-            payload[111], payload[112], payload[113], payload[114],
+            payload[83], payload[84], payload[85], payload[86],
+            payload[87], payload[88], payload[89], payload[90],
         ]);
         assert_eq!(v_queue, queue_id as u64);
 
         // Group 0xa000: 1 string
-        let grp_str = u16::from_le_bytes([payload[115], payload[116]]);
+        let grp_str = u16::from_le_bytes([payload[91], payload[92]]);
         assert_eq!(grp_str, 0xa001);
-        let t_portal = u16::from_le_bytes([payload[117], payload[118]]);
+        let t_portal = u16::from_le_bytes([payload[93], payload[94]]);
         assert_eq!(t_portal, MCTS_TOKEN_PORTAL_SESSION_ID);
         assert_eq!(t_portal, 2287);
 
-        let str_len = u16::from_le_bytes([payload[119], payload[120]]) as usize;
+        let str_len = u16::from_le_bytes([payload[95], payload[96]]) as usize;
         assert_eq!(str_len, portal_session_id.len());
-        let str_val = std::str::from_utf8(&payload[121..121 + str_len]).expect("valid utf8");
+        let str_val = std::str::from_utf8(&payload[97..97 + str_len]).expect("valid utf8");
         assert_eq!(str_val, portal_session_id);
 
         // Assert zero trailing bytes
-        assert_eq!(payload.len(), 121 + str_len);
-        assert_eq!(frame.len(), 4 + 121 + str_len);
+        assert_eq!(payload.len(), 97 + str_len);
+        assert_eq!(frame.len(), 4 + 97 + str_len);
     }
 }

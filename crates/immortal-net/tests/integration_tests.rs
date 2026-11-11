@@ -2093,12 +2093,12 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     assert_eq!(tick_player_queue, 7); // agyis: no-mutant
     assert_eq!(tick_status_code, 7); // agyis: no-mutant
 
-    // (c4) MATCH_COMPOSITION wire frame (Function ID 0x392dcda5, len 159, Table 1583 DATA_SET_MATCH_COMPOSITION)
+    // (c4) MAP_INSTANCE_ASSIGNED / MATCH_COMPOSITION wire frame (Function ID 0x15c61937, len 135, Tokens 682/588/685/1583/2287)
     stream.read_exact(&mut header_buf).await.unwrap();
     let auto_mc_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
     let auto_mc_flags = u16::from_le_bytes([header_buf[2], header_buf[3]]);
     assert_eq!(auto_mc_flags, 0x0000); // agyis: no-mutant
-    assert_eq!(auto_mc_len, 159); // agyis: no-mutant
+    assert_eq!(auto_mc_len, 135); // agyis: no-mutant
     let mut auto_mc_payload = vec![0u8; auto_mc_len];
     stream.read_exact(&mut auto_mc_payload).await.unwrap();
     assert_eq!(auto_mc_payload[0], 0x00); // agyis: no-mutant
@@ -2110,11 +2110,58 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     ]); // agyis: no-mutant
     assert_eq!(
         auto_mc_func_id,
-        immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS
+        immortal_net::MCTS_FUNCTION_ID_MAP_INSTANCE_ASSIGNED
+    ); // agyis: no-mutant
+    assert_eq!(auto_mc_func_id, 0x15c61937); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([auto_mc_payload[5], auto_mc_payload[6]]),
+        5
     ); // agyis: no-mutant
     assert_eq!(
-        u16::from_le_bytes([auto_mc_payload[63], auto_mc_payload[64]]),
+        u16::from_le_bytes([auto_mc_payload[9], auto_mc_payload[10]]),
+        immortal_net::MCTS_TOKEN_MAP_GAME_ID
+    ); // agyis: no-mutant
+    assert_eq!(
+        u32::from_le_bytes([
+            auto_mc_payload[11],
+            auto_mc_payload[12],
+            auto_mc_payload[13],
+            auto_mc_payload[14],
+        ]),
+        immortal_net::MAP_GAME_ID_SHOOTING_RANGE
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([auto_mc_payload[17], auto_mc_payload[18]]),
+        immortal_net::MCTS_TOKEN_MAP_HOST_NET_ADDR
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([auto_mc_payload[19], auto_mc_payload[20]]),
+        immortal_net::MCTS_TOKEN_MAP_INSTANCE_ID
+    ); // agyis: no-mutant
+    assert_eq!(
+        &auto_mc_payload[21..29],
+        &[0x02, 0x00, 0x1e, 0x61, 127, 0, 0, 1]
+    ); // agyis: no-mutant
+    assert_eq!(
+        u64::from_le_bytes([
+            auto_mc_payload[29],
+            auto_mc_payload[30],
+            auto_mc_payload[31],
+            auto_mc_payload[32],
+            auto_mc_payload[33],
+            auto_mc_payload[34],
+            auto_mc_payload[35],
+            auto_mc_payload[36],
+        ]),
+        immortal_net::MAP_INSTANCE_ID_SHOOTING_RANGE as u64
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([auto_mc_payload[39], auto_mc_payload[40]]),
         immortal_net::MCTS_TOKEN_MATCH_COMPOSITION
+    ); // agyis: no-mutant
+    assert_eq!(
+        u16::from_le_bytes([auto_mc_payload[93], auto_mc_payload[94]]),
+        immortal_net::MCTS_TOKEN_PORTAL_SESSION_ID
     ); // agyis: no-mutant
 
     // (d) PLAYER_SVC_LAUNCH_MAP_INSTANCE wire frame (Function ID 0x4bee2ed8, len 53, queue_id 434, match_id 878850364, timeout 60, sockaddr 127.0.0.1:7777)
@@ -2646,3 +2693,306 @@ fn test_gazebo_lifecycle_state8_to_state10_transition_invariants() {
     ]);
     assert_eq!(cm_instance_id, 1282927737);
 }
+
+#[tokio::test]
+async fn test_auth_gateway_post_login_zero_length_chunked_frame_reads_max_payload_without_desync() {
+    let start = Instant::now();
+
+    let config = AuthGatewayConfig {
+        bind_addr: "127.0.0.1:0".parse().unwrap(),
+        account_id: 8302401,
+        post_login_settle_delay_ms: 5000,
+        post_login_invite_delay_ms: 0,
+        post_login_accept_delay_ms: 0,
+        post_login_launch_delay_ms: 0,
+        ..Default::default()
+    };
+    let gateway = AuthGateway::bind_with_config(config)
+        .await
+        .expect("Failed to bind AuthGateway");
+    let handle = gateway.spawn().expect("Failed to spawn AuthGateway");
+    let server_addr = handle.local_addr();
+
+    let mut stream = TcpStream::connect(server_addr)
+        .await
+        .expect("Client failed to connect to AuthGateway");
+
+    // Step 1: Client Auth Request (405 bytes, flags 0x0000)
+    let mut client_frame_4 = Vec::with_capacity(409);
+    client_frame_4.extend_from_slice(&405u16.to_le_bytes());
+    client_frame_4.extend_from_slice(&0x0000u16.to_le_bytes());
+    client_frame_4.extend_from_slice(&[0xAAu8; 405]);
+    stream.write_all(&client_frame_4).await.unwrap();
+    stream.flush().await.unwrap();
+
+    let mut hello_resp = [0u8; 24];
+    stream.read_exact(&mut hello_resp).await.unwrap();
+
+    // Step 2: Client Crypto Ticket (1117 bytes, flags 0x0100)
+    let mut client_frame_8 = Vec::with_capacity(1121);
+    client_frame_8.extend_from_slice(&1117u16.to_le_bytes());
+    client_frame_8.extend_from_slice(&0x0100u16.to_le_bytes());
+    client_frame_8.extend_from_slice(&[0xBBu8; 1117]);
+    stream.write_all(&client_frame_8).await.unwrap();
+    stream.flush().await.unwrap();
+
+    // Drain Chunk 2 ACK (25 bytes) + Chunk 3 Session (75 bytes) + 4 initial post-login frames
+    let mut header_buf = [0u8; 4];
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let chunk2_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let mut discard = vec![0u8; chunk2_len + 75];
+    stream.read_exact(&mut discard).await.unwrap();
+
+    for _ in 0..4 {
+        stream.read_exact(&mut header_buf).await.unwrap();
+        let len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+        let mut body = vec![0u8; len];
+        stream.read_exact(&mut body).await.unwrap();
+    }
+
+    // Post-login frame #1: Start matchmaking without Fernando/Shooting Range trigger words
+    let mut init_frame = Vec::with_capacity(19);
+    init_frame.extend_from_slice(&15u16.to_le_bytes());
+    init_frame.extend_from_slice(&0x0000u16.to_le_bytes());
+    init_frame.extend_from_slice(&[0x55u8; 15]);
+    stream.write_all(&init_frame).await.unwrap();
+
+    // Post-login frame #2: Header [0x00, 0x00, 0x08, 0x01] (field0 == 0, flags == 0x0108)
+    // followed by 2046 (0x07fe / MAX_PAYLOAD_LEN) bytes starting with [0xb0, 0xbf, 0x4c, 0xcb].
+    let mut chunk_frame = Vec::with_capacity(4 + immortal_net::MAX_PAYLOAD_LEN);
+    chunk_frame.extend_from_slice(&[0x00, 0x00, 0x08, 0x01]);
+    let mut chunk_payload = vec![0x55u8; immortal_net::MAX_PAYLOAD_LEN];
+    chunk_payload[..4].copy_from_slice(&[0xb0, 0xbf, 0x4c, 0xcb]);
+    chunk_frame.extend_from_slice(&chunk_payload);
+    stream.write_all(&chunk_frame).await.unwrap();
+
+    // Post-login frame #3: Immediately send a QUERY_SERVERS request.
+    // If gateway.rs had misread field0 == 0 as 0 bytes, [0xb0, 0xbf, 0x4c, 0xcb] would corrupt framing.
+    let mut query_frame = Vec::with_capacity(19);
+    query_frame.extend_from_slice(&15u16.to_le_bytes());
+    query_frame.extend_from_slice(&0x0108u16.to_le_bytes());
+    let mut query_payload = vec![0x00u8; 15];
+    query_payload[1..5].copy_from_slice(&immortal_net::MCTS_FUNCTION_ID_QUERY_SERVERS.to_le_bytes());
+    query_frame.extend_from_slice(&query_payload);
+    stream.write_all(&query_frame).await.unwrap();
+    stream.flush().await.unwrap();
+
+    tokio::time::timeout(
+        std::time::Duration::from_millis(1000),
+        stream.read_exact(&mut header_buf),
+    )
+    .await
+    .expect("Timed out waiting for QUERY_SERVERS response after [00, 00, 08, 01] chunk frame")
+    .unwrap();
+    let qdef_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    assert_eq!(qdef_len, 63);
+    let mut qdef_payload = vec![0u8; qdef_len];
+    stream.read_exact(&mut qdef_payload).await.unwrap();
+    assert_eq!(
+        u32::from_le_bytes([
+            qdef_payload[1],
+            qdef_payload[2],
+            qdef_payload[3],
+            qdef_payload[4],
+        ]),
+        immortal_net::MCTS_FUNCTION_ID_QUERY_SERVERS
+    );
+
+    // Post-login frames #4 and #5 advance post_login_count to 5.
+    for _ in 4..=5 {
+        stream.write_all(&init_frame).await.unwrap();
+    }
+
+    // Post-login frame #6: Another [0x00, 0x00, 0x08, 0x01] (2046 bytes) with no Fernando bytes.
+    // With post_login_count == 6 (> 5) and payload_len >= MAX_PAYLOAD_LEN, reactive dispatch must fire
+    // MatchStatus 10 + MapInstanceAssigned (0x15c61937) + LaunchMapInstance + ChangeMap.
+    stream.write_all(&chunk_frame).await.unwrap();
+    stream.flush().await.unwrap();
+
+    let mut received_func_ids = Vec::with_capacity(4);
+    for _ in 0..4 {
+        tokio::time::timeout(
+            std::time::Duration::from_millis(1000),
+            stream.read_exact(&mut header_buf),
+        )
+        .await
+        .expect("Timed out waiting for reactive draft dispatch on 2046-byte chunk frame")
+        .unwrap();
+        let len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+        let mut payload = vec![0u8; len];
+        stream.read_exact(&mut payload).await.unwrap();
+        received_func_ids.push((
+            len,
+            u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]),
+        ));
+    }
+
+    assert_eq!(
+        received_func_ids,
+        vec![
+            (112, immortal_net::MCTS_FUNCTION_ID_MATCH_STATUS),
+            (135, immortal_net::MCTS_FUNCTION_ID_MAP_INSTANCE_ASSIGNED),
+            (
+                53,
+                immortal_net::MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE
+            ),
+            (32, immortal_net::MCTS_FUNCTION_ID_CHANGE_MAP),
+        ]
+    );
+
+    drop(stream);
+    handle.shutdown().await.unwrap();
+
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed.as_millis() < 1000,
+        "Post-login 0x7fe chunk framing regression test must finish in < 1000ms, took {:?}",
+        elapsed
+    );
+}
+
+#[tokio::test]
+async fn test_auth_gateway_no_duplicate_composition_during_850ms_window() {
+    let config = AuthGatewayConfig {
+        bind_addr: "127.0.0.1:0".parse().unwrap(),
+        account_id: 8302401,
+        post_login_settle_delay_ms: 0,
+        post_login_invite_delay_ms: 0,
+        post_login_accept_delay_ms: 0,
+        post_login_launch_delay_ms: 0,
+        ..Default::default()
+    };
+    let gateway = AuthGateway::bind_with_config(config)
+        .await
+        .expect("Failed to bind AuthGateway");
+    let handle = gateway.spawn().expect("Failed to spawn AuthGateway");
+    let server_addr = handle.local_addr();
+
+    let mut stream = TcpStream::connect(server_addr)
+        .await
+        .expect("Client failed to connect to AuthGateway");
+
+    // Step 1 & Step 2 handshake
+    let mut client_frame_4 = Vec::with_capacity(409);
+    client_frame_4.extend_from_slice(&405u16.to_le_bytes());
+    client_frame_4.extend_from_slice(&0x0000u16.to_le_bytes());
+    client_frame_4.extend_from_slice(&[0xAAu8; 405]);
+    stream.write_all(&client_frame_4).await.unwrap();
+    stream.flush().await.unwrap();
+
+    let mut hello_resp = [0u8; 24];
+    stream.read_exact(&mut hello_resp).await.unwrap();
+
+    let mut client_frame_8 = Vec::with_capacity(1121);
+    client_frame_8.extend_from_slice(&1117u16.to_le_bytes());
+    client_frame_8.extend_from_slice(&0x0100u16.to_le_bytes());
+    client_frame_8.extend_from_slice(&[0xBBu8; 1117]);
+    stream.write_all(&client_frame_8).await.unwrap();
+    stream.flush().await.unwrap();
+
+    // Drain Chunk 2 ACK + Chunk 3 Session + 4 initial post-login frames
+    let mut header_buf = [0u8; 4];
+    stream.read_exact(&mut header_buf).await.unwrap();
+    let chunk2_len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+    let mut discard = vec![0u8; chunk2_len + 75];
+    stream.read_exact(&mut discard).await.unwrap();
+
+    for _ in 0..4 {
+        stream.read_exact(&mut header_buf).await.unwrap();
+        let len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+        let mut body = vec![0u8; len];
+        stream.read_exact(&mut body).await.unwrap();
+    }
+
+    // Advance post_login_count to 5 using benign frames so frame #6/#7 satisfy post_login_count > 5
+    let mut benign_frame = Vec::with_capacity(19);
+    benign_frame.extend_from_slice(&15u16.to_le_bytes());
+    benign_frame.extend_from_slice(&0x0000u16.to_le_bytes());
+    benign_frame.extend_from_slice(&[0x55u8; 15]);
+    for _ in 1..=5 {
+        stream.write_all(&benign_frame).await.unwrap();
+    }
+    stream.flush().await.unwrap();
+
+    // Read timed-dispatch frames up to and including the first 0x15c61937 (entering the 850ms window)
+    let mut seen_composition = false;
+    for _ in 0..16 {
+        tokio::time::timeout(
+            std::time::Duration::from_millis(1000),
+            stream.read_exact(&mut header_buf),
+        )
+        .await
+        .expect("Timed out waiting for timed transition sequence")
+        .unwrap();
+        let len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+        let mut payload = vec![0u8; len];
+        stream.read_exact(&mut payload).await.unwrap();
+        let func_id = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]);
+        if func_id == immortal_net::MCTS_FUNCTION_ID_MAP_INSTANCE_ASSIGNED {
+            seen_composition = true;
+            break;
+        }
+    }
+    assert!(
+        seen_composition,
+        "Timed dispatch must emit 0x15c61937 before the 850ms launch sleep"
+    );
+
+    // During the 850ms window after 0x15c61937, send both a 2046-byte [00, 00, 08, 01] frame
+    // and a Fernando champion-select frame. Neither may trigger a duplicate 0x15c61937 burst.
+    let mut chunk_frame = Vec::with_capacity(4 + immortal_net::MAX_PAYLOAD_LEN);
+    chunk_frame.extend_from_slice(&[0x00, 0x00, 0x08, 0x01]);
+    chunk_frame.extend_from_slice(&[0x55u8; immortal_net::MAX_PAYLOAD_LEN]);
+    stream.write_all(&chunk_frame).await.unwrap();
+
+    let mut fernando_frame = Vec::with_capacity(19);
+    fernando_frame.extend_from_slice(&15u16.to_le_bytes());
+    fernando_frame.extend_from_slice(&0x0000u16.to_le_bytes());
+    let mut fernando_payload = vec![0u8; 15];
+    fernando_payload[6] = 0x9b;
+    fernando_payload[7] = 0x08;
+    fernando_frame.extend_from_slice(&fernando_payload);
+    stream.write_all(&fernando_frame).await.unwrap();
+    stream.flush().await.unwrap();
+
+    // Only LaunchMapInstance (0x4bee2ed8) and ChangeMap (0x847de68b) may follow
+    let mut trailing_func_ids = Vec::with_capacity(2);
+    for _ in 0..2 {
+        tokio::time::timeout(
+            std::time::Duration::from_millis(2000),
+            stream.read_exact(&mut header_buf),
+        )
+        .await
+        .expect("Timed out waiting for LaunchMapInstance/ChangeMap after 850ms window")
+        .unwrap();
+        let len = u16::from_le_bytes([header_buf[0], header_buf[1]]) as usize;
+        let mut payload = vec![0u8; len];
+        stream.read_exact(&mut payload).await.unwrap();
+        trailing_func_ids.push(u32::from_le_bytes([
+            payload[1], payload[2], payload[3], payload[4],
+        ]));
+    }
+    assert_eq!(
+        trailing_func_ids,
+        vec![
+            immortal_net::MCTS_FUNCTION_ID_PLAYER_SVC_LAUNCH_MAP_INSTANCE,
+            immortal_net::MCTS_FUNCTION_ID_CHANGE_MAP,
+        ]
+    );
+
+    let mut extra_buf = [0u8; 1];
+    let probe_extra = tokio::time::timeout(
+        std::time::Duration::from_millis(100),
+        stream.read(&mut extra_buf),
+    )
+    .await;
+    assert!(
+        probe_extra.is_err(),
+        "No duplicate 0x15c61937 or extra burst frames may be emitted during the 850ms window"
+    );
+
+    drop(stream);
+    handle.shutdown().await.unwrap();
+}
+
+
