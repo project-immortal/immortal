@@ -198,7 +198,7 @@ async fn test_game_server_pcom_driver_loopback_integration() {
     let mut buf = [0u8; 2048];
 
     // 3. Send PCom keepalive ACK (flag 0x40): client_seq = 0
-    let keepalive_pkt = wrap_pcom_ack(0, 0);
+    let keepalive_pkt = wrap_pcom_ack(0, 0, [0; 5]);
     client_socket
         .send(&keepalive_pkt)
         .await
@@ -296,7 +296,7 @@ async fn test_game_server_pcom_driver_loopback_integration() {
     }
 
     // 5. Send movement input packet (client_seq = 1, flag 0x80)
-    let move_pkt = wrap_pcom_packet(1, 1, &[0x03, 0x0A, 0x00, 0x00, 0x00]);
+    let move_pkt = wrap_pcom_packet(1, 1, [0; 5], &[0x03, 0x0A, 0x00, 0x00, 0x00]);
     client_socket
         .send(&move_pkt)
         .await

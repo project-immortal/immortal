@@ -131,15 +131,15 @@ Once authenticated via TCP port 9000, the client connects to the match server on
 
 ### 5.1 UE3 `PComNetConn` UDP Datagram Wire Format (Port 7777)
 
-Live packet capture analysis (`pcaps/paladins_live_session.pcap`) and cleanroom server implementation reveal the exact UE3 `PComNetConn` datagram wire format exchanged between client and dedicated server:
+Live packet capture analysis (`pcaps/paladins_live_session.pcap`, Flight 033 captures) and cleanroom server implementation reveal the exact UE3 `PComNetConn` datagram wire format exchanged between client and dedicated server:
 
 ```text
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|                       Zero Prefix (Bytes 0-3)                 |
+| Prefix (0x00) |           Client Token (Bytes 1-3)            |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|       Zero Prefix (Bytes 4-5) |   Client Seq  | Control Flags |
+|   Client Token (Bytes 4-5)    |   Client Seq  | Control Flags |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |   Server Seq  | Control Flags |      UE3 Bunch Payload ...    |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -147,16 +147,20 @@ Live packet capture analysis (`pcaps/paladins_live_session.pcap`) and cleanroom 
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
 
-1. **Prefix Header**: 6 zero bytes `[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]`.
-2. **Client Sequence**: 1 byte (`u8`) client packet sequence number.
-3. **Control Flags**: 1 byte (`u8`):
+1. **Prefix Header (6 Bytes)**:
+   - Byte 0: Wire prefix (`0x00`).
+   - Bytes 1..5: 5-byte dynamic connection token (`client_token: [u8; 5]`) transmitted by the client runtime (e.g. `[8a, ce, 31, c6, f6]` / `[8b, ce, 31, c6, f6]`).
+2. **Client Sequence**: 1 byte (`u8`) client packet sequence number at byte offset 6.
+3. **Control Flags**: 1 byte (`u8`) at byte offset 7:
    - `0x40`: Keepalive / Heartbeat ACK datagram.
    - `0x80` / `0xC0`: Payload bunch packet containing UE3 bunches.
 4. **Server Sequence Increment**: 1 byte (`u8`) server sequence number, monotonically incremented with each outgoing datagram.
-5. **Bunch Payload**: Serialized UE3 channel bunches (Channel 0 control messages, actor replication).
+5. **Token Echo Symmetry**: Server outbound datagrams echo the client's 5-byte token:
+   - Outbound ACK: `[client_seq, token[0..5], server_seq, 0x40]`
+   - Outbound Bunch: `[client_seq, token[0..5], server_seq, 0x80, ...payload, 0x01]`
 6. **Trailing Bit-Reader Termination Marker**: Trailing byte `0x01` marking the bitstream termination for the engine's `FBitReader`.
 
-> **Flight 033 Empirical Observation (`UNK-UDP-001`)**: While initial handshakes and synthetic conformance fixtures use `[0; 5]` across `data[1..6]`, live client datagrams arriving on UDP port `7777` in Flight 033 carry non-zero bytes in `data[1..6]` (for example `[00, 8a, ce, 31, c6, f6, 00, 80, ...]` and `[00, 8b, ce, 31, c6, f6, ...]`). Because the cleanroom UDP driver currently filters for a zero prefix in `data[1..6]`, these live packets are skipped before `NMT_Welcome` can fire; this discrepancy is tracked as Residual Unknown `UNK-UDP-001` in [`CLEANROOM_LEDGER.md`](cleanroom_ledger.md).
+> **Engine Invariant & UNK-UDP-001 Resolution (`Claim 15`)**: REA disassembly of `ShippingPC-ChaosGame.exe` at `0x140bc8770` (`UPComNetConn::ReceivedRawPacket`) confirms that the client unconditionally strips the first 6 bytes (`cmp r8d, 6; jl drop; add r8d, -6; add rdx, 6; jmp UNetConnection::ReceivedRawPacket`) before passing datagram bytes to `UNetConnection::ReceivedRawPacket`. Ingress framing accepts dynamic 5-byte tokens in `data[1..6]`, stores them in `ClientSession`, and echoes them across all outbound keepalive ACKs and bunch datagrams, resolving `UNK-UDP-001` (Claim 15, `OBL-UDP-001`).
 
 ### 5.2 CPackUdp Datagram Envelope (Legacy / Crypto Dispatch)
 

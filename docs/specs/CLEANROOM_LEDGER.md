@@ -116,8 +116,15 @@
 ### Claim 14: MCTS TCP `0x07FE` Post-Login Zero-Length Chunk Framing (`OBL-MCTS-011`)
 - **Behavioral Requirement**: Once post-login framing begins on TCP port `9000`, an incoming 4-byte framing header whose length field `field0 == 0` (such as `[00, 00, 08, 01]`) encodes a full `0x07FE` (`2046`-byte, `MAX_PAYLOAD_LEN`) payload chunk rather than a zero-byte frame.
 - **Evidence Reference**: Flight 032/033 live MCTS TCP captures and `EV-NET-001`.
-- **Cleanroom Implementation**: `crates/immortal-net/src/gateway.rs` (`handle_client` post-login framing loop) and `crates/immortal-net/src/framing.rs` (`MAX_PAYLOAD_LEN`).
+- **Cleanroom Implementation**: `crates/immortal-net/src/gateway.rs` (`handle_connection` post-login framing loop) and `crates/immortal-net/src/framing.rs` (`MAX_PAYLOAD_LEN`).
 - **Verification Gate**: `cargo test --package immortal-net` (post-login `0x07fe` chunk integration tests).
+- **Status**: 🟢 Verified (Exit code 0).
+
+### Claim 15: PComNetConn UDP 7777 Ingress Header & Connection Token Framing (`OBL-UDP-001`)
+- **Behavioral Requirement**: Datagrams delivered to UDP port `7777` use `PComNetConn` framing with a 6-byte header: byte 0 prefix (`0x00`), bytes 1..6 carrying a dynamic 5-byte connection token (`client_token`), followed by 1-byte client sequence and 1-byte control flags. `ShippingPC-ChaosGame.exe` unconditionally strips the first 6 bytes in `UPComNetConn::ReceivedRawPacket` (`0x140bc8770`) before passing the packet to `UNetConnection::ReceivedRawPacket`. Outbound server datagrams (both keepalive ACKs with flag `0x40` and bunch packets with flag `0x80`) echo the dynamic 5-byte token received from the client session (`[client_seq, token[0..5], server_seq, flags, ...payload, 0x01]`).
+- **Evidence Reference**: `EV-BIN-001` (`ShippingPC-ChaosGame.exe` `0x140bc8770`, `0x140b37100`, `0x140b36500`), Flight 033 live client captures (`data[1..6] = [8a, ce, 31, c6, f6]` / `[8b, ce, 31, c6, f6]`), and `EV-NET-002`.
+- **Cleanroom Implementation**: `crates/immortal-server/src/game_server.rs` (`ClientSession::client_token`, `handle_datagram`, `wrap_pcom_ack`, `wrap_pcom_packet`).
+- **Verification Gate**: `cargo test --package immortal-server` (`test_pcom_net_conn_dynamic_token_ingress_and_echo`, `test_pcom_net_conn_handshake_and_keepalive_flow`, `test_game_server_pcom_driver_loopback_integration`).
 - **Status**: 🟢 Verified (Exit code 0).
 
 ---
@@ -128,4 +135,4 @@
 | :--- | :--- | :--- | :--- | :--- |
 | `UNK-MCTS-001` | Structure of MCTS "hello" packet expected by `0x14002eec0` | Client rejects handshake Chunk 1 and times out after 15s | Decompiled pseudocode of `0x14002eec0` | Exact field layout, function ID, and magic framing identified from Ghidra |
 | `UNK-MCTS-002` | MCTS Function hash map for catalog rowsets | Required to stream Token 100/102/105 rows to populate UI | Ghidra MSVC RTTI and marshal dispatch table | Symbol table cross-reference linking hash values to C++ handlers |
-| `UNK-UDP-001` | Non-zero bytes in live `PComNetConn` UDP header `data[1..6]` (`[8a, ce, 31, c6, f6]` / `[8b, ce, 31, c6, f6]`) observed on port `7777` in Flight 033 | Server skips `NMT_Welcome` dispatch while client falls back to `DevNet: Browse: 0.0.0.0:7777/LobbyMapV4_P?...` | Ghidra analysis of `PComNetConn::ReceivedPacket` / UDP packet header parser & Flight 033 PCAP | Exact semantic meaning and acceptance condition for `data[1..6]` verified in `immortal-server` so `NMT_Welcome` triggers `BROWSE_RANGE` |
+| `UNK-UDP-001` | Non-zero bytes in live `PComNetConn` UDP header `data[1..6]` (`[8a, ce, 31, c6, f6]` / `[8b, ce, 31, c6, f6]`) observed on port `7777` in Flight 033 | RESOLVED by Claim 15 | REA Disassembly (`0x140bc8770`, `0x140b37100`, `0x140b36500`) & Flight 033 PCAP | Closed: Ingress framing accepts dynamic 5-byte tokens in `data[1..6]`, stores them in `ClientSession`, and echoes them across all outbound keepalive ACKs and bunch datagrams. |

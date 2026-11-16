@@ -38,6 +38,7 @@ pub struct ClientSession {
     pub phase: SessionPhase,
     pub ctrl_sequence: u32,
     pub server_sequence: u8,
+    pub client_token: [u8; 5],
     pub handshake: ControlChannelHandshake,
     pub replication: ReplicationSession,
     pub last_seen: Instant,
@@ -51,6 +52,7 @@ impl ClientSession {
             phase: SessionPhase::Connected,
             ctrl_sequence: 0,
             server_sequence: 1,
+            client_token: [0; 5],
             handshake: ControlChannelHandshake::new(Some(level_url), Some(net_speed)),
             replication: ReplicationSession::new(),
             last_seen: Instant::now(),
@@ -191,8 +193,8 @@ impl GameServer {
 
     /// Handles an incoming datagram and returns any outgoing response datagrams.
     pub async fn handle_datagram(&self, data: &[u8], src: SocketAddr) -> Result<Vec<Vec<u8>>> {
-        // 1. Check for UE3 PComNetConn wire format (offset 1..6 zero padding)
-        if data.len() >= 8 && data[1..6] == [0, 0, 0, 0, 0] {
+        // 1. Check for UE3 PComNetConn wire format
+        if data.len() >= 8 {
             let client_seq = data[6];
             let flags = data[7];
 
@@ -208,12 +210,15 @@ impl GameServer {
             });
             session.last_seen = Instant::now();
 
+            let token: [u8; 5] = data[1..6].try_into().unwrap_or([0; 5]);
+            session.client_token = token;
+
             let s_seq = session.server_sequence;
             session.server_sequence = session.server_sequence.wrapping_add(1);
 
             // Keepalive / Heartbeat ACK (flag 0x40)
             if flags == 0x40 {
-                let ack = wrap_pcom_ack(client_seq, s_seq);
+                let ack = wrap_pcom_ack(client_seq, s_seq, session.client_token);
                 return Ok(vec![ack]);
             }
 
@@ -226,7 +231,7 @@ impl GameServer {
                 let mut out = Vec::new();
 
                 // 1. Reply with ACK
-                out.push(wrap_pcom_ack(client_seq, s_seq));
+                out.push(wrap_pcom_ack(client_seq, s_seq, session.client_token));
 
                 if client_seq == 0 && !session.replication.pawn_spawned {
                     // Send NMT_Welcome directing client to level URL
@@ -241,6 +246,7 @@ impl GameServer {
                     out.push(wrap_pcom_packet(
                         client_seq,
                         s_seq_welcome,
+                        session.client_token,
                         &welcome_bunch.encode(),
                     ));
 
@@ -256,6 +262,7 @@ impl GameServer {
                     out.push(wrap_pcom_packet(
                         client_seq,
                         s_seq_net,
+                        session.client_token,
                         &netspeed_bunch.encode(),
                     ));
 
@@ -267,7 +274,12 @@ impl GameServer {
                     let open_ch2 = session.replication.open_channel_2();
                     let s_seq_ch2 = session.server_sequence;
                     session.server_sequence = session.server_sequence.wrapping_add(1);
-                    out.push(wrap_pcom_packet(client_seq, s_seq_ch2, &open_ch2.encode()));
+                    out.push(wrap_pcom_packet(
+                        client_seq,
+                        s_seq_ch2,
+                        session.client_token,
+                        &open_ch2.encode(),
+                    ));
 
                     let spawn_fernando = session.replication.spawn_fernando();
                     let s_seq_spawn = session.server_sequence;
@@ -275,6 +287,7 @@ impl GameServer {
                     out.push(wrap_pcom_packet(
                         client_seq,
                         s_seq_spawn,
+                        session.client_token,
                         &spawn_fernando.encode(),
                     ));
 
@@ -284,7 +297,12 @@ impl GameServer {
                     let delta = session.replication.stream_baseline_delta(0.016);
                     let s_seq_delta = session.server_sequence;
                     session.server_sequence = session.server_sequence.wrapping_add(1);
-                    out.push(wrap_pcom_packet(client_seq, s_seq_delta, &delta.encode()));
+                    out.push(wrap_pcom_packet(
+                        client_seq,
+                        s_seq_delta,
+                        session.client_token,
+                        &delta.encode(),
+                    ));
                 }
 
                 return Ok(out);
@@ -433,20 +451,18 @@ fn rand_session_id() -> u32 {
     (now & 0xFFFFFFFF) as u32
 }
 
-/// Constructs a UE3 PComNetConn keepalive ACK datagram.
-pub fn wrap_pcom_ack(client_seq: u8, server_seq: u8) -> Vec<u8> {
-    vec![client_seq, 0x00, 0x00, 0x00, 0x00, 0x00, server_seq, 0x40]
+/// Constructs a UE3 PComNetConn keepalive ACK datagram echoing the 5-byte connection token.
+pub fn wrap_pcom_ack(client_seq: u8, server_seq: u8, token: [u8; 5]) -> Vec<u8> {
+    vec![
+        client_seq, token[0], token[1], token[2], token[3], token[4], server_seq, 0x40,
+    ]
 }
 
-/// Wraps payload into a UE3 PComNetConn datagram with trailing 1 bit.
-pub fn wrap_pcom_packet(client_seq: u8, server_seq: u8, payload: &[u8]) -> Vec<u8> {
+/// Wraps payload into a UE3 PComNetConn datagram echoing the 5-byte connection token with trailing 1 bit.
+pub fn wrap_pcom_packet(client_seq: u8, server_seq: u8, token: [u8; 5], payload: &[u8]) -> Vec<u8> {
     let mut pkt = Vec::with_capacity(8 + payload.len() + 1);
     pkt.push(client_seq);
-    pkt.push(0x00);
-    pkt.push(0x00);
-    pkt.push(0x00);
-    pkt.push(0x00);
-    pkt.push(0x00);
+    pkt.extend_from_slice(&token);
     pkt.push(server_seq);
     pkt.push(0x80);
     pkt.extend_from_slice(payload);
@@ -583,7 +599,7 @@ mod tests {
         let client_addr: SocketAddr = "127.0.0.1:54321".parse().unwrap();
 
         // 1. Keepalive ACK (flag 0x40): client_seq = 0, server_seq = 1
-        let keepalive = wrap_pcom_ack(0, 0);
+        let keepalive = wrap_pcom_ack(0, 0, [0; 5]);
         let replies = server
             .handle_datagram(&keepalive, client_addr)
             .await
@@ -591,6 +607,7 @@ mod tests {
         assert_eq!(replies.len(), 1);
         let ack1 = &replies[0];
         assert_eq!(ack1[0], 0); // acked client_seq
+        assert_eq!(&ack1[1..6], &[0, 0, 0, 0, 0]); // echoed zero token
         assert_eq!(ack1[6], 1); // server_sequence = 1
         assert_eq!(ack1[7], 0x40); // flag = ACK
 
@@ -690,5 +707,74 @@ mod tests {
         assert_eq!(replies4[0][7], 0x40);
         assert_eq!(replies4[1][6], 9);
         assert_eq!(replies4[1][7], 0x80);
+    }
+
+    #[tokio::test]
+    async fn test_pcom_net_conn_dynamic_token_ingress_and_echo() {
+        let config = GameServerConfig {
+            bind_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
+            ..Default::default()
+        };
+        let server = GameServer::bind_with_config(config).await.unwrap();
+        let client_addr: SocketAddr = "127.0.0.1:55123".parse().unwrap();
+        let live_token: [u8; 5] = [0x8a, 0xce, 0x31, 0xc6, 0xf6];
+
+        // 1. Send handshake datagram with live connection token at offset 1..6
+        let mut handshake_pkt = vec![0x00];
+        handshake_pkt.extend_from_slice(&live_token);
+        handshake_pkt.push(0x00); // client_seq = 0
+        handshake_pkt.push(0x80); // flags = bunch payload
+
+        let replies = server
+            .handle_datagram(&handshake_pkt, client_addr)
+            .await
+            .expect("Handle dynamic token handshake");
+
+        assert_eq!(replies.len(), 5);
+
+        // Verify all 5 response packets echo the exact live token in data[1..6]
+        for (idx, rep) in replies.iter().enumerate() {
+            assert!(
+                rep.len() >= 8,
+                "Packet {} too short: {} bytes",
+                idx,
+                rep.len()
+            );
+            assert_eq!(
+                &rep[1..6],
+                &live_token,
+                "Packet {} failed to echo live token",
+                idx
+            );
+        }
+
+        // Packet 0: ACK
+        assert_eq!(replies[0][0], 0); // acked client_seq
+        assert_eq!(replies[0][6], 1); // server_seq
+        assert_eq!(replies[0][7], 0x40); // flag = ACK
+
+        // Packet 1: NMT_Welcome
+        assert_eq!(replies[1][0], 0);
+        assert_eq!(replies[1][6], 2);
+        assert_eq!(replies[1][7], 0x80);
+        let welcome_bunch =
+            Bunch::decode(&replies[1][8..replies[1].len() - 1]).expect("Decode welcome bunch");
+        assert_eq!(welcome_bunch.header.ch_index, CONTROL_CHANNEL_INDEX);
+
+        // 2. Send follow-up keepalive ACK with updated dynamic token [0x8b, 0xce, 0x31, 0xc6, 0xf6]
+        let live_token_2: [u8; 5] = [0x8b, 0xce, 0x31, 0xc6, 0xf6];
+        let mut keepalive_pkt = vec![0x01]; // client_seq = 1
+        keepalive_pkt.extend_from_slice(&live_token_2);
+        keepalive_pkt.push(0x01); // seq
+        keepalive_pkt.push(0x40); // flags = ACK
+
+        let keepalive_replies = server
+            .handle_datagram(&keepalive_pkt, client_addr)
+            .await
+            .expect("Handle dynamic token keepalive");
+
+        assert_eq!(keepalive_replies.len(), 1);
+        assert_eq!(&keepalive_replies[0][1..6], &live_token_2);
+        assert_eq!(keepalive_replies[0][7], 0x40);
     }
 }
