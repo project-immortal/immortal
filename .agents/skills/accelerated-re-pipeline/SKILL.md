@@ -1,262 +1,115 @@
 ---
 name: accelerated-re-pipeline
 description: >-
-  Accelerated cleanroom reverse engineering and automated flight verification pipeline.
-  Combines dirtyroom binary inspection, REA (/reverse-engineer-anything) decompiler audits,
-  static schema linters, sub-second golden pcap replay fixtures, and headless flight automation.
-  Use when analyzing proprietary network protocols, reverse engineering closed binaries,
-  building cleanroom server emulators, or debugging client bail-out branches.
+  Project Immortal (Paladins UE3 64-bit) Layer 3 reverse engineering and automated flight
+  pipeline extending Layer 1 re-ops. Covers MCTS schema conformance linting, golden pcap
+  replay, Paladins state milestones and branch-gate offsets, agyis flight automation,
+  MCTS wire traps, and workspace agyis ext commands.
 ---
 
-# Accelerated Cleanroom Reverse Engineering & Flight Pipeline
+# Project Immortal: Accelerated RE & Flight Pipeline (Layer 3)
 
-A high-velocity, deterministic methodology for reverse engineering proprietary network protocols, game clients, and closed binaries without guesswork, token waste, or cleanroom contamination.
+> **Layer 1 Delegation**: This Layer 3 project skill extends **Layer 1 `re-ops`** (and upstream `reverse-engineer-anything`). Delegate all generic dirty-room preparation (`agyis re init`, `patch-rea`, `pre-analyze`, `seed`, `daemon`, `prime`, `find`, `decompile`, `disasm`, `xrefs`, `pcap`, `cache`, `clean`), cleanroom quarantine (`PSL-INV-007`), pre-analyzed Ghidra direct-mount caching (`PSL-INV-009`), and the generic 5-step REA surgical escalation ladder to `re-ops`.
 
-Derived from the **Project Immortal** 18-hour empirical milestone breakthrough (Paladins UE3 64-bit cleanroom server emulator).
-
----
-
-## 1. Architectural Foundation: The Cleanroom Boundary (PSL-INV-007)
-
-```
-+--------------------------------------------------------------------------------+
-|                         DIRTY ROOM (Air-Gapped / Isolated)                     |
-|                                                                                |
-|  [Target Binary]       [Live Network Pcap]       [Engine DLLs & Memory Dumps]  |
-|         |                        |                              |              |
-|         v                        v                              v              |
-|  REA / Ghidra / Rizin        tshark / Scapy           s_pFields / String Dumps |
-|  (Branch Gate Audits)      (Stream Extraction)         (Schema Extraction)     |
-+--------------------------------------------------------------------------------+
-                                       |
-                                       | Cleanroom Extraction Pipeline
-                                       | (JSON Schemas, Golden Streams, Obligation Ledgers)
-                                       v
-+--------------------------------------------------------------------------------+
-|                         CLEAN ROOM (Repository & Production)                   |
-|                                                                                |
-|  Vector 1: schema_conformance_test (0.01s static linter on Rust/Go/C++ codecs)  |
-|  Vector 2: golden_conformance_test (0.00s offline replay of genuine frames)    |
-|  Vector 3: Cohesive State Machine & Gating Milestones                          |
-|  Vector 4: Automated Flight Runner (`agyis flight` + Watchdog + Telemetry)    |
-+--------------------------------------------------------------------------------+
-```
-
-### Cleanroom Separation Invariants:
-1. **Zero Disassembly / Decompiled Code in Git**: Never commit proprietary assembly, decompiler C/C++ pseudo-code, or vendor binary bytes into product repositories.
-2. **Typed Obligation Ledgers**: Link every reverse-engineered claim to an immutable evidence record (function address, observed packet token, or capture timestamp).
-3. **Hermetic Test Grounding**: Implementations must be proven correct against cleanroom unit tests and synthetic fixtures before touching live binaries.
-4. **Pre-Analyzed Decompiler Cache Invariant (PSL-INV-009)**: Never invoke decompiler MCP tools or headless analyzers on binaries >10MB without asserting an active pre-analyzed Ghidra project database (`.gpr` with `-noanalysis -readOnly`) via `agyis re patch-rea --check`.
-
+This runbook captures **Paladins UE3 64-bit / MCTS** operational specifics only: schemas, golden captures, milestones, branch-gate offsets, flight automation, wire traps, and workspace `agyis ext` binary drop-ins.
 
 ---
 
-## 2. Operational Application of the 4 Acceleration Tools
+## 1. Project Immortal 4-Vector Verification Bindings
 
-Rather than writing custom one-off scripts or guessing wire contracts, agents operating on Project Immortal apply the four built-in acceleration tools in the repository:
+### Vector 1 — MCTS Schema Conformance Linter (`schema_conformance_test.rs`)
+*Static schema verification against 3,731 extracted engine `s_pFields` entries in 0.01s.*
 
----
-
-### Tool 1: Schema Conformance Linter (`schema_conformance_test.rs`)
-*Static schema verification against 3,731 engine fields in 0.01 seconds.*
-
-- **When to Apply**:
-  - Whenever defining a new `MCTS_TOKEN_*` constant or serializer function.
-  - Whenever modifying scalar group layouts (Group 0x1000 vs 0x3000 vs 0x4000).
-  - Whenever a client parser unexpectedly drops a connection or reports malformed rowsets.
-- **Operational Workflow**:
-  1. **Query the Ground Truth Schema**:
-     Inspect `crates/immortal-net/tests/fixtures/mcts_field_schema.json` (extracted from the engine's `s_pFields` table) to check token ID, canonical name, and data type:
-     ```bash
-     grep -n -C 4 '"id": <TOKEN_ID>' crates/immortal-net/tests/fixtures/mcts_field_schema.json
-     ```
-  2. **Verify Field Grouping Rules**:
-     - **Group `0x1000`** (1 byte): `Type 1` (bool), `Type 2` (int8/uint8).
-     - **Group `0x3000`** (4 bytes): `Type 5` (int32/uint32), `Type 6` (float).
-     - **Group `0x4000`** (8 bytes): `Type 9` (int64/uint64), `Type 10` (double).
-     - **Group `0x6000`** (Tables / Rowsets): `Type 13` (nested CMarshalRowSet).
-     - **Group `0xa000`** (Strings & Blobs): `Type 12` (length-prefixed ASCII/UTF-16).
-  3. **Run the Static Linter Gate**:
-     ```bash
-     cargo test test_all_mcts_token_constants_match_engine_schema
-     cargo test test_match_status_with_members_frame_schema_conformance
-     ```
-     Executes hermetically in **0.01s**, guaranteeing zero scalar size or type mismatches before any live binary is launched.
-
----
-
-### Tool 2: Offline Golden Pcap Conformance Suite (`golden_conformance_test.rs`)
-*In-memory bit-level replay of genuine live network frames in <0.01 seconds.*
-
-- **When to Apply**:
-  - Prior to any live flight run to guarantee that cleanroom framing, decompression, and row parsing maintain 100% wire parity with authentic retail server traffic.
-  - When implementing or refactoring network framing or compression handlers.
-- **Operational Workflow**:
-  1. **Run Golden Stream Replay**:
-     ```bash
-     cargo test test_golden_stream
-     ```
-     Replays 1,000+ real frames from `crates/immortal-net/tests/fixtures/golden_mcts_stream.bin` in memory.
-  2. **Carving New Protocol Streams (If expanding to new subsystems)**:
-     If exploring unmapped game subsystems (e.g. UDP bunches, chat, clan queries), extract the raw stream from the live pcap into a new test fixture:
-     ```bash
-     tshark -r /mnt/fast_data/re_dirtyroom/paladins_8.1.5839.0/pcaps/paladins_live_session.pcap \
-       -Y "tcp.port == 9000" -T fields -e tcp.payload | tr -d '\n' | xxd -r -p > scratch/new_stream.bin
-     ```
-     Ground all new parsers against this offline fixture before testing against live binaries.
-
----
-
-### Tool 3: Milestone Gating & REA Branch Gate Audits
-*Batching progress across discrete state gates and pinpointing client bail-out branches.*
-
-- **When to Apply**:
-  - When progressing through the client's state machine or diagnosing why the client failed to transition to the next screen.
-- **The 3 Canonical Milestones**:
-  - **Milestone A (Handshake & Main Menu Gate)**:
-    TCP connect $\to$ CMarshal Hello $\to$ Login Response $\to$ Character Roster $\to$ **Lobby State 2** (`LOBBY_MENU`).
-  - **Milestone B (Matchmaking & Gazebo Gate)**:
-    Queue join (`QueueState 2`) $\to$ Match found (`QueueState 3` + `OnMatchInvite`) $\to$ Accept click (`QueueState 4`) $\to$ **Lobby State 3** (`GAZEBO` / Champion Select) $\to$ Map travel command (`QueueState 7` + `ReceiveChangeMap: mapGameId 1615` / `Browse: Shootingrange_P`).
-  - **Milestone C (Simulation & World Replication Gate)**:
-    Unreal Engine 3 UDP NetDriver port 7777 handshake $\to$ Actor channel 2 open $\to$ Fernando pawn possession (4,600 HP, Flame Lance Device ID 10774) $\to$ Ability and movement replication.
-- **Auditing Gating Branches with REA**:
-  When a milestone fails to trigger, locate the exact gating check in the binary:
-  1. Search for references to the target function or state variable (e.g., `UTgMatchLobby->QueueState` at offset `0x1d8`).
-  2. Disassemble the branch instructions (`inspect_native_instruction` / `procedure_assembly`):
-     ```x86asm
-     mov eax, DWORD PTR [rcx+0x1d8] ; UTgMatchLobby->QueueState
-     sub eax, 0x7                   ; Check for MQ_LAUNCHING (7)
-     test eax, 0xfffffffd           ; Checks if QueueState == 7 or 9
-     jne bailout                    ; Bails out without map transition!
-     ```
-  3. Ensure the cleanroom server emits the exact state required by the gate before dispatching subsequent commands.
-
----
-
-### Tool 4: Automated Flight Test Runner (`agyis flight`)
-*Automated 90s flight execution with real-time log watchdog, input injection, and keyframe extraction.*
-
-- **When to Apply**:
-  - For end-to-end behavioral verification without manual playtesting or interactive desktop babysitting.
-- **Operational Workflow**:
-  1. **Execute Targeted Flight Test**:
-     ```bash
-     # Native extensible CLI dispatch (ADR-034)
-     agyis flight --target map --timeout 110
-     ./agyis flight --target map --timeout 110
-
-     # Target options:
-     #   --target menu    : Stop when Main Menu (Lobby State 2) is reached
-     #   --target invite  : Stop when MATCH READY modal is displayed
-     #   --target gazebo  : Stop when Champion Select Gazebo is reached
-     #   --target map     : Stop when ReceiveChangeMap / Browse is logged
-     #   --target range   : Stop when full in-game Shooting Range is loaded
-     ```
-  2. **Automated Flight Execution Pipeline**:
-     - Pre-flight cleanup (terminates lingering `ShippingPC-ChaosGame.exe` and `immortal-server` daemons, rotates `Launch.log`).
-     - Launches background server daemon with log capture (`scratch/flight_server.log`).
-     - Initializes hardware screen recording using the agentic preset (480p 3fps MP4, ~200KB per 10s).
-     - Launches client under Proton and attaches real-time non-blocking log watchdog.
-     - Automatically handles interactive UI gates (e.g. clicking Accept on match invite via `agyis input`).
-  3. **Inspect Flight Telemetry & Evidence**:
-     - Review execution timeline and milestone table: `scratch/recordings/flight_summary_<TIMESTAMP>.md`
-     - Inspect captured milestone keyframes: `scratch/recordings/keyframes_<TIMESTAMP>/`
-     - Verify video recording: `scratch/recordings/rec_<TIMESTAMP>.mp4`
-
----
-
-### Tool 5: Extensible Workspace CLI Commands & RE Suite (ADR-034)
-*Project-specific native command integration discovered via `.agents/commands/manifest.json`.*
-
-- **List Discovered Commands**:
+- **Ground-Truth Schema**: `crates/immortal-net/tests/fixtures/mcts_field_schema.json`
   ```bash
-  agyis ext list
+  grep -n -C 4 '"id": <TOKEN_ID>' crates/immortal-net/tests/fixtures/mcts_field_schema.json || [ $? -eq 1 ]
   ```
-- **Bespoke Extensions**:
-  - `agyis flight`     : Automated flight test runner and watchdog.
-  - `agyis game`       : Control and inspect Paladins game and server daemons (`status`, `start`, `logs`, `kill`).
-  - `agyis input`      : Game window & uinput automation via ydotoold + xdotool (`window`, `click`, `key`, `type`, `console`).
-  - `agyis mcts`       : Look up or calculate MCTS marshal tokens and group headers.
-  - `agyis record`     : Hardware-accelerated screen recording via `gpu-screen-recorder`.
-  - `agyis screenshot` : Capture game window or desktop screenshot (`--window`, `--output`).
-- **First-Class Cleanroom RE Suite (`agyis re`)**:
-  - `agyis re status`               : Check dirtyroom database metrics, binaries, and Ghidra project status.
-  - `agyis re patch-rea --check`    : Verify upstream REA MCP project acceleration patch status (PSL-INV-009).
-  - `agyis re patch-rea --apply`    : Apply pre-analyzed Ghidra project acceleration patch.
-  - `agyis re find <pattern> [--type all|func|str|rtti] [--limit N]` : Sub-millisecond SQLite queries across 356k functions and 817k strings.
-  - `agyis re decompile <symbol>`   : Zero-timeout headless decompilation.
-  - `agyis re disasm <symbol|addr>` : Zero-timeout headless disassembly (v1.0.0-rc10).
-  - `agyis re xrefs <symbol|addr>`  : Function cross-references analysis (v1.0.0-rc10).
+- **MCTS Scalar Groups & Types**:
+  - `0x1000` (1B): `Type 1` (`bool`), `Type 2` (`int8`/`uint8`)
+  - `0x3000` (4B): `Type 5` (`int32`/`uint32`), `Type 6` (`float`)
+  - `0x4000` (8B): `Type 9` (`int64`/`uint64`), `Type 10` (`double`)
+  - `0x6000` (Tables / Rowsets): `Type 13` (nested `CMarshalRowSet`)
+  - `0xa000` (Strings & Blobs): `Type 12` (length-prefixed ASCII/UTF-16)
+- **Static Linter Gate**:
+  ```bash
+  cargo test test_all_mcts_token_constants_match_engine_schema
+  cargo test test_match_status_with_members_frame_schema_conformance
+  ```
 
+### Vector 2 — Offline Golden Pcap Replay (`golden_conformance_test.rs`)
+*In-memory bit-level replay of 1,000+ genuine MCTS frames (<0.01s) from `crates/immortal-net/tests/fixtures/golden_mcts_stream.bin`.*
 
----
+- **Replay Gate**:
+  ```bash
+  cargo test test_golden_stream
+  ```
+- **Carving New Paladins Subsystems** (TCP port `9000` live capture):
+  ```bash
+  tshark -r /mnt/fast_data/re_dirtyroom/paladins_8.1.5839.0/pcaps/paladins_live_session.pcap \
+    -Y "tcp.port == 9000" -T fields -e tcp.payload | tr -d '\n' | xxd -r -p > scratch/new_stream.bin
+  ```
 
-## 3. The REA Surgical Escalation Ladder
+### Vector 3 — Paladins State Milestones & Branch-Gate Offsets
+- **Milestone A (`LOBBY_MENU`)**: TCP connect -> CMarshal Hello -> Login Response -> Character Roster -> **Lobby State 2** (`LOBBY_MENU`).
+- **Milestone B (`GAZEBO` & Map Travel)**: `QueueState 2` (join) -> `3` (match found + `OnMatchInvite`) -> `4` (accept) -> **Lobby State 3** (`GAZEBO` / Champion Select) -> `QueueState 7` + `ReceiveChangeMap: mapGameId 1615` / `Browse: Shootingrange_P`.
+- **Milestone C (UE3 World Simulation)**: UE3 UDP NetDriver port `7777` handshake -> Actor channel `2` open -> Fernando pawn possession (`4,600 HP`, Flame Lance Device ID `10774`) -> ability & movement replication.
+- **Branch-Gate Bail-Out Example (`UTgMatchLobby->QueueState` at `[rcx+0x1d8]`)**:
+  ```x86asm
+  mov eax, DWORD PTR [rcx+0x1d8] ; UTgMatchLobby->QueueState
+  sub eax, 0x7                   ; Check for MQ_LAUNCHING (7)
+  test eax, 0xfffffffd           ; Checks if QueueState == 7 or 9
+  jne bailout                    ; Bails out without map transition
+  ```
 
-When an automated flight fails or hangs at a specific gate, follow this strict 5-step escalation ladder:
+### Vector 4 — Automated Flight Runner (`agyis flight`)
+*Headless ~90s end-to-end verification with Proton lifecycle control, `Launch.log` watchdog, UI input injection, and screen recording.*
 
-```
-[Flight Runner Hangs / Fails]
-             |
-             v
-[Step 1: Check Watchdog Log] ---> Identify last logged function or silent log cessation
-             |
-             v
-[Step 2: REA Target Routing] ---> Call open_binary or rizin/ghidra on relevant binary/DLL
-             |
-             v
-[Step 3: Branch Gate Audit]   ---> inspect_native_instruction / procedure_assembly
-                                  Pinpoint `cmp`, `test`, `jne`, or struct offset
-             |
-             v
-[Step 4: Schema & Golden Fix] ---> Check Vector 1 schema & Vector 2 golden pcap for field mismatch
-             |
-             v
-[Step 5: Automated Verification] -> `cargo test --all` -> `agyis flight`
-```
-
-### Common Wire Deserialization Traps (Learned Lessons):
-1. **Scalar Group / Type Mismatch**:
-   - Group `0x1000`: 1-byte scalar (bool, uint8).
-   - Group `0x3000`: 4-byte scalar (int32, uint32, float).
-   - Group `0x4000`: 8-byte scalar (int64, uint64, double).
-   - *Trap*: Placing an int64 (e.g. AccountId or Token 703) in Group 0x3000 causes CMarshalRow deserializers to corrupt memory or reject rows silently.
-2. **Encrypted Ciphertext Replay in Unencrypted Sessions**:
-   - Replaying raw hex bytes from an encrypted session pcap into an unencrypted MCTS/RPC stream injects invalid function IDs, instantly triggering client socket shutdown (`VoiceChat: Player Logoff so disconnecting`).
-3. **Blocking Serial Socket Reads During Settle Delays**:
-   - If the server sleeps (e.g. waiting for client HUD assets to load), incoming client frames (vendor, inventory, profile queries) accumulate unread, causing TCP buffer starvation.
-   - *Fix*: Decouple TCP stream into separate read/write loops (`tokio::io::split`).
+- **Targets**:
+  - `--target menu`: Stop at Main Menu (Lobby State 2)
+  - `--target invite`: Stop at `MATCH READY` modal
+  - `--target gazebo`: Stop at Champion Select Gazebo (Lobby State 3)
+  - `--target map`: Stop when `ReceiveChangeMap` / `Browse` is logged
+  - `--target range`: Stop when full Shooting Range is loaded
+- **Execution Pipeline**: Terminates lingering `ShippingPC-ChaosGame.exe` & `immortal-server` -> rotates `Launch.log` -> captures server logs (`scratch/flight_server.log`) -> starts 480p/3fps MP4 recording (~200KB/10s) -> launches Proton client with non-blocking `Launch.log` watchdog and `agyis input` UI gates.
+- **Evidence Outputs** (`scratch/recordings/`): `flight_summary_<TIMESTAMP>.md`, `keyframes_<TIMESTAMP>/`, `rec_<TIMESTAMP>.mp4`.
 
 ---
 
-## 4. Project Immortal Cleanroom Reference Commands
+## 2. Escalation Binding & Paladins / MCTS Wire Traps
 
+- **Immortal Escalation Binding**: On flight hang or failure, inspect the `Launch.log` watchdog -> apply the Layer 1 `re-ops` 5-step REA escalation ladder -> cross-check Vector 1 schema & Vector 2 golden pcap -> verify with `cargo test --all && agyis flight`.
+- **Scalar Group / Type Mismatch**: Placing an `int64` (e.g., `AccountId` or Token `703`) in Group `0x3000` (4B) instead of `0x4000` (8B) causes `CMarshalRow` deserializers to corrupt memory or silently drop rows.
+- **Encrypted Ciphertext Replay**: Replaying raw hex bytes from an encrypted pcap into an unencrypted MCTS/RPC session injects invalid function IDs and triggers immediate socket disconnect (`VoiceChat: Player Logoff so disconnecting`).
+- **Blocking Serial Socket Reads**: Sleeping on a single TCP loop during HUD settle delays leaves incoming client frames (vendor, inventory, profile queries) unread and starves buffers; decouple read/write loops via `tokio::io::split`.
+
+---
+
+## 3. Workspace `agyis ext` Binary Drop-Ins (`.agents/commands/manifest.json`)
+
+List all discovered workspace extensions with `agyis ext list`:
+
+| Command | Purpose |
+| :--- | :--- |
+| `agyis flight` | Vector 4 automated flight test runner and `Launch.log` watchdog |
+| `agyis game` | Control and inspect Paladins client and `immortal-server` processes (`status`, `start`, `logs`, `kill`) |
+| `agyis mcts` | Look up or calculate MCTS marshal tokens and scalar group headers |
+| `agyis record` | Hardware-accelerated screen recording and clipping via `gpu-screen-recorder` |
+| `agyis input` | Game window & uinput automation via `ydotoold` + `xdotool` (`window`, `click`, `key`, `type`, `console`) |
+| `agyis screenshot` | Capture game window or desktop screenshot (`--window`, `--output`) |
+
+### Quick Invocation Cheatsheet
 ```bash
-# Flight test to specific milestone (native dispatch or via script)
-agyis flight --target map --timeout 110
-./agyis flight --target menu --timeout 50
+# Automated flight tests & Paladins process control
+agyis flight --target map --timeout 110        # Or ./agyis flight --target menu --timeout 50
+agyis game status && agyis game logs client
 
-# Inspect dirtyroom status and REA acceleration
-agyis re status
-agyis re patch-rea --check
+# MCTS token lookup & Paladins symbol query (see Layer 1 re-ops for full agyis re lifecycle)
+agyis mcts 0x847de68b
 agyis re find "ChaosGame" --limit 5
 
-# Inspect MCTS token
-agyis mcts 0x847de68b
-
-# Game & Server process status
-agyis game status
-agyis game logs client
-
-# Record short agentic verification clip
+# Agentic screen capture & input automation
 agyis record clip --duration 10 --agent
-
-# Window geometry & inspect
 agyis input window
-
-# Automated mouse click (normalized 0.0-1.0 coords)
 agyis input click 0.5 0.75 --relative
-
-# Screen grab inspection
 agyis screenshot
 ```
