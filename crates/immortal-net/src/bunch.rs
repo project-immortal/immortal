@@ -22,6 +22,80 @@ pub use crate::bitstream::MAX_FSTRING_LEN;
 /// Outer `PComNetConn` prefix length unconditionally stripped by `UPComNetConn::ReceivedRawPacket`.
 pub const PCOM_PREFIX_LEN: usize = 6;
 
+/// Outer packet prefix stripped by UE3 network connection layers.
+/// In Paladins standalone UDP transport, this is a 6-byte prefix (`PCOM_PREFIX_LEN`).
+/// In Paladins dedicated-server captures, this is a 10-byte prefix:
+/// `[0x01, 0x00, 0x00, 0x00] [sequence: 4B] [0x00, 0x01]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PcomPrefix {
+    Standalone([u8; 6]),
+    Dedicated([u8; 10]),
+    Raw(Vec<u8>),
+}
+
+impl PcomPrefix {
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            Self::Standalone(b) => b,
+            Self::Dedicated(b) => b,
+            Self::Raw(b) => b.as_slice(),
+        }
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.as_bytes().len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.as_bytes().is_empty()
+    }
+}
+
+impl Default for PcomPrefix {
+    fn default() -> Self {
+        Self::Standalone([0u8; PCOM_PREFIX_LEN])
+    }
+}
+
+impl From<[u8; PCOM_PREFIX_LEN]> for PcomPrefix {
+    fn from(arr: [u8; PCOM_PREFIX_LEN]) -> Self {
+        Self::Standalone(arr)
+    }
+}
+
+impl From<[u8; 10]> for PcomPrefix {
+    fn from(arr: [u8; 10]) -> Self {
+        Self::Dedicated(arr)
+    }
+}
+
+impl PartialEq<[u8; PCOM_PREFIX_LEN]> for PcomPrefix {
+    fn eq(&self, other: &[u8; PCOM_PREFIX_LEN]) -> bool {
+        self.as_bytes() == other.as_slice()
+    }
+}
+
+impl PartialEq<PcomPrefix> for [u8; PCOM_PREFIX_LEN] {
+    fn eq(&self, other: &PcomPrefix) -> bool {
+        self.as_slice() == other.as_bytes()
+    }
+}
+
+impl PartialEq<[u8; 10]> for PcomPrefix {
+    fn eq(&self, other: &[u8; 10]) -> bool {
+        self.as_bytes() == other.as_slice()
+    }
+}
+
+impl PartialEq<PcomPrefix> for [u8; 10] {
+    fn eq(&self, other: &PcomPrefix) -> bool {
+        self.as_slice() == other.as_bytes()
+    }
+}
+
 /// `MAX_PACKETID` = `0x4000` (16384 -> 14-bit `SerializeInt`).
 pub const MAX_PACKETID: u32 = 0x4000;
 
@@ -42,6 +116,9 @@ pub const DEFAULT_MAX_PACKET_BITS: usize = DEFAULT_MAX_PACKET * 8;
 
 /// Extended UDP (`?exudp>=1`) `MaxPacket * 8` = `0x1F0 * 8` = `3968` bits (`496` bytes).
 pub const EXUDP_MAX_PACKET_BITS: usize = 0x1F0 * 8;
+
+/// Dedicated server / Ethernet standard MTU `1440 * 8` = `11520` bits (`1440` bytes).
+pub const MAX_ALLOWED_PACKET_BITS: usize = 1440 * 8;
 
 /// Engine minimum network version (`GEngineMinNetVersion = 9189`).
 pub const DEFAULT_ENGINE_MIN_NET_VERSION: u32 = 9189;
@@ -91,6 +168,7 @@ pub const NMT_HANDSHAKE_COMPLETE: u8 = 0x1D;
 pub const NMT_REDIRECT: u8 = 0x1E;
 pub const NMT_CLIENT_AUTH_REQUEST: u8 = 0x1F;
 pub const NMT_SERVER_AUTH_REQUEST: u8 = 0x20;
+pub const NMT_MAP_LOADED: u8 = 0x2A;
 
 /// UE3 Channel Type Indexing (`UChannel::ChannelClasses[8]`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -391,7 +469,7 @@ impl Bunch {
 /// Cleanroom representation of a full UE3 `PComNetConn` UDP 7777 datagram.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ue3Packet {
-    pub pcom_prefix: [u8; PCOM_PREFIX_LEN],
+    pub pcom_prefix: PcomPrefix,
     pub packet_id: u16,
     pub acks: Vec<u16>,
     pub bunches: Vec<Bunch>,
@@ -400,6 +478,11 @@ pub struct Ue3Packet {
 impl Ue3Packet {
     /// Creates a new `Ue3Packet` with the given 6-byte outer prefix and 14-bit `packet_id`.
     pub fn new(pcom_prefix: [u8; PCOM_PREFIX_LEN], packet_id: u16) -> Self {
+        Self::new_with_prefix(PcomPrefix::Standalone(pcom_prefix), packet_id)
+    }
+
+    /// Creates a new `Ue3Packet` with a dynamic `PcomPrefix` and 14-bit `packet_id`.
+    pub fn new_with_prefix(pcom_prefix: PcomPrefix, packet_id: u16) -> Self {
         Self {
             pcom_prefix,
             packet_id,
@@ -415,10 +498,10 @@ impl Ue3Packet {
 
     /// Encodes the packet with an explicit `max_packet_bits` (`4608` standard UDP or `3968` `?exudp>=1`).
     pub fn encode_with_max_bits(&self, max_packet_bits: usize) -> Result<Vec<u8>, NetError> {
-        if max_packet_bits == 0 || max_packet_bits > DEFAULT_MAX_PACKET_BITS {
+        if max_packet_bits == 0 || max_packet_bits > MAX_ALLOWED_PACKET_BITS {
             return Err(NetError::BunchError(format!(
                 "max_packet_bits {} out of bounds (1..={})",
-                max_packet_bits, DEFAULT_MAX_PACKET_BITS
+                max_packet_bits, MAX_ALLOWED_PACKET_BITS
             )));
         }
         let mut writer = BitWriter::with_capacity_bits(64);
@@ -442,8 +525,9 @@ impl Ue3Packet {
         }
 
         let ue3_bytes = writer.finish_with_stop_bit();
-        let mut out = Vec::with_capacity(PCOM_PREFIX_LEN + ue3_bytes.len());
-        out.extend_from_slice(&self.pcom_prefix);
+        let prefix_bytes = self.pcom_prefix.as_bytes();
+        let mut out = Vec::with_capacity(prefix_bytes.len() + ue3_bytes.len());
+        out.extend_from_slice(prefix_bytes);
         out.extend_from_slice(&ue3_bytes);
         Ok(out)
     }
@@ -455,22 +539,35 @@ impl Ue3Packet {
 
     /// Decodes a `PComNetConn` UDP datagram with explicit `max_packet_bits` bounds enforcement.
     pub fn decode_with_max_bits(datagram: &[u8], max_packet_bits: usize) -> Result<Self, NetError> {
-        if max_packet_bits == 0 || max_packet_bits > DEFAULT_MAX_PACKET_BITS {
+        if max_packet_bits == 0 || max_packet_bits > MAX_ALLOWED_PACKET_BITS {
             return Err(NetError::BunchError(format!(
                 "max_packet_bits {} out of bounds (1..={})",
-                max_packet_bits, DEFAULT_MAX_PACKET_BITS
+                max_packet_bits, MAX_ALLOWED_PACKET_BITS
             )));
         }
-        if datagram.len() < PCOM_PREFIX_LEN + 1 {
+
+        let (pcom_prefix, ue3_bytes) = if datagram.len() >= 11
+            && datagram.starts_with(&[0x01, 0x00, 0x00, 0x00])
+            && datagram[8..10] == [0x00, 0x01]
+        {
+            let mut prefix = [0u8; 10];
+            prefix.copy_from_slice(&datagram[..10]);
+            (PcomPrefix::Dedicated(prefix), &datagram[10..])
+        } else if datagram.len() >= 7 && datagram[0] == 0x00 {
+            let mut prefix = [0u8; PCOM_PREFIX_LEN];
+            prefix.copy_from_slice(&datagram[..PCOM_PREFIX_LEN]);
+            (PcomPrefix::Standalone(prefix), &datagram[PCOM_PREFIX_LEN..])
+        } else if datagram.len() > PCOM_PREFIX_LEN {
+            (
+                PcomPrefix::Raw(datagram[..PCOM_PREFIX_LEN].to_vec()),
+                &datagram[PCOM_PREFIX_LEN..],
+            )
+        } else {
             return Err(NetError::PacketTooSmall {
                 expected: PCOM_PREFIX_LEN + 1,
                 actual: datagram.len(),
             });
-        }
-
-        let mut pcom_prefix = [0u8; PCOM_PREFIX_LEN];
-        pcom_prefix.copy_from_slice(&datagram[..PCOM_PREFIX_LEN]);
-        let ue3_bytes = &datagram[PCOM_PREFIX_LEN..];
+        };
 
         let max_ue3_bytes = max_packet_bits.div_ceil(8);
         if ue3_bytes.len() > max_ue3_bytes {
@@ -585,6 +682,8 @@ pub enum ControlMessage {
     },
     /// `NMT_ServerAuthRequest (0x20)`: C -> S (0 bytes).
     ServerAuthRequest,
+    /// `NMT_MapLoaded (0x2A)`: C -> S (0 bytes). Client notification that local map load has finished.
+    MapLoaded,
 }
 
 impl ControlMessage {
@@ -701,8 +800,34 @@ impl ControlMessage {
             Self::ServerAuthRequest => {
                 w.write_u8(NMT_SERVER_AUTH_REQUEST);
             }
+            Self::MapLoaded => {
+                w.write_u8(NMT_MAP_LOADED);
+            }
         }
         w.into_bytes()
+    }
+
+    /// Returns the wire opcode for this control message.
+    pub fn opcode(&self) -> u8 {
+        match self {
+            Self::Hello { .. } => NMT_HELLO,
+            Self::Welcome { .. } => NMT_WELCOME,
+            Self::Upgrade { .. } => NMT_UPGRADE,
+            Self::Challenge { .. } => NMT_CHALLENGE,
+            Self::NetSpeed { .. } => NMT_NETSPEED,
+            Self::Login { .. } => NMT_LOGIN,
+            Self::Failure { .. } => NMT_FAILURE,
+            Self::Join => NMT_JOIN,
+            Self::ActorChannelFailure { .. } => NMT_ACTOR_CHANNEL_FAILURE,
+            Self::HandshakeStart { .. } => NMT_HANDSHAKE_START,
+            Self::HandshakeChallenge { .. } => NMT_HANDSHAKE_CHALLENGE,
+            Self::HandshakeResponse { .. } => NMT_HANDSHAKE_RESPONSE,
+            Self::HandshakeComplete => NMT_HANDSHAKE_COMPLETE,
+            Self::Redirect { .. } => NMT_REDIRECT,
+            Self::ClientAuthRequest { .. } => NMT_CLIENT_AUTH_REQUEST,
+            Self::ServerAuthRequest => NMT_SERVER_AUTH_REQUEST,
+            Self::MapLoaded => NMT_MAP_LOADED,
+        }
     }
 
     fn decode_from_reader(reader: &mut BitReader<'_>) -> Result<Self, NetError> {
@@ -799,6 +924,7 @@ impl ControlMessage {
                 })
             }
             NMT_SERVER_AUTH_REQUEST => Ok(Self::ServerAuthRequest),
+            NMT_MAP_LOADED => Ok(Self::MapLoaded),
             other => Err(NetError::InvalidUdpPacket(format!(
                 "Unknown Control Message opcode 0x{:02x}",
                 other
@@ -1220,5 +1346,60 @@ mod tests {
         let r7 = hs.handle_control_message(&ControlMessage::Join).unwrap();
         assert_eq!(hs.phase, HandshakePhase::Joined);
         assert!(r7.is_empty());
+    }
+
+    #[test]
+    fn test_nmt_map_loaded_roundtrip() {
+        let msg = ControlMessage::MapLoaded;
+        assert_eq!(msg.opcode(), NMT_MAP_LOADED);
+        let encoded = msg.encode();
+        assert_eq!(encoded, vec![NMT_MAP_LOADED]);
+
+        let decoded = ControlMessage::decode(&encoded).expect("decode MapLoaded");
+        assert_eq!(decoded, ControlMessage::MapLoaded);
+        assert_eq!(decoded.opcode(), NMT_MAP_LOADED);
+
+        let bunch_data = encoded.clone();
+        let msgs = ControlMessage::decode_all(&bunch_data, bunch_data.len() * 8)
+            .expect("decode_all MapLoaded");
+        assert_eq!(msgs, vec![ControlMessage::MapLoaded]);
+    }
+
+    #[test]
+    fn test_dedicated_10byte_prefix_packet_roundtrip() {
+        let dedicated_prefix: [u8; 10] = [
+            0x01, 0x00, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78, 0x00, 0x01,
+        ];
+        let mut pkt = Ue3Packet::new_with_prefix(
+            PcomPrefix::Dedicated(dedicated_prefix),
+            42,
+        );
+        pkt.acks.push(10);
+        pkt.bunches.push(Bunch::control(
+            1,
+            ControlMessage::MapLoaded.encode(),
+        ));
+
+        let encoded = pkt.encode().expect("encode dedicated packet");
+        assert!(encoded.len() >= 11);
+        assert_eq!(&encoded[..10], &dedicated_prefix);
+
+        let decoded = Ue3Packet::decode(&encoded).expect("decode dedicated packet");
+        assert_eq!(decoded.pcom_prefix, PcomPrefix::Dedicated(dedicated_prefix));
+        assert_eq!(decoded.pcom_prefix.len(), 10);
+        assert_eq!(decoded.pcom_prefix.as_bytes(), &dedicated_prefix);
+        assert_eq!(decoded.packet_id, 42);
+        assert_eq!(decoded.acks, vec![10]);
+        assert_eq!(decoded.bunches.len(), 1);
+
+        let msgs = ControlMessage::decode_all(
+            &decoded.bunches[0].data,
+            decoded.bunches[0].num_bits,
+        )
+        .expect("decode control messages from bunch");
+        assert_eq!(msgs, vec![ControlMessage::MapLoaded]);
+
+        let reencoded = decoded.encode().expect("re-encode dedicated packet");
+        assert_eq!(reencoded, encoded);
     }
 }

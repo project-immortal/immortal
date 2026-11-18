@@ -242,22 +242,34 @@ class TestSteamVdf(unittest.TestCase):
         self.assertIsNone(opts_none)
 
     def test_wrap_launch_options_with_slice(self):
+        expected_prefix = (
+            f"PRESSURE_VESSEL_SYSTEMD_SCOPE=0 STEAM_LAUNCH_WRAPPER_SCOPE=0 "
+            f"systemd-run --user --scope --slice={SLICE_NAME} "
+            f"--setenv=PRESSURE_VESSEL_SYSTEMD_SCOPE=0 --setenv=STEAM_LAUNCH_WRAPPER_SCOPE=0 -- "
+        )
         # Empty
         wrapped_empty = wrap_launch_options_with_slice("")
-        self.assertEqual(wrapped_empty, f"systemd-run --user --scope --slice={SLICE_NAME} -- %command%")
+        self.assertEqual(wrapped_empty, f"{expected_prefix}%command%")
 
         # Existing command
         wrapped = wrap_launch_options_with_slice("gamemoderun %command%")
-        self.assertEqual(wrapped, f"systemd-run --user --scope --slice={SLICE_NAME} -- gamemoderun %command%")
+        self.assertEqual(wrapped, f"{expected_prefix}gamemoderun %command%")
 
         # Idempotent wrap
         wrapped_again = wrap_launch_options_with_slice(wrapped)
         self.assertEqual(wrapped_again, wrapped)
 
     def test_unwrap_launch_options_from_slice(self):
-        wrapped = f"systemd-run --user --scope --slice={SLICE_NAME} -- gamemoderun %command%"
-        unwrapped = unwrap_launch_options_from_slice(wrapped)
-        self.assertEqual(unwrapped, "gamemoderun %command%")
+        wrapped_legacy = f"systemd-run --user --scope --slice={SLICE_NAME} -- gamemoderun %command%"
+        self.assertEqual(unwrap_launch_options_from_slice(wrapped_legacy), "gamemoderun %command%")
+
+        wrapped_new = (
+            f"PRESSURE_VESSEL_SYSTEMD_SCOPE=0 STEAM_LAUNCH_WRAPPER_SCOPE=0 "
+            f"systemd-run --user --scope --slice={SLICE_NAME} "
+            f"--setenv=PRESSURE_VESSEL_SYSTEMD_SCOPE=0 --setenv=STEAM_LAUNCH_WRAPPER_SCOPE=0 -- "
+            f"gamemoderun %command%"
+        )
+        self.assertEqual(unwrap_launch_options_from_slice(wrapped_new), "gamemoderun %command%")
 
     def test_update_steam_launch_options(self):
         updated = update_steam_launch_options(self.MOCK_VDF, "new_opts %command%")

@@ -17,6 +17,7 @@ use immortal_net::{
     CONTROL_CHANNEL_INDEX, DEFAULT_GAME_CLASS, DEFAULT_GAME_PORT, DEFAULT_HMAC_KEY,
     DEFAULT_MAX_PACKET, DEFAULT_MAX_PACKET_BITS, DEFAULT_NET_SPEED, DEFAULT_SHOOTING_RANGE_LEVEL,
     HELLO_MIN_LEN, HELLO_PAYLOAD_OFFSET, MAX_CHSEQUENCE, MAX_PACKETID, PCOM_PREFIX_LEN,
+    PcomPrefix,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -42,10 +43,11 @@ pub struct ClientSession {
     pub addr: SocketAddr,
     pub session_id: u32,
     pub phase: SessionPhase,
-    pub pcom_prefix: [u8; PCOM_PREFIX_LEN],
+    pub pcom_prefix: PcomPrefix,
     pub server_packet_id: u16,
     pub ctrl_sequence: u32,
     pub in_reliable_ctrl: u16,
+    pub map_loaded: bool,
     pub handshake: ControlChannelHandshake,
     pub replication: ReplicationSession,
     pub last_seen: Instant,
@@ -63,10 +65,11 @@ impl ClientSession {
             addr,
             session_id,
             phase: SessionPhase::Connected,
-            pcom_prefix: [0u8; PCOM_PREFIX_LEN],
+            pcom_prefix: PcomPrefix::default(),
             server_packet_id: 0,
             ctrl_sequence: 1,
             in_reliable_ctrl: 0,
+            map_loaded: false,
             handshake: ControlChannelHandshake::new(
                 Some(level_url),
                 Some(game_class),
@@ -340,7 +343,7 @@ impl GameServer {
 
         // Bare keepalive (no bunches, no ACKs): return standalone ACK
         if pkt.bunches.is_empty() {
-            let mut ack_pkt = Ue3Packet::new(session.pcom_prefix, session.next_packet_id());
+            let mut ack_pkt = Ue3Packet::new_with_prefix(session.pcom_prefix.clone(), session.next_packet_id());
             ack_pkt.acks.push(pkt.packet_id);
             return Ok(vec![ack_pkt.encode()?]);
         }
@@ -385,6 +388,10 @@ impl GameServer {
                     let messages = ControlMessage::decode_all(&bunch.data, bunch.num_bits)?;
                     for msg in &messages {
                         debug!("Ingested Channel 0 ControlMessage from {}: {:?}", src, msg);
+                        if let ControlMessage::MapLoaded = msg {
+                            session.map_loaded = true;
+                            info!("🗺️ Client {} loaded map (NMT_MapLoaded 0x2A)", src);
+                        }
                         let replies = staged_handshake.handle_control_message(msg)?;
                         staged_reply_msgs.extend(replies);
                     }
@@ -456,6 +463,10 @@ impl GameServer {
                 let messages = ControlMessage::decode_all(&bunch.data, bunch.num_bits)?;
                 for msg in &messages {
                     debug!("Ingested legacy CPackUdp ControlMessage: {:?}", msg);
+                    if let ControlMessage::MapLoaded = msg {
+                        session.map_loaded = true;
+                        info!("🗺️ Client {} loaded map (NMT_MapLoaded 0x2A)", session.addr);
+                    }
                     let replies = session.handshake.handle_control_message(msg)?;
                     for reply in replies {
                         out.push(Bunch::control(session.next_ctrl_seq(), reply.encode()));
@@ -586,7 +597,7 @@ fn pack_ue3_replies(
     reply_bunches: Vec<Bunch>,
 ) -> Result<Vec<Vec<u8>>> {
     let mut encoded_packets = Vec::new();
-    let mut current = Ue3Packet::new(session.pcom_prefix, session.next_packet_id());
+    let mut current = Ue3Packet::new_with_prefix(session.pcom_prefix.clone(), session.next_packet_id());
     current.acks.push(ack_packet_id);
     let mut current_bits = 14 + 15; // 14-bit PacketId + 15-bit ACK
 
@@ -596,7 +607,7 @@ fn pack_ue3_replies(
             && (!current.bunches.is_empty() || !current.acks.is_empty())
         {
             encoded_packets.push(current.encode()?);
-            current = Ue3Packet::new(session.pcom_prefix, session.next_packet_id());
+            current = Ue3Packet::new_with_prefix(session.pcom_prefix.clone(), session.next_packet_id());
             current_bits = 14;
         }
         current_bits += b_bits;
@@ -1284,7 +1295,7 @@ mod tests {
             DEFAULT_GAME_CLASS,
             DEFAULT_NET_SPEED,
         );
-        session.pcom_prefix = [0x00, 0x0C, 0x10, 0x20, 0x30, 0x40];
+        session.pcom_prefix = [0x00, 0x0C, 0x10, 0x20, 0x30, 0x40].into();
 
         // 568 bytes = 4544 payload bits; bunch header = 40 bits (13-bit len for 4544 >= 4096).
         // Total b_bits = 4584: fits alone (14 + 4584 = 4598 < 4608),
@@ -1310,5 +1321,26 @@ mod tests {
         assert_eq!(p1.packet_id, 1);
         assert!(p1.acks.is_empty());
         assert_eq!(p1.bunches, vec![big_bunch]);
+    }
+
+    #[tokio::test]
+    async fn test_pcom_map_loaded_flag_set() {
+        let config = GameServerConfig {
+            bind_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
+            ..Default::default()
+        };
+        let server = GameServer::bind_with_config(config).await.unwrap();
+        let src: SocketAddr = "127.0.0.1:54329".parse().unwrap();
+
+        let mut pkt = Ue3Packet::new([0x00, 0x01, 0x02, 0x03, 0x04, 0x05], 0);
+        pkt.bunches.push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
+        let encoded = pkt.encode().unwrap();
+
+        let replies = server.handle_datagram(&encoded, src).await.unwrap();
+        assert!(!replies.is_empty());
+
+        let sessions = server.sessions.read().await;
+        let session = sessions.get(&src).expect("Session should exist");
+        assert!(session.map_loaded);
     }
 }

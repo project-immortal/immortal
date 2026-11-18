@@ -33,5 +33,10 @@
     "entrypoint": ".agents/commands/screenshot.py",
     "description": "Capture game window or desktop screenshot",
     "type": "python"
+  },
+  "pcap": {
+    "entrypoint": ".agents/commands/pcap.py",
+    "description": "Inspect and decode PCAP/PCAPNG network captures and UE3 datagrams",
+    "type": "python"
   }
 }

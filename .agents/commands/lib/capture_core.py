@@ -414,22 +414,27 @@ def parse_steam_launch_options(vdf_content: str) -> Optional[str]:
 
 def wrap_launch_options_with_slice(options: str, slice_name: str = SLICE_NAME) -> str:
     """
-    Wraps existing Steam LaunchOptions inside the systemd slice runner.
-    Idempotent: if already wrapped, returns unchanged.
+    Wraps existing Steam LaunchOptions inside the systemd slice runner with
+    scope-escape prevention environment variables.
     """
-    prefix = f"systemd-run --user --scope --slice={slice_name} -- "
+    env_prefix = "PRESSURE_VESSEL_SYSTEMD_SCOPE=0 STEAM_LAUNCH_WRAPPER_SCOPE=0"
+    runner = f"{env_prefix} systemd-run --user --scope --slice={slice_name} --setenv=PRESSURE_VESSEL_SYSTEMD_SCOPE=0 --setenv=STEAM_LAUNCH_WRAPPER_SCOPE=0 -- "
     clean = options.strip()
-    if clean.startswith("systemd-run") and f"--slice={slice_name}" in clean:
-        return clean
-
-    if not clean:
-        return f"{prefix}%command%"
-    return f"{prefix}{clean}"
+    # Strip legacy or existing systemd-run wrappers if present
+    clean = unwrap_launch_options_from_slice(clean)
+    if not clean or clean == "%command%":
+        return f"{runner}%command%"
+    return f"{runner}{clean}"
 
 
 def unwrap_launch_options_from_slice(options: str) -> str:
     """Removes the systemd-run slice wrapper from Steam LaunchOptions."""
-    return re.sub(r"^systemd-run\s+--user\s+--scope\s+--slice=[^\s]+\s+--\s*", "", options).strip()
+    clean = re.sub(
+        r"^(?:PRESSURE_VESSEL_SYSTEMD_SCOPE=\d+\s+STEAM_LAUNCH_WRAPPER_SCOPE=\d+\s+)?systemd-run\s+--user\s+--scope\s+--slice=[^\s]+(?:\s+--setenv=[^\s]+)*\s+--\s*",
+        "",
+        options.strip(),
+    ).strip()
+    return clean
 
 
 def update_steam_launch_options(vdf_content: str, new_options: str) -> str:

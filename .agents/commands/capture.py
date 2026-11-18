@@ -400,19 +400,26 @@ def cmd_run(args: argparse.Namespace) -> int:
 
         # Step 4: Dispatch or instruct game launch
         if should_launch:
-            print(f"[*] Launching Steam AppID 444090 with flags: {flags}")
-            subprocess.run(["steam", "-applaunch", "444090", *flags.split()])
+            if mode == "cgroup":
+                print("[*] Launching Steam AppID 444090 via xdg-open steam://run/444090 (cgroup mode: bypassing steam -applaunch to preserve localconfig systemd slice wrapper)")
+                subprocess.run(["xdg-open", "steam://run/444090"])
+            else:
+                print(f"[*] Launching Steam AppID 444090 with flags: {flags}")
+                subprocess.run(["steam", "-applaunch", "444090", *flags.split()])
         else:
             print(f"\n[*] Paladins client ready for launch.")
-            print(f"    Launch Command:  steam -applaunch 444090 {flags}")
+            if mode == "cgroup":
+                print("    Launch Command:  xdg-open steam://run/444090 (or launch from Steam library GUI)")
+            else:
+                print(f"    Launch Command:  steam -applaunch 444090 {flags}")
             print(f"    Target Run:      {run_id}")
 
         # Step 5: Wait loop
         if watch_exit:
-            print("[*] Watching for Paladins client lifecycle...")
+            print("[*] Watching for Paladins client lifecycle (waiting up to 120s for Proton launch)...")
             appeared = False
-            for _ in range(30):
-                proc = subprocess.run(["pgrep", "-f", "ShippingPC-ChaosGame.exe"], stdout=subprocess.PIPE, text=True)
+            for _ in range(120):
+                proc = subprocess.run(["pgrep", "-f", "ShippingPC-ChaosGame.exe|Paladins.exe"], stdout=subprocess.PIPE, text=True)
                 if proc.stdout.strip():
                     appeared = True
                     break
@@ -421,13 +428,13 @@ def cmd_run(args: argparse.Namespace) -> int:
             if appeared:
                 print("[*] Paladins process detected. Capturing until client exits...")
                 while True:
-                    proc = subprocess.run(["pgrep", "-f", "ShippingPC-ChaosGame.exe"], stdout=subprocess.PIPE, text=True)
+                    proc = subprocess.run(["pgrep", "-f", "ShippingPC-ChaosGame.exe|Paladins.exe"], stdout=subprocess.PIPE, text=True)
                     if not proc.stdout.strip():
                         print("[*] Paladins client exited cleanly.")
                         break
                     time.sleep(1.0)
             else:
-                print("[!] Paladins did not appear within 30s. Stopping capture.")
+                print("[!] Paladins did not appear within 120s. Stopping capture.")
         else:
             print("[*] Capture active. Press Ctrl-C when match session is finished...")
             try:
@@ -631,7 +638,7 @@ def cmd_steam_opts(args: argparse.Namespace) -> int:
         return 1
 
     current_opts = parse_steam_launch_options(vdf_content) or ""
-    is_wrapped = f"--slice={SLICE_NAME}" in current_opts
+    is_wrapped = f"--slice={SLICE_NAME}" in current_opts and "STEAM_LAUNCH_WRAPPER_SCOPE=0" in current_opts
 
     if subaction == "show":
         print("=== Steam AppID 444090 Launch Options ===")
