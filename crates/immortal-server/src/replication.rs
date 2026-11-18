@@ -4,13 +4,15 @@
 // Governed by: ICARO-42/b Ordinance (Company-Supported Personal IP Framework)
 
 //! # Actor Replication & Fernando Pawn Spawning
-//! Cleanroom implementation of Unreal Engine 3 Actor Channel 2 replication,
-//! Fernando (`TgPawn_Fernando`, `ChampionId::Fernando = 1026`) pawn lifecycle,
+//! Cleanroom implementation of Unreal Engine 3 Actor Channel (`ACTOR_CHANNEL_INDEX = 3`)
+//! replication, Fernando (`TgPawn_Fernando`, `ChampionId::Fernando = 1026`) pawn lifecycle,
 //! and spatial position/rotation delta streaming in the Shooting Range.
+//! Note: Post-`NMT_Join` bit-packed Actor Channel emission over `PComNetConn` UDP 7777 is
+//! deferred until `UNK-UDP-004` completes REA verification of `UActorChannel::ReceivedBunch`.
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use immortal_core::ChampionId;
-use immortal_net::{Bunch, ACTOR_CHANNEL_INDEX};
+use immortal_net::{Bunch, ACTOR_CHANNEL_INDEX, MAX_CHSEQUENCE};
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read, Write};
 
@@ -180,12 +182,19 @@ impl ReplicationSession {
             pawn: PawnActor::default(),
             channel_opened: false,
             pawn_spawned: false,
-            actor_sequence: 0,
+            actor_sequence: 1,
         }
     }
 
-    /// Generates a bunch that opens Actor Channel 2 for `PlayerController`.
-    /// Opens with `ch_sequence = 0` when `b_open = true`.
+    /// Allocates the next 10-bit UE3 Actor Channel reliable `ChSequence` modulo `MAX_CHSEQUENCE`.
+    pub fn next_actor_seq(&mut self) -> u32 {
+        let seq = self.actor_sequence;
+        self.actor_sequence = (self.actor_sequence + 1) % MAX_CHSEQUENCE;
+        seq
+    }
+
+    /// Generates a bunch that opens Actor Channel (`ACTOR_CHANNEL_INDEX = 3`) for `PlayerController`.
+    /// Uses 1-based UE3 reliable sequence numbering (`actor_sequence` starts at `1`).
     pub fn open_channel_2(&mut self) -> Bunch {
         self.channel_opened = true;
         let mut data = Vec::new();
@@ -195,9 +204,8 @@ impl ReplicationSession {
         data.write_u32::<LittleEndian>(self.controller.channel_index)
             .unwrap();
 
-        let bunch = Bunch::actor(self.actor_sequence, true, data);
-        self.actor_sequence += 1;
-        bunch
+        let seq = self.next_actor_seq();
+        Bunch::actor(seq, true, data)
     }
 
     /// Spawns and replicates Fernando pawn (`TgPawn_Fernando`, `ChampionId::Fernando = 1026`)
@@ -225,9 +233,8 @@ impl ReplicationSession {
         data.write_f32::<LittleEndian>(self.pawn.max_health)
             .unwrap();
 
-        let bunch = Bunch::actor(self.actor_sequence, false, data);
-        self.actor_sequence += 1;
-        bunch
+        let seq = self.next_actor_seq();
+        Bunch::actor(seq, false, data)
     }
 
     /// Applies movement deltas to Fernando's pawn location and rotation, generating an update bunch.
@@ -252,9 +259,8 @@ impl ReplicationSession {
         self.pawn.rotation.write_bytes(&mut data).unwrap();
         self.pawn.velocity.write_bytes(&mut data).unwrap();
 
-        let bunch = Bunch::actor(self.actor_sequence, false, data);
-        self.actor_sequence += 1;
-        bunch
+        let seq = self.next_actor_seq();
+        Bunch::actor(seq, false, data)
     }
 
     /// Streams baseline actor position/rotation delta so client can walk around Shooting Range.
@@ -266,9 +272,8 @@ impl ReplicationSession {
         self.pawn.rotation.write_bytes(&mut data).unwrap();
         self.pawn.velocity.write_bytes(&mut data).unwrap();
 
-        let bunch = Bunch::actor(self.actor_sequence, false, data);
-        self.actor_sequence += 1;
-        bunch
+        let seq = self.next_actor_seq();
+        Bunch::actor(seq, false, data)
     }
 }
 
@@ -386,6 +391,8 @@ mod tests {
         let bunch = session.open_channel_2();
         assert!(session.channel_opened);
         assert_eq!(bunch.header.ch_index, ACTOR_CHANNEL_INDEX);
+        assert_eq!(bunch.header.ch_index, 3);
+        assert_eq!(bunch.header.ch_sequence, 1);
         assert!(bunch.header.flags.b_open);
 
         let parsed = ReplicationPayload::decode(&bunch.data).unwrap();
@@ -457,5 +464,23 @@ mod tests {
             }
             other => panic!("Expected UpdateTransform, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_actor_sequence_wraps_mod_max_chsequence() {
+        let mut session = ReplicationSession::new();
+        session.actor_sequence = MAX_CHSEQUENCE - 1;
+
+        let b_last = session.stream_baseline_delta(0.016);
+        assert_eq!(b_last.header.ch_sequence, MAX_CHSEQUENCE - 1);
+        assert_eq!(session.actor_sequence, 0);
+
+        let b_wrap = session.stream_baseline_delta(0.016);
+        assert_eq!(b_wrap.header.ch_sequence, 0);
+        assert_eq!(session.actor_sequence, 1);
+
+        let b_next = session.stream_baseline_delta(0.016);
+        assert_eq!(b_next.header.ch_sequence, 1);
+        assert_eq!(session.actor_sequence, 2);
     }
 }

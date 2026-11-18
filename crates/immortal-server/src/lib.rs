@@ -11,8 +11,7 @@ pub mod game_server;
 pub mod replication;
 
 pub use game_server::{
-    wrap_pcom_ack, wrap_pcom_packet, ClientSession, GameServer, GameServerConfig, GameServerHandle,
-    SessionPhase,
+    ClientSession, GameServer, GameServerConfig, GameServerHandle, SessionPhase, MAX_SESSIONS,
 };
 pub use replication::{
     PawnActor, PlayerControllerActor, ReplicationPayload, ReplicationSession, Rotator, Vector3,

@@ -47,7 +47,11 @@ FLIGHT_PATTERNS = {
     ],
     "GAZEBO": ["Changing lobby state from 2 to 3"],
     "MAP_CHANGE": ["ReceiveChangeMap: mapGameId 1615"],
-    "BROWSE_RANGE": ["Browse: Shootingrange_P"],
+    "BROWSE_RANGE": [
+        "Browse: Shootingrange_P",
+        "LoadMap: 0.0.0.0:7777/Shootingrange_P",
+        "LoadMap: 127.0.0.1:7777/Shootingrange_P",
+    ],
 }
 
 

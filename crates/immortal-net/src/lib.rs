@@ -7,6 +7,7 @@
 //! Cleanroom Unreal Engine 3 bit-packed bunch protocol parser, control channel state
 //! machine, and MCTS auth gateway protocol definitions.
 
+pub mod bitstream;
 pub mod bunch;
 pub mod error;
 pub mod framing;
@@ -15,11 +16,21 @@ pub mod marshal;
 pub mod mcts_handshake;
 pub mod udp_framing;
 
+pub use bitstream::{
+    strip_stop_bit, ue3_handshake_crc, ue3_str_crc, BitReader, BitWriter, HANDSHAKE_CRC_SALT,
+    MAX_FSTRING_LEN, UE3_CRC32_POLY,
+};
 pub use bunch::{
     Bunch, BunchFlags, BunchHeader, ControlChannelHandshake, ControlMessage, HandshakePhase,
-    Ue3ChannelType, ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX, DEFAULT_GAME_CLASS,
-    DEFAULT_NET_SPEED, DEFAULT_SHOOTING_RANGE_MAP, NMT_CHALLENGE, NMT_FAILURE, NMT_HELLO,
-    NMT_NET_SPEED, NMT_UPGRADE, NMT_WELCOME,
+    Ue3ChannelType, Ue3Packet, ACTOR_CHANNEL_INDEX, CHTYPE_MAX, CONTROL_CHANNEL_INDEX,
+    DEFAULT_ENGINE_MIN_NET_VERSION, DEFAULT_ENGINE_NET_VERSION, DEFAULT_GAME_CLASS,
+    DEFAULT_HANDSHAKE_CHALLENGE, DEFAULT_MAX_PACKET, DEFAULT_MAX_PACKET_BITS, DEFAULT_NET_SPEED,
+    DEFAULT_SHOOTING_RANGE_LEVEL, DEFAULT_SHOOTING_RANGE_MAP, EXUDP_MAX_PACKET_BITS,
+    MARSHAL_CHANNEL_INDEX, MAX_CHANNELS, MAX_CHSEQUENCE, MAX_PACKETID, NMT_ACTOR_CHANNEL_FAILURE,
+    NMT_CHALLENGE, NMT_CLIENT_AUTH_REQUEST, NMT_FAILURE, NMT_HANDSHAKE_CHALLENGE,
+    NMT_HANDSHAKE_COMPLETE, NMT_HANDSHAKE_RESPONSE, NMT_HANDSHAKE_START, NMT_HAVE, NMT_HELLO,
+    NMT_JOIN, NMT_JOIN_SPLIT, NMT_LOGIN, NMT_NETSPEED, NMT_REDIRECT, NMT_SERVER_AUTH_REQUEST,
+    NMT_UPGRADE, NMT_USES, NMT_WELCOME, PCOM_PREFIX_LEN, VOICE_CHANNEL_INDEX,
 };
 pub use error::NetError;
 pub use framing::{CPackFrame, MagicToken, HEADER_LEN, MAX_PAYLOAD_LEN};
@@ -76,13 +87,8 @@ pub use udp_framing::{
 pub const DEFAULT_GAME_PORT: u16 = 7777;
 pub const DEFAULT_AUTH_PORT: u16 = 9000;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ChannelType {
-    Control = 0,
-    Actor = 1,
-    File = 2,
-    Voice = 3,
-}
+/// Unified 1-based UE3 channel type (`CHTYPE_Control = 1..=5`).
+pub type ChannelType = Ue3ChannelType;
 
 #[cfg(test)]
 mod tests {

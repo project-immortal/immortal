@@ -39,4 +39,5 @@ scratch/
 # Reverse Engineering Dirty Room (PSL-INV-007)
 .dirtyroom
 .dirtyroom/
+/dirtyroom
 crates/immortal-net/src/*.bin

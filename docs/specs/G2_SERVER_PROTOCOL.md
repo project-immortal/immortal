@@ -131,36 +131,51 @@ Once authenticated via TCP port 9000, the client connects to the match server on
 
 ### 5.1 UE3 `PComNetConn` UDP Datagram Wire Format (Port 7777)
 
-Live packet capture analysis (`pcaps/paladins_live_session.pcap`, Flight 033 captures) and cleanroom server implementation reveal the exact UE3 `PComNetConn` datagram wire format exchanged between client and dedicated server:
+Forensic binary analysis (`EV-BIN-001`) and live Flight 034 Paladins 8.1.5839.0 client captures (`EV-LOG-002`) establish the exact 3-layer `PComNetConn` + UE3 `UNetConnection` LSB-first bitstream wire format (`Claim 16` / `OBL-UDP-002`):
 
 ```text
- 0                   1                   2                   3
- 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Prefix (0x00) |           Client Token (Bytes 1-3)            |
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|   Client Token (Bytes 4-5)    |   Client Seq  | Control Flags |
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|   Server Seq  | Control Flags |      UE3 Bunch Payload ...    |
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|       ... UE3 Bunch Payload ...               | Term Bit 0x01 |
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+Layer 0 — 6-Byte PComNetConn Outer Prefix (UPComNetConn::ReceivedRawPacket, 0x140bc8770):
+  Bytes [0..6]:
+    Client -> Server: [0x00, monotonic_conn_byte, be32(player_id_lo32 ^ session_cookie)]
+    Server -> Client: [0x00; 6] or echoed 6-byte client pcom_prefix (stripped unconditionally on RX)
+  Bytes [6..N]: UE3RawPacket passed directly to UNetConnection::ReceivedRawPacket (0x140b37100)
+
+Layer 1 — Trailing Stop-Bit Framing (0x140b37100 / 0x140b29400):
+  - Reject if UE3RawPacket is empty or UE3RawPacket[last] == 0x00.
+  - Highest set '1' bit in UE3RawPacket[last] terminates the bitstream; exact payload bit length is:
+      BitSize = UE3RawPacket.len() * 8 - 1 - leading_zeros(UE3RawPacket[last])
+  - On TX: append a single '1' stop bit and zero-pad to the next byte boundary.
+
+Layer 2 — LSB-First UNetConnection Bitstream (0x140b36500 / 0x140b3c2f0 / 0x140b3b690):
+  - Optional 3-byte packet header disabled in standard Paladins sessions (bUsePacketHeader = 0).
+  - PacketId: 14-bit unsigned integer (SerializeInt(MAX_PACKETID = 0x4000)); 0-based on server TX.
+  - Repeated records until BitReader reaches BitSize:
+      1. IsAck (1 bit):
+         - If IsAck == 1: AckPacketId (14 bits, SerializeInt(0x4000)).
+         - If IsAck == 0 (FInBunch):
+             * bControl (1 bit): 1 iff bOpen || bClose; if 1, followed by bOpen (1 bit) and bClose (1 bit).
+             * bReliable (1 bit).
+             * ChIndex (11 bits, SerializeInt(MAX_CHANNELS = 0x800)).
+             * ChSequence (10 bits, SerializeInt(MAX_CHSEQUENCE = 0x400), present iff bReliable == 1; 1-based).
+             * ChType (3 bits, SerializeInt(CHTYPE_MAX = 8), present iff bReliable == 1 || bOpen == 1).
+             * BunchDataBits (variable width, SerializeInt(MAX_PACKET_BITS)):
+                 - Standard UDP (?exudp=0 / omitted): MaxPacket = 0x240 (576 B = 4608 bits)
+                   -> 13 bits when BunchDataBits < 512 (or >= 4096); 12 bits when 512 <= BunchDataBits < 4096.
+                 - Extended UDP (?exudp>=1): MaxPacket = 0x1F0 (496 B = 3968 bits).
+             * BunchPayload: BunchDataBits raw LSB-first bits.
 ```
 
-1. **Prefix Header (6 Bytes)**:
-   - Byte 0: Wire prefix (`0x00`).
-   - Bytes 1..5: 5-byte dynamic connection token (`client_token: [u8; 5]`) transmitted by the client runtime (e.g. `[8a, ce, 31, c6, f6]` / `[8b, ce, 31, c6, f6]`).
-2. **Client Sequence**: 1 byte (`u8`) client packet sequence number at byte offset 6.
-3. **Control Flags**: 1 byte (`u8`) at byte offset 7:
-   - `0x40`: Keepalive / Heartbeat ACK datagram.
-   - `0x80` / `0xC0`: Payload bunch packet containing UE3 bunches.
-4. **Server Sequence Increment**: 1 byte (`u8`) server sequence number, monotonically incremented with each outgoing datagram.
-5. **Token Echo Symmetry**: Server outbound datagrams echo the client's 5-byte token:
-   - Outbound ACK: `[client_seq, token[0..5], server_seq, 0x40]`
-   - Outbound Bunch: `[client_seq, token[0..5], server_seq, 0x80, ...payload, 0x01]`
-6. **Trailing Bit-Reader Termination Marker**: Trailing byte `0x01` marking the bitstream termination for the engine's `FBitReader`.
+| Constant | Value | SerializeInt Width | Engine Authority |
+| :--- | :---: | :--- | :--- |
+| `PCOM_PREFIX_LEN` | `6` bytes | Fixed raw bytes | `UPComNetConn::ReceivedRawPacket` (`0x140bc8770`) |
+| `MAX_PACKETID` | `0x4000` (`16384`) | 14 bits | `UNetConnection::ReceivedPacket` (`0x140b36500`) |
+| `MAX_CHANNELS` | `0x800` (`2048`) | 11 bits | `UNetConnection::CreateChannel` (`0x140b25e90`) |
+| `MAX_CHSEQUENCE` | `0x400` (`1024`) | 10 bits (1-based reliable) | `UChannel::ReceivedRawBunch` (`0x140b36ee0`) |
+| `CHTYPE_MAX` | `8` | 3 bits (`1=Control, 2=Actor, 3=File, 4=Voice, 5=Marshal`) | `UChannel::ChannelClasses` (`0x143d27a30`) |
+| `DEFAULT_MAX_PACKET_BITS` | `4608` (`576` B) | 13 bits (`<512`) / 12 bits (`>=512`) | `UTcpipConnection::InitConnection` (`0x140bba970`) |
+| `EXUDP_MAX_PACKET_BITS` | `3968` (`496` B) | Variable (`?exudp>=1` only) | `UPComNetDriver::CreateSocket` (`0x140d4d700`) |
 
-> **Engine Invariant & UNK-UDP-001 Resolution (`Claim 15`)**: REA disassembly of `ShippingPC-ChaosGame.exe` at `0x140bc8770` (`UPComNetConn::ReceivedRawPacket`) confirms that the client unconditionally strips the first 6 bytes (`cmp r8d, 6; jl drop; add r8d, -6; add rdx, 6; jmp UNetConnection::ReceivedRawPacket`) before passing datagram bytes to `UNetConnection::ReceivedRawPacket`. Ingress framing accepts dynamic 5-byte tokens in `data[1..6]`, stores them in `ClientSession`, and echoes them across all outbound keepalive ACKs and bunch datagrams, resolving `UNK-UDP-001` (Claim 15, `OBL-UDP-001`).
+> **Engine Invariant (`Claim 15` & `Claim 16`)**: `UPComNetConn::ReceivedRawPacket` (`0x140bc8770`) unconditionally drops datagrams shorter than 6 bytes and strips the leading 6-byte prefix before handing the remainder directly to `UNetConnection::ReceivedRawPacket` (`0x140b37100`). Outbound server datagrams echo the client's 6-byte `pcom_prefix`, piggyback `ACK(client_packet_id)`, and suppress ACK-of-ACK storms on pure ACK datagrams.
 
 ### 5.2 CPackUdp Datagram Envelope (Legacy / Crypto Dispatch)
 
@@ -195,30 +210,41 @@ Live packet capture analysis (`pcaps/paladins_live_session.pcap`, Flight 033 cap
 3. **Keepalive (`PingSend` / `PingRecv`)**:
    - Probes connection latency and MTU via echo datagrams.
 
-### 5.4 Layer 4: UE3 UNetConnection & Channel 0 Handshake
-Inside connected `PComNetConn` / `CPackUdp` frames, Unreal Engine 3 bunches are unpacked and dispatched to `UNetConnection`:
+### 5.4 Layer 4: UE3 UNetConnection & Staged Channel 0 Handshake
 
-1. **`NMT_Hello` (`0x00`)**:
-   - Client sends initial engine handshake: `EngineVersion = 12791`, `LicenseeVersion = 0`.
-2. **`NMT_NetSpeed` (`0x03`)**:
-   - Client announces requested bandwidth (`24000` / `48000`).
-3. **`NMT_Welcome` (`0x01`) & Exact Shooting Range Level URL**:
-   - Server responds with the exact verified Shooting Range level URL:
-     ```text
-     Shootingrange_P?game=TgGame.TgGame_Paladins_ShootingRange?GameState=OGS_NoSession?GameMode=0?Team=0
-     ```
-   - Client processes `NMT_Welcome` in `UControlChannel::ReceivedBunch`, loads map package `Shootingrange_P`, initializes `TgGame.TgGame_Paladins_ShootingRange`, and opens Actor Channel 2.
+Inside `PComNetConn` UDP datagrams, Unreal Engine 3 Channel 0 (`ChIndex = 0`, `CHTYPE_Control = 1`) executes the complete 7-stage Paladins control handshake (`Claim 16` / `OBL-UDP-002`). Server replies use `bOpen = false`, `bClose = false`, `bReliable = true`, 1-based `ChSequence` (`1, 2, 3, ...`), and 0-based `PacketId`:
 
-### 5.5 Team Invariant Semantics
+| Stage | Dir | Opcode | Message Name | Payload Layout (Little-Endian after 1-byte Opcode) |
+| :---: | :---: | :---: | :--- | :--- |
+| 1 | C -> S | `0x1A` | `NMT_HandshakeStart` | `uint32 PlatformFlag` (`0x40` on Win64 client; `bOpen = true, ChSeq = 1`) |
+| 1 | S -> C | `0x1B` | `NMT_HandshakeChallenge` | `uint32 Challenge` (`ChSeq = 1`, piggybacks `ACK(0)`) |
+| 2 | C -> S | `0x1C` | `NMT_HandshakeResponse` | `uint32 CrcResponse` (MSB-first CRC32 `0x04C11DB7` over UTF-16LE `"895fcf626f55798667e4e94cb7a636af %d"` with signed `i32` challenge) |
+| 2 | S -> C | `0x1D` | `NMT_HandshakeComplete` | *(0 bytes)* |
+| 3 | C -> S | `0x20` | `NMT_ServerAuthRequest` | *(0 bytes)* |
+| 3 | S -> C | `0x1F` | `NMT_ClientAuthRequest` | `uint64 ServerSteamId = 0`, `4 x uint32 = 0` (24 bytes; `ServerSteamId == 0` bypasses Steam AuthBlob and triggers `NMT_Hello`) |
+| 4 | C -> S | `0x00` | `NMT_Hello` | `uint32 MinNetVer` (`9189`), `uint32 NetVer` (`10897`), `uint32 IsLittleEndian` (`1`) |
+| 4 | S -> C | `0x03` | `NMT_Challenge` | `uint32 ChallengeId` (`0`), `FString Challenge` (`"IMMORTAL"`) |
+| 5 | C -> S | `0x04` | `NMT_Netspeed` | `uint32 CurrentNetSpeed` (may arrive packed in same datagram as `NMT_Login`) |
+| 6 | C -> S | `0x05` | `NMT_Login` | `FString ClientResponse`, `FString URL`, `uint64 UniqueId`, `uint64 PortalId` (Paladins 2x `u64` trailing IDs; `>= 512` bits exercises 12-bit `SerializeInt(4608)`) |
+| 6 | S -> C | `0x01` | `NMT_Welcome` | Bare `FString LevelName = "Shootingrange_P"`, `FString GameName = "TgGame.TgGame_Paladins_ShootingRange"` (`496` bits -> 13-bit length) |
+| 7 | C -> S | `0x09` | `NMT_Join` | *(0 bytes)*; sent after `LoadMap: 0.0.0.0:7777/Shootingrange_P` -> server transitions to `SessionPhase::Replicating` |
 
-The `Team` query parameter in the level travel URL dictates pawn spawn behavior and collision volume processing:
+Additional engine control opcodes (`FNetControlMessageInfo::Names` at `0x143d27a90`): `0x02 NMT_Upgrade(u32, u32)`, `0x06 NMT_Failure(FString)`, `0x07 NMT_Uses` (optional package map; not required to reach `Welcomed by server -> LoadMap -> NMT_Join`), `0x08 NMT_Have`, `0x0A NMT_JoinSplit`, `0x10 NMT_ActorChannelFailure(i32)`, `0x1E NMT_Redirect(FString)`.
+
+> **FString Wire Format**: `int32 Length` (LE). `Length == 0` encodes an empty string (0 bytes); `Length > 0` encodes ASCII/UTF-8 bytes including trailing NUL; `Length < 0` encodes `-Length` UTF-16LE code units including trailing NUL.
+
+### 5.5 Team Invariant Semantics & Post-`NMT_Join` Replication Boundary
+
+Note that retail Paladins Shooting Range runs locally in `NM_Standalone (0)` without a remote UDP server (`EV-LOG-003`), whereas Project Immortal intentionally routes `MAP_INSTANCE_ASSIGNED (0x15c61937)` to `127.0.0.1:7777` so the client executes a full dedicated-server `UPComNetConn` session. In `NMT_Welcome (0x01)`, the authentic server supplies bare **`LevelName = "Shootingrange_P"`** and **`GameName = "TgGame.TgGame_Paladins_ShootingRange"`** (matching `PersistentLevel->GetOutermost()->GetName()` and `WorldInfo->Game->GetClass()->GetPathName()`).
+
+When local travel URLs or authoritative pawn spawn options specify a `Team` parameter, the `Team` query option dictates pawn spawn behavior and collision volume processing:
 
 | Team ID | Designation | Spawn Behavior & Safety Semantics |
 | :---: | :--- | :--- |
-| `Team=0` | **Order** (Friendly Player Team) | **Safe Spawn**: Spawns pawn on the central player pavilion. No harmful trigger volumes. This is the mandatory value for player sessions. |
+| `Team=0` | **Order** (Friendly Player Team) | **Safe Spawn**: Spawns pawn on the central player pavilion. No harmful trigger volumes. Mandatory value for local URL references (`DEFAULT_SHOOTING_RANGE_MAP`) and player sessions. |
 | `Team=1` | **Chaos** (Enemy Bot Team) | **Bot Lanes**: Used for dummy bot targets in the practice shooting lanes. |
 | `Team=255` | **Spectator / Neutral** | **Hazard**: Spawns inside or immediately activates the spawn pavilion kill volume (`KillerPawn`), causing immediate pawn death upon spawn. |
 
-4. **Pawn Replication (`ChampionId::Fernando = 1026`)**:
-   - Server creates player controller on Actor Channel 2 and spawns Fernando pawn (`TgPawn_Knight`) at coordinate `(0, 0, 100)` with `Team=0`.
-   - Replicates baseline actor transforms (Position, Rotation) enabling offline walkability in the Shooting Range.
+**Post-`NMT_Join` Actor Channel Boundary (`UNK-UDP-004`)**:
+- Engine channel assignments (`UNetConnection::CreateChannel`, `0x140b25e90`): `Ch0 = Control (CHTYPE_Control = 1)`, `Ch1 = Marshal (CHTYPE_Marshal = 5)`, `Ch2 = Voice (CHTYPE_Voice = 4)`, `Ch3+ = Actor (CHTYPE_Actor = 2, ACTOR_CHANNEL_INDEX = 3)`.
+- Upon receiving `NMT_Join (0x09)`, `immortal-server` enters `SessionPhase::Replicating` and cleanly holds Actor Channel 3 bit-packed traffic until `UNK-UDP-004` completes REA verification of `UActorChannel::ReceivedBunch` for `TgPawn_Fernando` (`ChampionId::Fernando = 1026`).
