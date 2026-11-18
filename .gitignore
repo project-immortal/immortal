@@ -41,3 +41,8 @@ scratch/
 .dirtyroom/
 /dirtyroom
 crates/immortal-net/src/*.bin
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class

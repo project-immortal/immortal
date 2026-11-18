@@ -1,4 +1,9 @@
 {
+  "capture": {
+    "entrypoint": ".agents/commands/capture.py",
+    "description": "Process-isolated retail network capture and preservation workflow",
+    "type": "python"
+  },
   "flight": {
     "entrypoint": ".agents/commands/flight.py",
     "description": "Vector 4 automated flight test runner and watchdog",
