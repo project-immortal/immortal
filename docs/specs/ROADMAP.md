@@ -70,9 +70,9 @@ timeline
     title Project Immortal Strategic Development Timeline (Target: 3-Month Standalone Drop-In)
     Milestone 0 : Cleanroom Tooling & Database : Headless Ghidra Pipeline : 356k Functions Indexed : Complete
     Milestone 1 : MCTS Auth & Lobby Unfreeze : TCP 9000 Gateway : Retail Main Menu Unblocked (Lobby State 2) : Complete
-    Milestone 2 : Map Orchestration & Sandbox : 0x15c61937 + ChangeMap 1615 Verified : UDP 7777 Packets Arriving (Flight 033)
-    Milestone 3 : UDP 7777 Protocol Driver : Live UDP Ingress Active : Blocked on UNK-UDP-001 (data[1..6] Framing)
-    Milestone 4 : World Simulation & Fernando : Actor Channel 2 Replication : 60 Hz Position & Velocity Streaming : Month 2
+    Milestone 2 : Map Orchestration & Sandbox : 0x15c61937 + ChangeMap 1615 : LoadMap & Bringing World Shootingrange_P (Flight 035) : Complete
+    Milestone 3 : UDP 7777 Protocol Driver : UNK-UDP-001/002/005 Closed : 7-Stage Bit-Packed Handshake & NMT_Welcome (24ms) : Complete
+    Milestone 4 : Retail Captures & Actor Replication : CAP-01 Bot Siege Capture : Opcode 0x2A + Ch 3+ Actor Replication & 3D Render : Active
     Milestone 5 : Combat & Fernando Abilities : Flame Lance, Shield, Fireball, Immortal : Hitbox Authority : Month 2.5
     Milestone 6 : Drop-in Linux Server : Multi-Champion Support : Dedicated Server Packaging : Month 3 (Gold)
 ```
@@ -100,32 +100,30 @@ timeline
   - **Live Verification**: Retail client successfully logs in and renders the full interactive 3D Main Menu (`LobbyMapV4_P` in Direct3D 11 under GE-Proton9-15) with active "PLAY" button and unlocked champions.
 
 #### Milestone 2: Map Instance Orchestration & Sandbox Travel 🏝️
-- **Status**: **VERIFICATION GATE (MCTS Handoff & UDP Ingress Verified in Flight 033)**
-- **Objectives**: Direct the live retail client from Lobby State 2 / Gazebo into the 3D Shooting Range sandbox (`Shootingrange_P`) on UDP 7777.
+- **Status**: **COMPLETE (Verified on Live Retail Client in Flight 035)**
+- **Objectives**: Direct the live retail client from Lobby State 2 / Gazebo into the Shooting Range sandbox (`Shootingrange_P`) on UDP 7777.
 - **Key Deliverables**:
   - `MAP_INSTANCE_ASSIGNED` (`0x15c61937` with Table `1583`, Token `2287`, Token `588`, Token `682 = 1615`, Token `685`), `LaunchMapInstance` (`0x4bee2ed8`), and `ChangeMap` (`0x847de68b`).
   - Post-login `0x07FE` (`2046`-byte) zero-length chunk framing in `crates/immortal-net/src/gateway.rs`.
-  - **Flight 033 Verification**: Verified `Match composition cached [96E3D70]`, `ReceiveChangeMap: mapGameId 1615`, and live client UDP `7777` datagram arrival via `agyis flight --target range --timeout 120`.
-  - Final `BROWSE_RANGE` visual verification gated on resolving `UNK-UDP-001` (`data[1..6]` framing in M3).
+  - **Flight 035 Verification (`7a15b5d`)**: Verified `LOBBY_MENU (+30.62s)` -> `GAZEBO (+35.22s)` -> `ReceiveChangeMap: mapGameId 1615` -> `Welcomed by server (Level: Shootingrange_P, Game: TgGame.TgGame_Paladins_ShootingRange)` -> `LoadMap: 0.0.0.0:7777/Shootingrange_P?...` -> `Bringing World shootingrange_p.TheWorld up for play (1143)` (`38.93s`, exit `0`, zero `NetComeGo: Close`).
 
 #### Milestone 3: UDP 7777 Protocol Handshake & Connection Driver 📡
-- **Status**: **IN PROGRESS (Live UDP Ingress Active; Blocked on `UNK-UDP-001`)**
-- **Objectives**: Establish cleanroom UE3 network connection driver handling the low-level UDP handshake.
+- **Status**: **COMPLETE (Verified in Flight 035 — `UNK-UDP-001`, `UNK-UDP-002`, `UNK-UDP-005` Closed)**
+- **Objectives**: Establish cleanroom UE3 bit-packed network connection driver handling the complete Paladins UDP 7777 Control Channel handshake.
 - **Key Deliverables**:
-  - `crates/immortal-net/src/udp_framing.rs`: `CPack` UDP framing, HMAC-SHA256 packet authentication.
-  - `crates/immortal-server/src/game_server.rs`: UDP socket server handling `NMT_Hello`, `NMT_Challenge`, `NMT_Login`, and `NMT_Welcome`.
-  - Channel 0 (Control Channel) bitstream serialization.
-  - **Flight 033 Blocker (`UNK-UDP-001`)**: Live client datagrams on UDP `7777` carry non-zero bytes in `data[1..6]` (e.g., `[00, 8a, ce, 31, c6, f6, 00, 80, ...]`) rather than `[0; 5]`, blocking `NMT_Welcome` dispatch and leaving the client browsing `0.0.0.0:7777/LobbyMapV4_P?...`.
+  - `crates/immortal-net/src/bitstream.rs`: Cleanroom LSB-first `BitReader`/`BitWriter` (`u64`-safe `SerializeInt`/`WriteIntWrapped` across `MAX_PACKET_BITS = 4608` 13b/12b boundaries, stop-bit framing, `FString`, and signed `i32` `%d` `ue3_handshake_crc` over UTF-16LE `0x04C11DB7`).
+  - `crates/immortal-net/src/bunch.rs`: Authentic `Ue3Packet`, `Bunch`, `Ue3ChannelType` (`1..=5`), `NMT_*` (`0x00..=0x20`), and 7-stage `ControlChannelHandshake` (`0x1A -> 0x1B -> 0x1C -> 0x1D -> 0x20 -> 0x1F(0) -> 0x00 -> 0x03 -> 0x04/0x05 -> 0x01 -> 0x09`).
+  - `crates/immortal-server/src/game_server.rs`: Packet-atomic staged handshake driver with 10-bit modular `in_reliable_ctrl` ordering, ACK piggybacking, pure-ACK storm suppression, bounded session table (`MAX_SESSIONS = 1024`), and Flight 034 golden loopback integration tests (`139 passed, 0 failed`).
+  - **Flight 035 Live Verification**: Entire 7-stage handshake completed in `24 ms` (`06:28:37.192Z -> .216Z`) with exact `appStrCrc` match (`3997711111`), 159-byte 12-bit `NMT_Login` decode, and bare `NMT_Welcome`.
+  - **Carry-Forward Discovery to M4**: Post-`Bringing World`, the client emits Control Channel opcode `0x2A` prior to/alongside `NMT_Join`; visual 3D Shooting Range rendering awaits `0x2A` + `NMT_Join` + `UNK-UDP-004` (`UActorChannel` `PlayerController`/Pawn camera spawn) + post-`Bringing World` render settle in `flight.py`.
 
-#### Milestone 4: Authoritative Simulation & Champion Replication 🛡️
-- **Status**: **SCHEDULED (Target: Month 1–2)**
-- **Objectives**: Spawn and synchronize the authoritative player pawn (`TgPawn_Fernando`) in the 3D Shooting Range world.
+#### Milestone 4: Retail Capture Preservation & Authoritative Champion Replication 🛡️
+- **Status**: **ACTIVE (Next Milestone — Target: Month 2)**
+- **Objectives**: Preserve live retail dedicated-server UDP & MCTS captures while retail servers remain online, then spawn and synchronize the authoritative player controller & pawn (`TgPawn_Fernando`) in 3D Shooting Range and Bot Matches.
 - **Key Deliverables**:
-  - Channel 1 (`PlayerController`) assignment and input RPC processing.
-  - Channel 2+ Dynamic Actor allocation and replication.
-  - 60 Hz delta replication of spatial coordinates $(X, Y, Z)$, pitch/yaw rotation, and velocity vectors.
-  - Client-side prediction reconciliation and authoritative position snapping.
-  - Target dummy actor replication (`TgPawn_TargetDummy`).
+  - **Retail Preservation Capture Sweep**: Execute [`docs/specs/RETAIL_CAPTURE_PLAN.md`](RETAIL_CAPTURE_PLAN.md) (`CAP-01` Training Bot Siege first to unlock real dedicated-server UE3 UDP streams, `0x2A`, `NMT_Uses`, and `UActorChannel` Ch 3+ spawns; followed by `CAP-02`–`CAP-14`).
+  - **Post-Load Handshake & Watchdog Hardening**: Disassemble/verify Control opcode `0x2A`, complete `NMT_Join (0x09)` handshake, fix `ensure_immortal_server_built` always-rebuild in `.agents/commands/lib/common.py`, and add post-`Bringing World` render verification to `flight.py`.
+  - **Channel 3+ Actor Replication (`UNK-UDP-003` & `UNK-UDP-004`)**: Cleanroom `UActorChannel` (`CHTYPE_Actor = 2`, `ChIndex >= 3`, 1-based `ChSequence`) for `GameReplicationInfo`, `TgPlayerController`, `TgPawn_Fernando`, and 60 Hz delta movement/camera replication.
 
 #### Milestone 5: Combat, Ability Execution & Hit Registration ⚔️
 - **Status**: **SCHEDULED (Target: Month 2–2.5)**
