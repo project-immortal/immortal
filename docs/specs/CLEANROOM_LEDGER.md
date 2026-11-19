@@ -21,6 +21,8 @@
 | `EV-LOG-004` | Bot Siege Paired Retail Launch Log | `.dirtyroom/pcaps/CAP-01_bot_siege_20261119_Launch.log` | `16376a1dd649d32e9c906e04d90cf7165998dffec6c8cc437f156537889c2463` | 710,553 | Paladins 8.1.5839.0 (8,245 log lines, paired retail launch log, clean exit) |
 | `EV-NET-004` | Refreshed Shooting Range Isolated Trace | `.dirtyroom/pcaps/CAP-00_shooting_range_20261119.pcapng` | `9b3b78b0f3b813ac206bf49efc7d672092c9ae1238aa225cfe1ae681fcf4ee13` | 4,344,000 | Project Immortal CAP-00 (6,010 clean cgroup-isolated packets on nflog:42, zero host leak) |
 | `EV-LOG-005` | Refreshed Shooting Range Paired Log | `.dirtyroom/pcaps/CAP-00_shooting_range_20261119_Launch.log` | `58009f201e56b821f57b297b4f59846bfe32187d960715e7dcbc4bca62bc02bb` | 159,846 | Paladins 8.1.5839.0 (Viktor/Fernando shooting range session, clean exit) |
+| `EV-NET-005` | Custom Baseline Dedicated UDP + MCTS Capture | `.dirtyroom/pcaps/CAP-03_custom_baseline_20261119.pcapng` | `02a5fa92d0e7332e0e7a4ac26349366d6c20cab6e3e036e74351e6c055c92696` | 21,262,100 | Project Immortal CAP-03 (53,008 dedicated UDP packets on 20.33.35.9:9113, 1 human + 1 bot clean differential trace) |
+| `EV-LOG-006` | Custom Baseline Paired Retail Launch Log | `.dirtyroom/pcaps/CAP-03_custom_baseline_20261119_Launch.log` | `a1c6c179ebba83e094cd5c0da4250fd1292dc51c1ea99957c71a7ca5eba3b567` | 247,287 | Paladins 8.1.5839.0 (2,866 lines, Fernando vs Evie on sg_jaguarfalls_rework_p, clean match exit) |
 
 ---
 
