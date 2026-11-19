@@ -14,8 +14,9 @@ pub use game_server::{
     ClientSession, GameServer, GameServerConfig, GameServerHandle, SessionPhase, MAX_SESSIONS,
 };
 pub use replication::{
-    PawnActor, PlayerControllerActor, ReplicationPayload, ReplicationSession, Rotator, Vector3,
-    DEVICE_FERNANDO_FLAME_LANCE, FERNANDO_BASE_HEALTH, FERNANDO_CHAMPION_ID, FERNANDO_DEFAULT_TEAM,
-    FERNANDO_PAWN_CLASS, FERNANDO_SPAWN_X, FERNANDO_SPAWN_Y, FERNANDO_SPAWN_Z,
-    REP_OP_DESTROY_ACTOR, REP_OP_OPEN_CHANNEL, REP_OP_SPAWN_ACTOR, REP_OP_UPDATE_TRANSFORM,
+    BotActor, DeviceActor, PawnActor, PlayerControllerActor, ReplicationPayload,
+    ReplicationSession, Rotator, Vector3, DEVICE_FERNANDO_FLAME_LANCE, FERNANDO_BASE_HEALTH,
+    FERNANDO_CHAMPION_ID, FERNANDO_DEFAULT_TEAM, FERNANDO_PAWN_CLASS, FERNANDO_SPAWN_X,
+    FERNANDO_SPAWN_Y, FERNANDO_SPAWN_Z, REP_OP_DESTROY_ACTOR, REP_OP_OPEN_CHANNEL,
+    REP_OP_SPAWN_ACTOR, REP_OP_UPDATE_TRANSFORM,
 };

@@ -63,5 +63,13 @@ mod tests {
     fn test_fernando_champion() {
         let nando = ChampionId::Fernando;
         assert_eq!(nando.name(), "Fernando");
+        assert_eq!(ChampionId::from_id(1026), ChampionId::Fernando);
+    }
+
+    #[test]
+    fn test_evie_champion() {
+        let evie = ChampionId::Evie;
+        assert_eq!(evie.name(), "Evie");
+        assert_eq!(ChampionId::from_id(1030), ChampionId::Evie);
     }
 }
