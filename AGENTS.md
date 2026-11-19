@@ -150,7 +150,9 @@ agyis sync                                     # Bi-directional telemetry synchr
 
 1. **Dirty Room vs. Clean Room Isolation**: Keep binary/disassembly inspection (`.dirtyroom/`) strictly isolated from cleanroom specifications and source authoring.
 2. **Obligation Ledgers & Immutable Evidence**: Back cleanroom reconstructions with formal specifications, typed obligation ledgers, and immutable evidence digests.
-3. **Residual Unknowns Lifecycle**: Track unresolved structures formally with required authorities; never fill gaps with silent assumptions.
+3. **Residual Unknowns Lifecycle & Zero Guessing**:
+   - Track unresolved structures formally with required authorities; never fill gaps with silent assumptions, conversational extrapolation, or game meta guesswork.
+   - Any unmapped field, unknown packet bunch, or unverified opcode must remain explicitly classified as a Residual Unknown (`UNK-*`) until verified against raw capture bytes.
 4. **Formal Cleanroom Verification**: Evaluate obligation coverage (`agyis verify`) before closing cleanroom work.
 
 ---
@@ -170,11 +172,29 @@ agyis sync                                     # Bi-directional telemetry synchr
 
 ## 11. Anti-Vibe-Coding & Dynamic Lifecycle Invariant (PSL-INV-010)
 
-1. **Live State & Route Synchronization**: Never fake dynamic runtime views with static snapshots; track active SPA routes, purge stale DOM nodes/singletons on re-mount, and verify multi-session switching and API fallback paths in tests.
+1. **Live State, Route Synchronization & Zero Facades**:
+   - Never fake dynamic runtime views with static snapshots; track active SPA routes, purge stale DOM nodes/singletons on re-mount, and verify multi-session switching and API fallback paths in tests.
+   - Never construct fake mock outputs, simulated packet logs, or synthetic decodes that masquerade as real parsed capture data.
 
 ---
 
 ## 12. Universal Architectural Fitness Invariant (PSL-INV-011)
 
 1. **Structural Governance**: Satisfy automated fitness gates (`agyis audit aff`), enforce strict layer boundaries (core library vs. workspace pipelines), extract large embedded foreign-language assets into `assets/`, bound in-memory cache sizes, and maintain a strictly acyclic import graph (DAG).
+
+---
+
+## 13. Anti-Guess, Absolute Truth & Zero-Facade Invariant (PSL-INV-012)
+
+1. **Absolute Empirical Truth & Anti-Hallucination Standard**:
+   - In a reverse engineering project, absolute truth is the foundational currency. If an agent cannot be trusted to distinguish genuine binary ground truth from conjecture, the entire engineering foundation is corrupted.
+   - **Zero Speculative Inference**: Never substitute heuristic plausibility, game meta knowledge, or LLM pattern matching for actual byte-level decoding. If a property reflection table, bitstream codec, or packet parser cannot extract a field down to verified binary ground truth, the agent MUST explicitly declare: *"Decoder unmapped / infrastructure not yet ready — cannot extract from capture."*
+2. **Transparent Ignorance Over Plausible Facades**:
+   - Stating *"I do not know yet"* or *"Our tools cannot decode this yet"* is an engineering virtue and mandatory operational behavior. Fabricating plausible details, synthesizing convincing facades, or hallucinating data is a catastrophic protocol violation.
+   - Unobserved or unparsed protocol fields must be formally tracked as Residual Unknowns (`UNK-*`).
+3. **Anti-Chatbot Seduction & Blame Prohibition**:
+   - Never rationalize an unverified guess by claiming you were "pushed to answer", "expected to reply", or "testing a hypothesis" unless the operator explicitly requested a speculative guess.
+   - Hold the line on verification: when an operator asks a factual protocol question, first verify whether the toolchain can extract it. If not, state the limitation up front before attempting any analysis.
+4. **Authentic Binary Verification**:
+   - Every claim regarding network packets, memory structures, or game state must be backed by reproducible execution output (e.g. script stdout, test assertion, or hex offset), never internal cognitive assumptions.
 <!-- End AGYIS-HARNESS -->
