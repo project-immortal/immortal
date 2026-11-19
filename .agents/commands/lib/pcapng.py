@@ -33,6 +33,22 @@ def parse_nflog_payload(packet_data: bytes) -> Optional[bytes]:
     return None
 
 
+def is_cpack_udp_packet(payload: bytes) -> Optional[str]:
+    """
+    Identifies CPackUdp transport datagrams (e.g. HelloSend 570B/650B, PingSend, PingRecv, HelloRecvReply)
+    prior to UE3 bitstream bunch parsing.
+    """
+    if len(payload) in (570, 650):
+        return f"CPackUdp::HelloSend ({len(payload)} B)"
+    if len(payload) == 16 and payload[0] == 0x01:
+        return "CPackUdp::HelloRecvReply"
+    if len(payload) >= 13 and payload[0] == 0x02:
+        return "CPackUdp::PingSend"
+    if len(payload) >= 21 and payload[0] == 0x03:
+        return "CPackUdp::PingRecv"
+    return None
+
+
 def extract_ip_from_linktype(packet_data: bytes, linktype: int) -> Optional[bytes]:
     """Extracts raw IP packet based on PCAP / PCAPNG linktype."""
     if linktype in (141, 239):  # LINKTYPE_NFLOG / NETLINK

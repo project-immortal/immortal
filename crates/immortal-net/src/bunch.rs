@@ -548,7 +548,7 @@ impl Ue3Packet {
 
         let (pcom_prefix, ue3_bytes) = if datagram.len() >= 11
             && datagram.starts_with(&[0x01, 0x00, 0x00, 0x00])
-            && datagram[8..10] == [0x00, 0x01]
+            && (datagram[8..10] == [0x00, 0x01] || datagram[8..10] == [0x00, 0x10])
         {
             let mut prefix = [0u8; 10];
             prefix.copy_from_slice(&datagram[..10]);
@@ -1400,6 +1400,54 @@ mod tests {
         assert_eq!(msgs, vec![ControlMessage::MapLoaded]);
 
         let reencoded = decoded.encode().expect("re-encode dedicated packet");
+        assert_eq!(reencoded, encoded);
+    }
+
+    #[test]
+    fn test_dedicated_10byte_prefix_unsequenced_0010_and_1440b_mtu_roundtrip() {
+        // [0x00, 0x10] unsequenced / control / ACK subflags
+        let dedicated_prefix: [u8; 10] = [
+            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+        ];
+        let mut pkt = Ue3Packet::new_with_prefix(
+            PcomPrefix::Dedicated(dedicated_prefix),
+            1337,
+        );
+        pkt.acks.push(99);
+
+        // Build a large bunch filling up toward 1440-byte MTU buffer (e.g. 1200 bytes)
+        let large_payload = vec![0xA5; 1200];
+        pkt.bunches.push(Bunch::actor(5, false, large_payload.clone()));
+
+        // Encode with 1440-byte MTU ladder (11520 bits)
+        let encoded = pkt
+            .encode_with_max_bits(MAX_ALLOWED_PACKET_BITS)
+            .expect("encode large dedicated packet");
+        assert!(encoded.len() > 1200);
+        assert_eq!(&encoded[..10], &dedicated_prefix);
+
+        // Decoding with 576-byte MTU must fail with PayloadTooLarge
+        let err_default = Ue3Packet::decode(&encoded).unwrap_err();
+        match err_default {
+            NetError::PayloadTooLarge { length, max } => {
+                assert!(length > max);
+                assert_eq!(max, DEFAULT_MAX_PACKET_BITS / 8);
+            }
+            other => panic!("Expected PayloadTooLarge, got {:?}", other),
+        }
+
+        // Decoding with 1440-byte MTU must succeed
+        let decoded = Ue3Packet::decode_with_max_bits(&encoded, MAX_ALLOWED_PACKET_BITS)
+            .expect("decode large dedicated packet with 11520 bits");
+        assert_eq!(decoded.pcom_prefix, PcomPrefix::Dedicated(dedicated_prefix));
+        assert_eq!(decoded.packet_id, 1337);
+        assert_eq!(decoded.acks, vec![99]);
+        assert_eq!(decoded.bunches.len(), 1);
+        assert_eq!(decoded.bunches[0].data, large_payload);
+
+        let reencoded = decoded
+            .encode_with_max_bits(MAX_ALLOWED_PACKET_BITS)
+            .expect("re-encode large dedicated packet");
         assert_eq!(reencoded, encoded);
     }
 }

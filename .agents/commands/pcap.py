@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.common import DIRTYROOM_ROOT
 from lib.capture_core import DEFAULT_CAP_DIR, calculate_sha256
-from lib.pcapng import convert_to_raw_pcap, extract_udp_packets
+from lib.pcapng import convert_to_raw_pcap, extract_udp_packets, is_cpack_udp_packet
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
 

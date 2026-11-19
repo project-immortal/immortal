@@ -9,6 +9,7 @@ use immortal_net::bunch::{
     NMT_HANDSHAKE_CHALLENGE, NMT_HANDSHAKE_RESPONSE, NMT_HANDSHAKE_COMPLETE,
     NMT_MAP_LOADED, NMT_REDIRECT, NMT_CLIENT_AUTH_REQUEST, NMT_SERVER_AUTH_REQUEST,
 };
+use immortal_net::udp_framing::{parse_cpack_udp, CPackUdpPacket, HELLO_FULL_LEN, HELLO_MIN_LEN};
 use immortal_net::NetError;
 use std::io::{self, BufRead};
 
@@ -102,23 +103,105 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         total_packets += 1;
 
-        // Ladder: if CLI specified, prioritize it. If packet > 576 bytes, prioritize 1440B MTU (11520 bits).
+        // 1. Check for dedicated server UE3 datagrams first (starts with 01 00 00 00 and subflags 00 01 / 00 10)
+        let is_dedicated_ue3 = raw_bytes.len() >= 11
+            && raw_bytes.starts_with(&[0x01, 0x00, 0x00, 0x00])
+            && (raw_bytes[8..10] == [0x00, 0x01] || raw_bytes[8..10] == [0x00, 0x10]);
+
+        let mut handled_cpack = false;
+        if !is_dedicated_ue3 {
+            // Disambiguate CPackUdp transport datagrams (e.g. HelloSend 570B/650B, PingSend, PingRecv, HelloRecvReply)
+            let is_cpack_hello = raw_bytes.len() == HELLO_MIN_LEN || raw_bytes.len() == HELLO_FULL_LEN;
+            if is_cpack_hello {
+                let conn_id = if raw_bytes.len() >= 4 {
+                    u32::from_le_bytes(raw_bytes[0..4].try_into().unwrap_or([0; 4]))
+                } else {
+                    0
+                };
+                println!(
+                    "[+] Packet #{:<5} {} | [CPackUdp::HelloSend] ConnID: 0x{:08x} (Len: {} B)",
+                    total_packets, meta, conn_id, raw_bytes.len()
+                );
+                decoded_packets += 1;
+                handled_cpack = true;
+            } else if let Ok(ref cpack) = parse_cpack_udp(&raw_bytes) {
+                match cpack {
+                    CPackUdpPacket::HelloSend(hello) => {
+                        println!(
+                            "[+] Packet #{:<5} {} | [CPackUdp::HelloSend] ConnID: 0x{:08x} (Len: {} B)",
+                            total_packets, meta, hello.connection_id, raw_bytes.len()
+                        );
+                        decoded_packets += 1;
+                        handled_cpack = true;
+                    }
+                    CPackUdpPacket::HelloRecvReply(reply) if raw_bytes.len() == 16 => {
+                        println!(
+                            "[+] Packet #{:<5} {} | [CPackUdp::HelloRecvReply] SessionID: 0x{:08x}, MTU: {}",
+                            total_packets, meta, reply.session_id, reply.negotiated_mtu
+                        );
+                        decoded_packets += 1;
+                        handled_cpack = true;
+                    }
+                    CPackUdpPacket::PingSend(ping) => {
+                        println!(
+                            "[+] Packet #{:<5} {} | [CPackUdp::PingSend] Seq: {}, Timestamp: {}",
+                            total_packets, meta, ping.sequence, ping.timestamp
+                        );
+                        decoded_packets += 1;
+                        handled_cpack = true;
+                    }
+                    CPackUdpPacket::PingRecv(ping) => {
+                        println!(
+                            "[+] Packet #{:<5} {} | [CPackUdp::PingRecv] Seq: {}, ClientTS: {}, ServerTS: {}",
+                            total_packets, meta, ping.sequence, ping.client_timestamp, ping.server_timestamp
+                        );
+                        decoded_packets += 1;
+                        handled_cpack = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if handled_cpack {
+            continue;
+        }
+
+        // 2. Ladder: prioritize CLI override if supplied.
+        // For large packets (> 576 B), do not fall back to smaller MTUs (576B/496B) that would synthetically fail with PayloadTooLarge.
         let max_bits_ladder: Vec<usize> = if let Some(mb) = cli_max_bits {
-            vec![mb, EXUDP_MAX_PACKET_BITS, DEFAULT_MAX_PACKET_BITS]
+            vec![mb]
         } else if raw_bytes.len() > 576 {
-            vec![MAX_ALLOWED_PACKET_BITS, EXUDP_MAX_PACKET_BITS, DEFAULT_MAX_PACKET_BITS]
+            vec![MAX_ALLOWED_PACKET_BITS]
         } else {
             vec![EXUDP_MAX_PACKET_BITS, DEFAULT_MAX_PACKET_BITS, MAX_ALLOWED_PACKET_BITS]
         };
 
         let mut decoded = Err(NetError::InvalidUdpPacket("Empty ladder".to_string()));
+        let mut first_authentic_err: Option<NetError> = None;
+
         for &bits in &max_bits_ladder {
+            let max_bytes = bits.div_ceil(8);
+            if raw_bytes.len() > max_bytes + 10 {
+                continue;
+            }
             let res = Ue3Packet::decode_with_max_bits(&raw_bytes, bits);
-            if res.is_ok() {
-                decoded = res;
-                break;
-            } else {
-                decoded = res;
+            match res {
+                Ok(pkt) => {
+                    decoded = Ok(pkt);
+                    break;
+                }
+                Err(e) => {
+                    if first_authentic_err.is_none() {
+                        first_authentic_err = Some(e);
+                    }
+                }
+            }
+        }
+
+        if decoded.is_err() {
+            if let Some(err) = first_authentic_err {
+                decoded = Err(err);
             }
         }
 
