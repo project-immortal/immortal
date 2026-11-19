@@ -100,13 +100,15 @@ class TestPcapngExtractor(unittest.TestCase):
         ping_send = b"\x02" + b"\x00" * 12
         ping_recv = b"\x03" + b"\x00" * 20
         hello_reply = b"\x01" + b"\x00" * 15
-        ue3_bunch = b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x10\x8d\x47"
+        ctrl_frame = b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x10\x8d\x47"
+        ue3_bunch = b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x8d\x47"
 
         self.assertIn("HelloSend (570 B)", is_cpack_udp_packet(hello_570))
         self.assertIn("HelloSend (650 B)", is_cpack_udp_packet(hello_650))
         self.assertEqual(is_cpack_udp_packet(ping_send), "CPackUdp::PingSend")
         self.assertEqual(is_cpack_udp_packet(ping_recv), "CPackUdp::PingRecv")
         self.assertEqual(is_cpack_udp_packet(hello_reply), "CPackUdp::HelloRecvReply")
+        self.assertEqual(is_cpack_udp_packet(ctrl_frame), "Dedicated::ControlFrame (12 B)")
         self.assertIsNone(is_cpack_udp_packet(ue3_bunch))
 
     def test_pcapng_conversion_and_extraction(self):
