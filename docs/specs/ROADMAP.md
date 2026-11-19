@@ -72,9 +72,9 @@ timeline
     Milestone 1 : MCTS Auth & Lobby Unfreeze : TCP 9000 Gateway : Retail Main Menu Unblocked (Lobby State 2) : Complete
     Milestone 2 : Map Orchestration & Sandbox : 0x15c61937 + ChangeMap 1615 : LoadMap & Bringing World Shootingrange_P (Flight 035) : Complete
     Milestone 3 : UDP 7777 Protocol Driver : UNK-UDP-001/002/005 Closed : 7-Stage Bit-Packed Handshake & NMT_Welcome (24ms) : Complete
-    Milestone 4 : Retail Captures & Actor Replication : CAP-01 Bot Siege Capture : Opcode 0x2A + Ch 3+ Actor Replication & 3D Render : Active
-    Milestone 5 : Combat & Fernando Abilities : Flame Lance, Shield, Fireball, Immortal : Hitbox Authority : Month 2.5
-    Milestone 6 : Drop-in Linux Server : Multi-Champion Support : Dedicated Server Packaging : Month 3 (Gold)
+    Milestone 4 : Retail Captures & Protocol Analysis : CAP-00 to CAP-03 Quarantined : Opcode 0x2A & Dedicated 10-Byte Framing Solved : Complete
+    Milestone 5 : Dedicated Server Codec Convergence : UNK-UDP-003/004 Closed : Actor Replication & Possession (Victory Certified) : Complete
+    Milestone 6 : Combat, World SAT Collision & Oracle : Headless Wine Oracle (ADOPT-09) : Fernando Kit & Collision (ADOPT-01) : Active
     Milestone 7 : Client Enhancement & Ascension : Meritocratic Progression : Neural Audio Restoration : Post-Gold
 ```
 
@@ -118,34 +118,38 @@ timeline
   - **Flight 035 Live Verification**: Entire 7-stage handshake completed in `24 ms` (`06:28:37.192Z -> .216Z`) with exact `appStrCrc` match (`3997711111`), 159-byte 12-bit `NMT_Login` decode, and bare `NMT_Welcome`.
   - **Carry-Forward Discovery to M4**: Post-`Bringing World`, the client emits Control Channel opcode `0x2A` prior to/alongside `NMT_Join`; visual 3D Shooting Range rendering awaits `0x2A` + `NMT_Join` + `UNK-UDP-004` (`UActorChannel` `PlayerController`/Pawn camera spawn) + post-`Bringing World` render settle in `flight.py`.
 
-#### Milestone 4: Retail Capture Preservation & Authoritative Champion Replication 🛡️
-- **Status**: **ACTIVE (Next Milestone — Target: Month 2)**
-- **Objectives**: Preserve live retail dedicated-server UDP & MCTS captures while retail servers remain online, then spawn and synchronize the authoritative player controller & pawn (`TgPawn_Fernando`) in 3D Shooting Range and Bot Matches.
+#### Milestone 4: Retail Capture Preservation & Protocol Forensics 🛡️
+- **Status**: **COMPLETE (Verified against CAP-00 through CAP-03)**
+- **Objectives**: Preserve live retail dedicated-server UDP & MCTS captures, isolate network traces via cgroup `nflog:42`, solve Opcode `0x2A` (`NMT_MapLoaded`), and prove the 10-byte framing protocol.
 - **Key Deliverables**:
-  - **Retail Preservation Capture Sweep**: Execute [`docs/specs/RETAIL_CAPTURE_PLAN.md`](RETAIL_CAPTURE_PLAN.md) (`CAP-01` Training Bot Siege first to unlock real dedicated-server UE3 UDP streams, `0x2A`, `NMT_Uses`, and `UActorChannel` Ch 3+ spawns; followed by `CAP-02`–`CAP-14`).
-  - **Post-Load Handshake & Watchdog Hardening**: Disassemble/verify Control opcode `0x2A`, complete `NMT_Join (0x09)` handshake, fix `ensure_immortal_server_built` always-rebuild in `.agents/commands/lib/common.py`, and add post-`Bringing World` render verification to `flight.py`.
-  - **Channel 3+ Actor Replication (`UNK-UDP-003` & `UNK-UDP-004`)**: Cleanroom `UActorChannel` (`CHTYPE_Actor = 2`, `ChIndex >= 3`, 1-based `ChSequence`) for `GameReplicationInfo`, `TgPlayerController`, `TgPawn_Fernando`, and 60 Hz delta movement/camera replication.
+  - **Retail Preservation Captures Quarantined**: `CAP-00` (Shooting Range), `CAP-01` (Bot Siege on Celestial Fortress), and `CAP-03` (Custom 1v1 Baseline on Jaguar Falls) captured cleanly without host data leak.
+  - **Opcode `0x2A` (`NMT_MapLoaded`) & Transport Forensics**: Formally documented in [`docs/reports/FLIGHT036_STATIC_RECONNAISSANCE_REPORT.md`](../reports/FLIGHT036_STATIC_RECONNAISSANCE_REPORT.md) and [`docs/reports/CAP03_FRAMING_INVESTIGATION_REPORT.md`](../reports/CAP03_FRAMING_INVESTIGATION_REPORT.md).
+  - **Dedicated Server 10-Byte Outer Framing**: Proved Layer A (unsequenced `0x0010` handshake & PMTU) and Layer B (sequenced `0x0001` datagrams with Seq 1 6-byte session token barrier).
 
-#### Milestone 5: Combat, Ability Execution & Hit Registration ⚔️
-- **Status**: **SCHEDULED (Target: Month 2–2.5)**
-- **Objectives**: Implement authoritative combat mechanics for Fernando's complete champion kit.
+#### Milestone 5: Dedicated-Server Codec Convergence & Actor Replication ⚔️
+- **Status**: **COMPLETE (Certified with `VICTORY CONFIRMED` by `agyis_auditor`)**
+- **Objectives**: Extend UE3 bitstream codec to dedicated-server framing, resolve `UNK-UDP-003` and `UNK-UDP-004`, and implement cleanroom actor replication and local possession in `crates/immortal-server`.
 - **Key Deliverables**:
-  - **Flame Lance (Primary Fire)**: Continuous raycast cone, heat/ammo consumption, tick-based burn damage.
-  - **Shield (Alt-Fire)**: Directional barrier projection actor, damage absorption pool (4000 HP), break cooldown.
-  - **Fireball (Ability 1)**: Linear projectile spawning, velocity integration, pierced target scaling.
-  - **Charge (Ability 2)**: Forward velocity acceleration, collision impact knockup.
-  - **Immortal (Ultimate)**: AoE damage immunity aura (pawns cannot drop below 1500 HP), duration timer.
-  - Authoritative hit verification and health pool replication.
+  - **Dedicated Codec Convergence**: `crates/immortal-net/src/bunch.rs` extended to support `PcomPrefix::Dedicated` with unsequenced `0x0010` and sequenced `0x0001` with Seq 1 token stripping. Verified in `crates/immortal-net/tests/dedicated_codec_test.rs`.
+  - **Actor Replication & Possession**: `crates/immortal-server/src/replication.rs` implements Channel 3 `UActorChannel` spawning `TgPlayerController` (`setplayer TgLocalPlayer_0`, Server Seq 51, Packet #524) and subsequent `TgPawn_Fernando_0` (HP 4600.0, Flame Lance 10774) and `TgBot_Evie_0`.
+  - **Obligation Ledger Resolution**: `UNK-UDP-003` resolved by Claim 17; `UNK-UDP-004` resolved by Claim 18 in [`docs/specs/CLEANROOM_LEDGER.md`](CLEANROOM_LEDGER.md).
+  - **Tempest Architectural Exploration**: Quarantined `LowRezStudio/Tempest` (GPL-3.0) and authored [`docs/reports/TEMPEST_COMPARATIVE_ARCHITECTURAL_REPORT.md`](../reports/TEMPEST_COMPARATIVE_ARCHITECTURAL_REPORT.md) and [`docs/specs/TEMPEST_ADOPTION_LEDGER.md`](TEMPEST_ADOPTION_LEDGER.md) with 12 adoption specifications (`ADOPT-01` to `ADOPT-12`).
+  - **Rule Enforcement**: Codified `PSL-INV-012` (Anti-Guess, Absolute Truth & Zero-Facade Invariant) in `AGENTS.md`.
 
-#### Milestone 6: Multi-Champion Support & Dedicated Drop-in Server Replacement 🏆
-- **Status**: **SCHEDULED (Target: Month 3 — Gold Release)**
-- **Objectives**: Package `immortal-server` as a standalone, production-ready Linux binary capable of headless deployment and multi-champion matches.
+#### Milestone 6: Combat Authority, World SAT Collision & Retail Oracle 🏆
+- **Status**: **ACTIVE (Current Milestone — Target: Month 2.5–3)**
+- **Objectives**: Implement authoritative combat mechanics for Fernando, extract pure-Rust SAT collision from UPK levels (`ADOPT-01`), deploy the Headless Wine Retail Dedicated Server Oracle (`ADOPT-09`), and implement dual-stage hitboxes (`ADOPT-02`, `ADOPT-03`).
 - **Key Deliverables**:
-  - Multi-client connection pooling and team assignment (5v5 lobby coordination).
-  - Roster expansion: Cassie (Bow/Roll/Disengage), Viktor (Assault Rifle/Frag/Barrage), Androxus.
-  - Match life cycle governance: Map voting, draft phase, round scoring, game over, post-match scoreboard.
-  - Headless container packaging (`Dockerfile`, systemd unit files, CLI configuration).
-  - Victory Auditor certification and 100% automated test coverage.
+  - **ADOPT-09: Headless Wine Dedicated Server Oracle**: Deploy `scripts/dirtyroom/launch_retail_server.sh` wrapping `ShippingPC-ChaosGame.exe server` with headless Wine (`unset DISPLAY`, `-eac-nop-loaded`) for differential bitstream oracle testing in `.dirtyroom/oracle/`.
+  - **ADOPT-01: Server Physical World Collision Extractor**: Extract `BrushAggGeom.ConvexElems` from cooked UPKs (`sg_jaguarfalls_rework_p.upk`) into `crates/immortal-extract/src/collision.rs` for server-side SAT collision.
+  - **Authoritative Combat & Fernando Abilities**:
+    - **Flame Lance (Primary Fire)**: Continuous raycast cone, ammo/heat consumption, tick-based burn damage.
+    - **Shield (Alt-Fire)**: Directional barrier projection actor (4000 HP), break cooldown.
+    - **Fireball (Ability 1)**: Linear projectile spawning, velocity integration, pierced target scaling.
+    - **Charge (Ability 2)**: Forward velocity acceleration, collision impact knockup.
+    - **Immortal (Ultimate)**: AoE damage immunity aura (pawns cannot drop below 1500 HP), duration timer.
+  - **ADOPT-02 / ADOPT-03: Dual-Stage Hitboxes & SAT Overlap**: Outer bounding cylinder for body hits + inner skeletal head bone raycast for headshots.
+  - **UNK-PROP-001 Extraction**: Cleanroom property bitstream extraction for in-game item purchases and card deck allocations from `CAP-03`.
 
 #### Milestone 7: Client Enhancement, Meritocratic Progression & Eternal Preservation 🌟
 - **Status**: **LONG-TERM VISION (Post-Drop-in Server / Ascension Phase)**
