@@ -22,77 +22,342 @@ pub use crate::bitstream::MAX_FSTRING_LEN;
 /// Outer `PComNetConn` prefix length unconditionally stripped by `UPComNetConn::ReceivedRawPacket`.
 pub const PCOM_PREFIX_LEN: usize = 6;
 
+/// Outer 10-byte prefix length for Paladins dedicated extended UDP (`?exudp>=1`).
+pub const DEDICATED_PREFIX_LEN: usize = 10;
+
+/// Length of the initial 6-byte session token present exclusively on Seq 1.
+pub const SESSION_TOKEN_LEN: usize = 6;
+
+/// Dedicated transport subflag for sequenced gameplay datagrams (`[0x00, 0x01]`).
+pub const SUBFLAG_SEQUENCED: u16 = 0x0001;
+
+/// Dedicated transport subflag for unsequenced control/handshake/PMTU frames (`[0x00, 0x10]`).
+pub const SUBFLAG_UNSEQUENCED: u16 = 0x0010;
+
 /// Outer packet prefix stripped by UE3 network connection layers.
 /// In Paladins standalone UDP transport, this is a 6-byte prefix (`PCOM_PREFIX_LEN`).
 /// In Paladins dedicated-server captures, this is a 10-byte prefix:
-/// `[0x01, 0x00, 0x00, 0x00] [sequence: 4B] [0x00, 0x01]`.
+/// `[magic: 4B] [sequence: 4B LE] [subflags: 2B BE]`, optionally followed by
+/// a 6-byte session token on Seq 1.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcomPrefix {
-    Standalone([u8; 6]),
-    Dedicated([u8; 10]),
+    /// Standalone UDP 7777 framing (6 bytes: 4-byte sequence LE + 2-byte subflag BE).
+    Standalone {
+        sequence: u32,
+        subflag: u16,
+    },
+    /// Dedicated server sequenced gameplay datagram (10 bytes, or 16 bytes on Seq 1 with session token).
+    DedicatedSequenced {
+        sequence: u32,
+        subflag: u16,
+        session_token: Option<[u8; 6]>,
+    },
+    /// Dedicated server unsequenced control / handshake / PMTU frame (10 bytes).
+    DedicatedUnsequenced {
+        magic: [u8; 4],
+        subflag: u16,
+    },
+    /// Raw unparsed prefix fallback.
     Raw(Vec<u8>),
 }
 
 impl PcomPrefix {
+    /// Creates a standalone 6-byte prefix from sequence and subflag.
     #[inline]
-    pub fn as_bytes(&self) -> &[u8] {
+    pub fn standalone(sequence: u32, subflag: u16) -> Self {
+        Self::Standalone { sequence, subflag }
+    }
+
+    /// Creates a dedicated sequenced prefix.
+    #[inline]
+    pub fn dedicated_sequenced(sequence: u32, session_token: Option<[u8; 6]>) -> Self {
+        Self::DedicatedSequenced {
+            sequence,
+            subflag: SUBFLAG_SEQUENCED,
+            session_token,
+        }
+    }
+
+    /// Creates a dedicated unsequenced control prefix.
+    #[inline]
+    pub fn dedicated_unsequenced(magic: [u8; 4], subflag: u16) -> Self {
+        Self::DedicatedUnsequenced { magic, subflag }
+    }
+
+    /// Returns the sequence counter if present.
+    #[inline]
+    pub fn sequence(&self) -> Option<u32> {
         match self {
-            Self::Standalone(b) => b,
-            Self::Dedicated(b) => b,
-            Self::Raw(b) => b.as_slice(),
+            Self::Standalone { sequence, .. } => Some(*sequence),
+            Self::DedicatedSequenced { sequence, .. } => Some(*sequence),
+            Self::DedicatedUnsequenced { .. } => Some(0),
+            Self::Raw(_) => None,
+        }
+    }
+
+    /// Returns the transport subflag if present.
+    #[inline]
+    pub fn subflag(&self) -> Option<u16> {
+        match self {
+            Self::Standalone { subflag, .. } => Some(*subflag),
+            Self::DedicatedSequenced { subflag, .. } => Some(*subflag),
+            Self::DedicatedUnsequenced { subflag, .. } => Some(*subflag),
+            Self::Raw(_) => None,
+        }
+    }
+
+    /// Returns the optional 6-byte session token if present.
+    #[inline]
+    pub fn session_token(&self) -> Option<&[u8; 6]> {
+        match self {
+            Self::DedicatedSequenced { session_token, .. } => session_token.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Serializes this prefix to its wire byte representation.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::Standalone { sequence, subflag } => {
+                let mut b = Vec::with_capacity(6);
+                b.extend_from_slice(&sequence.to_le_bytes());
+                b.extend_from_slice(&subflag.to_be_bytes());
+                b
+            }
+            Self::DedicatedSequenced {
+                sequence,
+                subflag,
+                session_token,
+            } => {
+                let mut b = Vec::with_capacity(if session_token.is_some() { 16 } else { 10 });
+                b.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]);
+                b.extend_from_slice(&sequence.to_le_bytes());
+                b.extend_from_slice(&subflag.to_be_bytes());
+                if let Some(token) = session_token {
+                    b.extend_from_slice(token);
+                }
+                b
+            }
+            Self::DedicatedUnsequenced { magic, subflag } => {
+                let mut b = Vec::with_capacity(10);
+                b.extend_from_slice(magic);
+                b.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+                b.extend_from_slice(&subflag.to_be_bytes());
+                b
+            }
+            Self::Raw(bytes) => bytes.clone(),
+        }
+    }
+
+    /// Returns a borrowed or owned slice of bytes representing this prefix.
+    #[inline]
+    pub fn as_bytes(&self) -> std::borrow::Cow<'_, [u8]> {
+        match self {
+            Self::Raw(b) => std::borrow::Cow::Borrowed(b.as_slice()),
+            _ => std::borrow::Cow::Owned(self.to_bytes()),
+        }
+    }
+
+    /// Returns the byte length of this prefix on the wire.
+    #[inline]
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Standalone { .. } => 6,
+            Self::DedicatedSequenced { session_token, .. } => {
+                if session_token.is_some() {
+                    16
+                } else {
+                    10
+                }
+            }
+            Self::DedicatedUnsequenced { .. } => 10,
+            Self::Raw(bytes) => bytes.len(),
         }
     }
 
     #[inline]
-    pub fn len(&self) -> usize {
-        self.as_bytes().len()
-    }
-
-    #[inline]
     pub fn is_empty(&self) -> bool {
-        self.as_bytes().is_empty()
+        self.len() == 0
     }
 }
 
 impl Default for PcomPrefix {
     fn default() -> Self {
-        Self::Standalone([0u8; PCOM_PREFIX_LEN])
+        Self::Standalone {
+            sequence: 0,
+            subflag: SUBFLAG_SEQUENCED,
+        }
     }
 }
 
 impl From<[u8; PCOM_PREFIX_LEN]> for PcomPrefix {
     fn from(arr: [u8; PCOM_PREFIX_LEN]) -> Self {
-        Self::Standalone(arr)
+        let sequence = u32::from_le_bytes(arr[0..4].try_into().unwrap());
+        let subflag = u16::from_be_bytes(arr[4..6].try_into().unwrap());
+        Self::Standalone { sequence, subflag }
     }
 }
 
 impl From<[u8; 10]> for PcomPrefix {
     fn from(arr: [u8; 10]) -> Self {
-        Self::Dedicated(arr)
+        let magic = [arr[0], arr[1], arr[2], arr[3]];
+        let sequence = u32::from_le_bytes(arr[4..8].try_into().unwrap());
+        let subflag = u16::from_be_bytes(arr[8..10].try_into().unwrap());
+        if subflag == SUBFLAG_UNSEQUENCED || sequence == 0 {
+            Self::DedicatedUnsequenced { magic, subflag }
+        } else {
+            Self::DedicatedSequenced {
+                sequence,
+                subflag,
+                session_token: None,
+            }
+        }
     }
 }
 
 impl PartialEq<[u8; PCOM_PREFIX_LEN]> for PcomPrefix {
     fn eq(&self, other: &[u8; PCOM_PREFIX_LEN]) -> bool {
-        self.as_bytes() == other.as_slice()
+        self.to_bytes().as_slice() == other.as_slice()
     }
 }
 
 impl PartialEq<PcomPrefix> for [u8; PCOM_PREFIX_LEN] {
     fn eq(&self, other: &PcomPrefix) -> bool {
-        self.as_slice() == other.as_bytes()
+        self.as_slice() == other.to_bytes().as_slice()
     }
 }
 
 impl PartialEq<[u8; 10]> for PcomPrefix {
     fn eq(&self, other: &[u8; 10]) -> bool {
-        self.as_bytes() == other.as_slice()
+        self.to_bytes().as_slice() == other.as_slice()
     }
 }
 
 impl PartialEq<PcomPrefix> for [u8; 10] {
     fn eq(&self, other: &PcomPrefix) -> bool {
-        self.as_slice() == other.as_bytes()
+        self.as_slice() == other.to_bytes().as_slice()
+    }
+}
+
+/// Dedicated server unsequenced control frame representations (`subflags == 0x0010`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DedicatedControlFrame {
+    /// Client Hello (570 bytes) - Initial connection request
+    ClientHello {
+        magic: [u8; 4],
+        connection_nonce: [u8; 6],
+        sub_version: [u8; 6],
+        descriptor_len: u16,
+        ticket_payload: Vec<u8>,
+        hmac: [u8; 32],
+    },
+    /// Server Challenge / Cookie Reply (46 bytes)
+    ServerChallenge {
+        magic: [u8; 4],
+        handshake_flag: u8,
+        client_cookie: [u8; 5],
+        server_cookie: [u8; 6],
+        challenge: [u8; 24],
+    },
+    /// Path MTU Discovery (PMTU) Probes (1440 bytes)
+    PmtuProbe {
+        magic: [u8; 4],
+        probe_token: [u8; 6],
+        probe_marker: [u8; 6],
+        total_len: usize,
+    },
+    /// Handshake Completion (46 bytes)
+    HandshakeComplete {
+        magic: [u8; 4],
+        handshake_flag: u8,
+        session_tokens: [u8; 11],
+        confirmation: [u8; 24],
+    },
+    /// Generic or unparsed unsequenced control frame
+    Other {
+        magic: [u8; 4],
+        subflags: u16,
+        payload: Vec<u8>,
+    },
+}
+
+impl DedicatedControlFrame {
+    /// Parses an unsequenced control frame from raw datagram bytes.
+    pub fn parse(datagram: &[u8]) -> Option<Self> {
+        if datagram.len() < 10 {
+            return None;
+        }
+        let magic = [datagram[0], datagram[1], datagram[2], datagram[3]];
+        let subflags = u16::from_be_bytes([datagram[8], datagram[9]]);
+        if subflags != SUBFLAG_UNSEQUENCED {
+            return None;
+        }
+        let payload = &datagram[10..];
+
+        if datagram.len() == 570 {
+            let mut connection_nonce = [0u8; 6];
+            let mut sub_version = [0u8; 6];
+            let mut hmac = [0u8; 32];
+            connection_nonce.copy_from_slice(&payload[0..6]);
+            sub_version.copy_from_slice(&payload[6..12]);
+            let descriptor_len = u16::from_le_bytes(payload[12..14].try_into().unwrap());
+            let ticket_end = 14 + (descriptor_len as usize).min(payload.len().saturating_sub(46));
+            let ticket_payload = payload[14..ticket_end].to_vec();
+            hmac.copy_from_slice(&datagram[538..570]);
+            Some(Self::ClientHello {
+                magic,
+                connection_nonce,
+                sub_version,
+                descriptor_len,
+                ticket_payload,
+                hmac,
+            })
+        } else if datagram.len() == 46 {
+            let handshake_flag = payload[0];
+            if (handshake_flag & 0x05) == 0x05 {
+                let mut client_cookie = [0u8; 5];
+                let mut server_cookie = [0u8; 6];
+                let mut challenge = [0u8; 24];
+                client_cookie.copy_from_slice(&payload[1..6]);
+                server_cookie.copy_from_slice(&payload[6..12]);
+                challenge.copy_from_slice(&payload[12..36]);
+                Some(Self::ServerChallenge {
+                    magic,
+                    handshake_flag,
+                    client_cookie,
+                    server_cookie,
+                    challenge,
+                })
+            } else {
+                let mut session_tokens = [0u8; 11];
+                let mut confirmation = [0u8; 24];
+                session_tokens.copy_from_slice(&payload[1..12]);
+                confirmation.copy_from_slice(&payload[12..36]);
+                Some(Self::HandshakeComplete {
+                    magic,
+                    handshake_flag,
+                    session_tokens,
+                    confirmation,
+                })
+            }
+        } else if datagram.len() == 1440 {
+            let mut probe_token = [0u8; 6];
+            let mut probe_marker = [0u8; 6];
+            probe_token.copy_from_slice(&payload[0..6]);
+            probe_marker.copy_from_slice(&payload[6..12]);
+            Some(Self::PmtuProbe {
+                magic,
+                probe_token,
+                probe_marker,
+                total_len: datagram.len(),
+            })
+        } else {
+            Some(Self::Other {
+                magic,
+                subflags,
+                payload: payload.to_vec(),
+            })
+        }
     }
 }
 
@@ -478,7 +743,7 @@ pub struct Ue3Packet {
 impl Ue3Packet {
     /// Creates a new `Ue3Packet` with the given 6-byte outer prefix and 14-bit `packet_id`.
     pub fn new(pcom_prefix: [u8; PCOM_PREFIX_LEN], packet_id: u16) -> Self {
-        Self::new_with_prefix(PcomPrefix::Standalone(pcom_prefix), packet_id)
+        Self::new_with_prefix(PcomPrefix::from(pcom_prefix), packet_id)
     }
 
     /// Creates a new `Ue3Packet` with a dynamic `PcomPrefix` and 14-bit `packet_id`.
@@ -494,6 +759,12 @@ impl Ue3Packet {
     /// Encodes the packet using `DEFAULT_MAX_PACKET_BITS` (`4608` bits = `576` bytes).
     pub fn encode(&self) -> Result<Vec<u8>, NetError> {
         self.encode_with_max_bits(DEFAULT_MAX_PACKET_BITS)
+    }
+
+    /// Encodes the packet into a full PCom wire datagram with its transport prefix.
+    /// Equivalent to `encode_with_max_bits(max_packet_bits)`.
+    pub fn encode_pcom(&self, max_packet_bits: usize) -> Result<Vec<u8>, NetError> {
+        self.encode_with_max_bits(max_packet_bits)
     }
 
     /// Encodes the packet with an explicit `max_packet_bits` (`4608` standard UDP or `3968` `?exudp>=1`).
@@ -525,9 +796,9 @@ impl Ue3Packet {
         }
 
         let ue3_bytes = writer.finish_with_stop_bit();
-        let prefix_bytes = self.pcom_prefix.as_bytes();
+        let prefix_bytes = self.pcom_prefix.to_bytes();
         let mut out = Vec::with_capacity(prefix_bytes.len() + ue3_bytes.len());
-        out.extend_from_slice(prefix_bytes);
+        out.extend_from_slice(&prefix_bytes);
         out.extend_from_slice(&ue3_bytes);
         Ok(out)
     }
@@ -546,17 +817,66 @@ impl Ue3Packet {
             )));
         }
 
-        let (pcom_prefix, ue3_bytes) = if datagram.len() >= 11
-            && datagram.starts_with(&[0x01, 0x00, 0x00, 0x00])
+        let (pcom_prefix, ue3_bytes) = if datagram.len() >= 10
+            && (datagram.starts_with(&[0x01, 0x00, 0x00, 0x00])
+                || datagram.starts_with(&[0x00, 0x00, 0x00, 0x00]))
             && (datagram[8..10] == [0x00, 0x01] || datagram[8..10] == [0x00, 0x10])
         {
-            let mut prefix = [0u8; 10];
-            prefix.copy_from_slice(&datagram[..10]);
-            (PcomPrefix::Dedicated(prefix), &datagram[10..])
-        } else if datagram.len() >= 7 && datagram[0] == 0x00 {
-            let mut prefix = [0u8; PCOM_PREFIX_LEN];
-            prefix.copy_from_slice(&datagram[..PCOM_PREFIX_LEN]);
-            (PcomPrefix::Standalone(prefix), &datagram[PCOM_PREFIX_LEN..])
+            let magic = [datagram[0], datagram[1], datagram[2], datagram[3]];
+            let seq = u32::from_le_bytes(datagram[4..8].try_into().unwrap());
+            let subflag = u16::from_be_bytes(datagram[8..10].try_into().unwrap());
+
+            if subflag == SUBFLAG_UNSEQUENCED {
+                return Err(NetError::UnsequencedControlFrame {
+                    magic,
+                    subflags: subflag,
+                    len: datagram.len(),
+                });
+            }
+
+            if seq == 1 {
+                if datagram.len() < 16 + 1 {
+                    return Err(NetError::PacketTooSmall {
+                        expected: 17,
+                        actual: datagram.len(),
+                    });
+                }
+                let mut token = [0u8; 6];
+                token.copy_from_slice(&datagram[10..16]);
+                (
+                    PcomPrefix::DedicatedSequenced {
+                        sequence: seq,
+                        subflag,
+                        session_token: Some(token),
+                    },
+                    &datagram[16..],
+                )
+            } else {
+                if datagram.len() < 10 + 1 {
+                    return Err(NetError::PacketTooSmall {
+                        expected: 11,
+                        actual: datagram.len(),
+                    });
+                }
+                (
+                    PcomPrefix::DedicatedSequenced {
+                        sequence: seq,
+                        subflag,
+                        session_token: None,
+                    },
+                    &datagram[10..],
+                )
+            }
+        } else if datagram.len() >= 7 && (datagram[0] == 0x00 || (datagram.len() >= 6 && datagram[4..6] == [0x00, 0x01])) {
+            let seq = u32::from_le_bytes(datagram[0..4].try_into().unwrap());
+            let subflag = u16::from_be_bytes(datagram[4..6].try_into().unwrap());
+            (
+                PcomPrefix::Standalone {
+                    sequence: seq,
+                    subflag,
+                },
+                &datagram[PCOM_PREFIX_LEN..],
+            )
         } else if datagram.len() > PCOM_PREFIX_LEN {
             (
                 PcomPrefix::Raw(datagram[..PCOM_PREFIX_LEN].to_vec()),
@@ -1371,7 +1691,7 @@ mod tests {
             0x01, 0x00, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78, 0x00, 0x01,
         ];
         let mut pkt = Ue3Packet::new_with_prefix(
-            PcomPrefix::Dedicated(dedicated_prefix),
+            PcomPrefix::from(dedicated_prefix),
             42,
         );
         pkt.acks.push(10);
@@ -1385,9 +1705,9 @@ mod tests {
         assert_eq!(&encoded[..10], &dedicated_prefix);
 
         let decoded = Ue3Packet::decode(&encoded).expect("decode dedicated packet");
-        assert_eq!(decoded.pcom_prefix, PcomPrefix::Dedicated(dedicated_prefix));
+        assert_eq!(decoded.pcom_prefix, PcomPrefix::from(dedicated_prefix));
         assert_eq!(decoded.pcom_prefix.len(), 10);
-        assert_eq!(decoded.pcom_prefix.as_bytes(), &dedicated_prefix);
+        assert_eq!(decoded.pcom_prefix.to_bytes().as_slice(), &dedicated_prefix);
         assert_eq!(decoded.packet_id, 42);
         assert_eq!(decoded.acks, vec![10]);
         assert_eq!(decoded.bunches.len(), 1);
@@ -1404,13 +1724,29 @@ mod tests {
     }
 
     #[test]
-    fn test_dedicated_10byte_prefix_unsequenced_0010_and_1440b_mtu_roundtrip() {
-        // [0x00, 0x10] unsequenced / control / ACK subflags
-        let dedicated_prefix: [u8; 10] = [
+    fn test_dedicated_10byte_prefix_unsequenced_0010_rejection() {
+        // [0x00, 0x10] unsequenced / control frame must return NetError::UnsequencedControlFrame
+        let unseq_wire: [u8; 10] = [
             0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
         ];
+        let err = Ue3Packet::decode(&unseq_wire).unwrap_err();
+        match err {
+            NetError::UnsequencedControlFrame { magic, subflags, len } => {
+                assert_eq!(magic, [0x01, 0x00, 0x00, 0x00]);
+                assert_eq!(subflags, 0x0010);
+                assert_eq!(len, 10);
+            }
+            other => panic!("Expected UnsequencedControlFrame, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_dedicated_1440b_mtu_roundtrip() {
+        let dedicated_prefix: [u8; 10] = [
+            0x01, 0x00, 0x00, 0x00, 0x2A, 0x00, 0x00, 0x00, 0x00, 0x01,
+        ];
         let mut pkt = Ue3Packet::new_with_prefix(
-            PcomPrefix::Dedicated(dedicated_prefix),
+            PcomPrefix::from(dedicated_prefix),
             1337,
         );
         pkt.acks.push(99);
@@ -1439,7 +1775,7 @@ mod tests {
         // Decoding with 1440-byte MTU must succeed
         let decoded = Ue3Packet::decode_with_max_bits(&encoded, MAX_ALLOWED_PACKET_BITS)
             .expect("decode large dedicated packet with 11520 bits");
-        assert_eq!(decoded.pcom_prefix, PcomPrefix::Dedicated(dedicated_prefix));
+        assert_eq!(decoded.pcom_prefix, PcomPrefix::from(dedicated_prefix));
         assert_eq!(decoded.packet_id, 1337);
         assert_eq!(decoded.acks, vec![99]);
         assert_eq!(decoded.bunches.len(), 1);
@@ -1449,5 +1785,54 @@ mod tests {
             .encode_with_max_bits(MAX_ALLOWED_PACKET_BITS)
             .expect("re-encode large dedicated packet");
         assert_eq!(reencoded, encoded);
+    }
+
+    #[test]
+    fn test_dedicated_sequenced_seq1_session_token_and_seq2_roundtrip() {
+        let token = [0x78, 0x7E, 0x10, 0x7B, 0x9A, 0x8F];
+        let mut pkt_seq1 = Ue3Packet::new_with_prefix(
+            PcomPrefix::dedicated_sequenced(1, Some(token)),
+            100,
+        );
+        pkt_seq1.bunches.push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
+
+        let enc_seq1 = pkt_seq1
+            .encode_with_max_bits(EXUDP_MAX_PACKET_BITS)
+            .expect("encode seq1");
+        assert_eq!(&enc_seq1[..10], &[0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01]);
+        assert_eq!(&enc_seq1[10..16], &token);
+
+        let dec_seq1 = Ue3Packet::decode_with_max_bits(&enc_seq1, EXUDP_MAX_PACKET_BITS)
+            .expect("decode seq1");
+        assert_eq!(dec_seq1.pcom_prefix, PcomPrefix::dedicated_sequenced(1, Some(token)));
+        assert_eq!(dec_seq1.pcom_prefix.session_token(), Some(&token));
+        assert_eq!(dec_seq1.pcom_prefix.sequence(), Some(1));
+        assert_eq!(dec_seq1.packet_id, 100);
+        assert_eq!(dec_seq1.bunches.len(), 1);
+        assert_eq!(dec_seq1.encode_pcom(EXUDP_MAX_PACKET_BITS).unwrap(), enc_seq1);
+
+        // Seq 2 roundtrip (no session token)
+        let mut pkt_seq2 = Ue3Packet::new_with_prefix(
+            PcomPrefix::dedicated_sequenced(2, None),
+            101,
+        );
+        pkt_seq2.acks.push(100);
+        pkt_seq2.bunches.push(Bunch::control(2, ControlMessage::Join.encode()));
+
+        let enc_seq2 = pkt_seq2
+            .encode_with_max_bits(EXUDP_MAX_PACKET_BITS)
+            .expect("encode seq2");
+        assert_eq!(&enc_seq2[..10], &[0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01]);
+        assert_eq!(enc_seq2.len(), 10 + (enc_seq2.len() - 10));
+
+        let dec_seq2 = Ue3Packet::decode_with_max_bits(&enc_seq2, EXUDP_MAX_PACKET_BITS)
+            .expect("decode seq2");
+        assert_eq!(dec_seq2.pcom_prefix, PcomPrefix::dedicated_sequenced(2, None));
+        assert_eq!(dec_seq2.pcom_prefix.session_token(), None);
+        assert_eq!(dec_seq2.pcom_prefix.sequence(), Some(2));
+        assert_eq!(dec_seq2.packet_id, 101);
+        assert_eq!(dec_seq2.acks, vec![100]);
+        assert_eq!(dec_seq2.bunches.len(), 1);
+        assert_eq!(dec_seq2.encode_pcom(EXUDP_MAX_PACKET_BITS).unwrap(), enc_seq2);
     }
 }

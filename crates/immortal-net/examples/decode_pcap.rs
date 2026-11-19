@@ -3,11 +3,12 @@
 // Reads raw hex packets from stdin or tshark output and decodes Ue3Packet/Bunches.
 
 use immortal_net::bunch::{
-    PcomPrefix, Ue3Packet, DEFAULT_MAX_PACKET_BITS, EXUDP_MAX_PACKET_BITS, MAX_ALLOWED_PACKET_BITS,
-    NMT_HELLO, NMT_WELCOME, NMT_UPGRADE, NMT_CHALLENGE, NMT_NETSPEED, NMT_LOGIN,
-    NMT_FAILURE, NMT_USES, NMT_HAVE, NMT_JOIN, NMT_JOIN_SPLIT, NMT_HANDSHAKE_START,
-    NMT_HANDSHAKE_CHALLENGE, NMT_HANDSHAKE_RESPONSE, NMT_HANDSHAKE_COMPLETE,
-    NMT_MAP_LOADED, NMT_REDIRECT, NMT_CLIENT_AUTH_REQUEST, NMT_SERVER_AUTH_REQUEST,
+    DedicatedControlFrame, PcomPrefix, Ue3Packet, DEFAULT_MAX_PACKET_BITS, EXUDP_MAX_PACKET_BITS,
+    MAX_ALLOWED_PACKET_BITS, NMT_HELLO, NMT_WELCOME,
+    NMT_UPGRADE, NMT_CHALLENGE, NMT_NETSPEED, NMT_LOGIN, NMT_FAILURE, NMT_USES, NMT_HAVE,
+    NMT_JOIN, NMT_JOIN_SPLIT, NMT_HANDSHAKE_START, NMT_HANDSHAKE_CHALLENGE,
+    NMT_HANDSHAKE_RESPONSE, NMT_HANDSHAKE_COMPLETE, NMT_MAP_LOADED, NMT_REDIRECT,
+    NMT_CLIENT_AUTH_REQUEST, NMT_SERVER_AUTH_REQUEST,
 };
 use immortal_net::udp_framing::{parse_cpack_udp, CPackUdpPacket, HELLO_FULL_LEN, HELLO_MIN_LEN};
 use immortal_net::NetError;
@@ -45,7 +46,7 @@ fn control_opcode_name(op: u8) -> &'static str {
 
 fn hex_decode(s: &str) -> Option<Vec<u8>> {
     let s = s.trim();
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     let mut out = Vec::with_capacity(s.len() / 2);
@@ -103,10 +104,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         total_packets += 1;
 
-        // 1. Check for dedicated server UE3 datagrams first (starts with 01 00 00 00 and subflags 00 01 / 00 10)
+        // 1. Check for dedicated server unsequenced control / handshake / PMTU frames (subflags 0x0010)
+        let is_dedicated_unsequenced = raw_bytes.len() >= 10
+            && (raw_bytes.starts_with(&[0x01, 0x00, 0x00, 0x00]) || raw_bytes.starts_with(&[0x00, 0x00, 0x00, 0x00]))
+            && raw_bytes[8..10] == [0x00, 0x10];
+
+        if is_dedicated_unsequenced {
+            if let Some(ctrl) = DedicatedControlFrame::parse(&raw_bytes) {
+                match ctrl {
+                    DedicatedControlFrame::ClientHello { descriptor_len, ticket_payload, .. } => {
+                        println!(
+                            "[+] Packet #{:<5} {} | [Dedicated::ClientHello] DescriptorLen: {} B, TicketLen: {} B (Len: {} B)",
+                            total_packets, meta, descriptor_len, ticket_payload.len(), raw_bytes.len()
+                        );
+                    }
+                    DedicatedControlFrame::ServerChallenge { handshake_flag, client_cookie, server_cookie, .. } => {
+                        println!(
+                            "[+] Packet #{:<5} {} | [Dedicated::ServerChallenge] Flag: 0x{:02x}, ClientCookie: {:02x?}, ServerCookie: {:02x?} (Len: {} B)",
+                            total_packets, meta, handshake_flag, client_cookie, server_cookie, raw_bytes.len()
+                        );
+                    }
+                    DedicatedControlFrame::PmtuProbe { probe_token, probe_marker, total_len, .. } => {
+                        println!(
+                            "[+] Packet #{:<5} {} | [Dedicated::PmtuProbe] Token: {:02x?}, Marker: {:02x?} (Len: {} B)",
+                            total_packets, meta, probe_token, probe_marker, total_len
+                        );
+                    }
+                    DedicatedControlFrame::HandshakeComplete { handshake_flag, session_tokens, .. } => {
+                        println!(
+                            "[+] Packet #{:<5} {} | [Dedicated::HandshakeComplete] Flag: 0x{:02x}, Tokens: {:02x?} (Len: {} B)",
+                            total_packets, meta, handshake_flag, session_tokens, raw_bytes.len()
+                        );
+                    }
+                    DedicatedControlFrame::Other { magic, subflags, .. } => {
+                        println!(
+                            "[+] Packet #{:<5} {} | [Dedicated::UnsequencedOther] Magic: {:02x?}, Subflags: 0x{:04x} (Len: {} B)",
+                            total_packets, meta, magic, subflags, raw_bytes.len()
+                        );
+                    }
+                }
+                decoded_packets += 1;
+                continue;
+            }
+        }
+
         let is_dedicated_ue3 = raw_bytes.len() >= 11
             && raw_bytes.starts_with(&[0x01, 0x00, 0x00, 0x00])
-            && (raw_bytes[8..10] == [0x00, 0x01] || raw_bytes[8..10] == [0x00, 0x10]);
+            && raw_bytes[8..10] == [0x00, 0x01];
 
         let mut handled_cpack = false;
         if !is_dedicated_ue3 {
@@ -209,9 +253,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(pkt) => {
                 decoded_packets += 1;
                 let prefix_type = match &pkt.pcom_prefix {
-                    PcomPrefix::Dedicated(_) => "Dedicated-10B",
-                    PcomPrefix::Standalone(_) => "Standalone-6B",
-                    PcomPrefix::Raw(_) => "Raw",
+                    PcomPrefix::DedicatedSequenced { sequence, session_token, .. } => {
+                        if let Some(token) = session_token {
+                            let hex_token = token.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join("");
+                            format!("Dedicated-Seq#{} [Token: {}]", sequence, hex_token)
+                        } else {
+                            format!("Dedicated-Seq#{}", sequence)
+                        }
+                    }
+                    PcomPrefix::DedicatedUnsequenced { .. } => "Dedicated-Unseq".to_string(),
+                    PcomPrefix::Standalone { sequence, .. } => format!("Standalone-Seq#{}", sequence),
+                    PcomPrefix::Raw(_) => "Raw".to_string(),
                 };
                 println!(
                     "[+] Packet #{:<5} {} | [{}] ID: {:<5} | Acks: {:?} | Bunches: {}",

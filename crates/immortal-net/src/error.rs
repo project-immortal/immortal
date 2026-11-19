@@ -54,4 +54,14 @@ pub enum NetError {
 
     #[error("Bunch protocol error: {0}")]
     BunchError(String),
+
+    #[error("Unsequenced dedicated control frame (subflags 0x{subflags:04X}): magic {magic:?}, len {len}")]
+    UnsequencedControlFrame {
+        magic: [u8; 4],
+        subflags: u16,
+        len: usize,
+    },
 }
+
+/// Backward-compatible alias for PComNetConn network errors.
+pub type PcomError = NetError;
