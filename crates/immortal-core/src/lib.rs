@@ -22,6 +22,7 @@ pub enum ChampionId {
     Cassie = 1025,
     Fernando = 1026,
     Ying = 1027,
+    Evie = 1030,
 }
 
 impl ChampionId {
@@ -31,6 +32,7 @@ impl ChampionId {
             Self::Viktor => "Viktor",
             Self::Cassie => "Cassie",
             Self::Ying => "Ying",
+            Self::Evie => "Evie",
             Self::Unknown => "Unknown",
         }
     }
@@ -41,6 +43,7 @@ impl ChampionId {
             1025 => Self::Cassie,
             1026 => Self::Fernando,
             1027 => Self::Ying,
+            1030 => Self::Evie,
             _ => Self::Unknown,
         }
     }

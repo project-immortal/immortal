@@ -359,7 +359,96 @@ impl DedicatedControlFrame {
             })
         }
     }
+
+    /// Serializes this unsequenced control frame into raw wire datagram bytes.
+    pub fn encode(&self) -> Vec<u8> {
+        match self {
+            Self::ClientHello {
+                magic,
+                connection_nonce,
+                sub_version,
+                descriptor_len,
+                ticket_payload,
+                hmac,
+            } => {
+                let mut buf = vec![0u8; 570];
+                buf[0..4].copy_from_slice(magic);
+                buf[4..8].copy_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+                buf[8..10].copy_from_slice(&SUBFLAG_UNSEQUENCED.to_be_bytes());
+                buf[10..16].copy_from_slice(connection_nonce);
+                buf[16..22].copy_from_slice(sub_version);
+                buf[22..24].copy_from_slice(&descriptor_len.to_le_bytes());
+                let t_len = ticket_payload.len().min(510);
+                buf[24..24 + t_len].copy_from_slice(&ticket_payload[..t_len]);
+                buf[534..538].copy_from_slice(&32u32.to_le_bytes());
+                buf[538..570].copy_from_slice(hmac);
+                buf
+            }
+            Self::ServerChallenge {
+                magic,
+                handshake_flag,
+                client_cookie,
+                server_cookie,
+                challenge,
+            } => {
+                let mut buf = Vec::with_capacity(46);
+                buf.extend_from_slice(magic);
+                buf.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+                buf.extend_from_slice(&SUBFLAG_UNSEQUENCED.to_be_bytes());
+                buf.push(*handshake_flag);
+                buf.extend_from_slice(client_cookie);
+                buf.extend_from_slice(server_cookie);
+                buf.extend_from_slice(challenge);
+                buf
+            }
+            Self::PmtuProbe {
+                magic,
+                probe_token,
+                probe_marker,
+                total_len,
+            } => {
+                let len = (*total_len).max(22);
+                let mut buf = vec![0u8; len];
+                buf[0..4].copy_from_slice(magic);
+                buf[4..8].copy_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+                buf[8..10].copy_from_slice(&SUBFLAG_UNSEQUENCED.to_be_bytes());
+                buf[10..16].copy_from_slice(probe_token);
+                buf[16..22].copy_from_slice(probe_marker);
+                buf
+            }
+            Self::HandshakeComplete {
+                magic,
+                handshake_flag,
+                session_tokens,
+                confirmation,
+            } => {
+                let mut buf = Vec::with_capacity(46);
+                buf.extend_from_slice(magic);
+                buf.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+                buf.extend_from_slice(&SUBFLAG_UNSEQUENCED.to_be_bytes());
+                buf.push(*handshake_flag);
+                buf.extend_from_slice(session_tokens);
+                buf.extend_from_slice(confirmation);
+                buf
+            }
+            Self::Other {
+                magic,
+                subflags,
+                payload,
+            } => {
+                let mut buf = Vec::with_capacity(10 + payload.len());
+                buf.extend_from_slice(magic);
+                buf.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+                buf.extend_from_slice(&subflags.to_be_bytes());
+                buf.extend_from_slice(payload);
+                buf
+            }
+        }
+    }
 }
+
+/// Type alias aligning with UE3 `FInBunch` bit-packed bunch structure.
+pub type FInBunch = Bunch;
 
 /// `MAX_PACKETID` = `0x4000` (16384 -> 14-bit `SerializeInt`).
 pub const MAX_PACKETID: u32 = 0x4000;

@@ -20,9 +20,12 @@ pub use bitstream::{
     strip_stop_bit, ue3_handshake_crc, ue3_str_crc, BitReader, BitWriter, HANDSHAKE_CRC_SALT,
     MAX_FSTRING_LEN, UE3_CRC32_POLY,
 };
+pub type FBitWriter = BitWriter;
+pub type FBitReader<'a> = BitReader<'a>;
+
 pub use bunch::{
     Bunch, BunchFlags, BunchHeader, ControlChannelHandshake, ControlMessage, DedicatedControlFrame,
-    HandshakePhase, Ue3ChannelType, Ue3Packet, ACTOR_CHANNEL_INDEX, CHTYPE_MAX, CONTROL_CHANNEL_INDEX,
+    FInBunch, HandshakePhase, Ue3ChannelType, Ue3Packet, ACTOR_CHANNEL_INDEX, CHTYPE_MAX, CONTROL_CHANNEL_INDEX,
     DEDICATED_PREFIX_LEN, DEFAULT_ENGINE_MIN_NET_VERSION, DEFAULT_ENGINE_NET_VERSION, DEFAULT_GAME_CLASS,
     DEFAULT_HANDSHAKE_CHALLENGE, DEFAULT_MAX_PACKET, DEFAULT_MAX_PACKET_BITS, DEFAULT_NET_SPEED,
     DEFAULT_SHOOTING_RANGE_LEVEL, DEFAULT_SHOOTING_RANGE_MAP, EXUDP_MAX_PACKET_BITS,

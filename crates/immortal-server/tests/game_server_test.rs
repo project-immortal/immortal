@@ -361,10 +361,68 @@ async fn test_game_server_pcom_driver_loopback_integration() {
     assert_eq!(s5.acks, vec![5]);
     assert!(s5.bunches.is_empty());
 
-    // 7. Pure ACK packet -> zero reply (no ACK storm)
-    let mut c6 = Ue3Packet::new(prefix, 6);
-    c6.acks.push(5);
-    client_socket.send(&c6.encode().unwrap()).await.unwrap();
+    // 7. Client sends NMT_MapLoaded (0x2A) -> triggers initial Actor Channel replication
+    let mut c7 = Ue3Packet::new(prefix, 7);
+    c7.acks.push(5);
+    c7.bunches.push(Bunch::control(8, ControlMessage::MapLoaded.encode()));
+    client_socket.send(&c7.encode().unwrap()).await.unwrap();
+
+    let n = timeout(Duration::from_millis(500), client_socket.recv(&mut buf))
+        .await
+        .expect("Timeout waiting for Actor Channel replication bunches")
+        .unwrap();
+    let s7 = Ue3Packet::decode(&buf[..n]).unwrap();
+    assert_eq!(s7.packet_id, 6);
+    assert_eq!(s7.acks, vec![7]);
+    assert!(!s7.bunches.is_empty(), "MapLoaded must trigger replication bunches");
+
+    // Verify Channel 3 Open bunch
+    assert_eq!(s7.bunches[0].header.ch_index, ACTOR_CHANNEL_INDEX);
+    assert!(s7.bunches[0].header.flags.b_open);
+    assert_eq!(s7.bunches[0].header.ch_sequence, 1);
+
+    // Verify TgPlayerController possession bunch
+    assert_eq!(s7.bunches[1].header.ch_index, ACTOR_CHANNEL_INDEX);
+    let p_possess = ReplicationPayload::decode(&s7.bunches[1].data).unwrap();
+    match p_possess {
+        ReplicationPayload::PossessPlayer { controller_name, local_player_name, .. } => {
+            assert_eq!(controller_name, "TgPlayerController_1");
+            assert_eq!(local_player_name, "TgLocalPlayer_0");
+        }
+        other => panic!("Expected PossessPlayer, got {:?}", other),
+    }
+
+    // Verify TgPawn_Fernando replication bunch
+    assert_eq!(s7.bunches[2].header.ch_index, ACTOR_CHANNEL_INDEX);
+    let p_pawn = ReplicationPayload::decode(&s7.bunches[2].data).unwrap();
+    match p_pawn {
+        ReplicationPayload::SpawnActor { champion_id, health, weapon_device_id, .. } => {
+            assert_eq!(champion_id, ChampionId::Fernando);
+            assert_eq!(health, 4600.0);
+            assert_eq!(weapon_device_id, 10774);
+        }
+        other => panic!("Expected SpawnActor, got {:?}", other),
+    }
+
+    // Verify TgDevice_FernandoInhand_0 weapon replication bunch
+    assert_eq!(s7.bunches[3].header.ch_index, ACTOR_CHANNEL_INDEX);
+    let p_device = ReplicationPayload::decode(&s7.bunches[3].data).unwrap();
+    match p_device {
+        ReplicationPayload::SpawnDevice { device_id, device_name, .. } => {
+            assert_eq!(device_id, 10774);
+            assert_eq!(device_name, "TgDevice_FernandoInhand_0");
+        }
+        other => panic!("Expected SpawnDevice, got {:?}", other),
+    }
+
+    // Verify bot opponent replication (Channel 4)
+    assert_eq!(s7.bunches[4].header.ch_index, 4);
+    assert!(s7.bunches[4].header.flags.b_open);
+
+    // 8. Pure ACK packet -> zero reply (no ACK storm)
+    let mut c8 = Ue3Packet::new(prefix, 8);
+    c8.acks.push(6);
+    client_socket.send(&c8.encode().unwrap()).await.unwrap();
     let storm_res = timeout(Duration::from_millis(100), client_socket.recv(&mut buf)).await;
     assert!(
         storm_res.is_err(),
@@ -375,4 +433,88 @@ async fn test_game_server_pcom_driver_loopback_integration() {
         .shutdown()
         .await
         .expect("Graceful shutdown must complete successfully");
+}
+
+#[tokio::test]
+async fn test_dedicated_server_handshake_and_actor_replication() {
+    use immortal_net::{DedicatedControlFrame, EXUDP_MAX_PACKET_BITS, PcomPrefix};
+
+    let config = GameServerConfig {
+        bind_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
+        ..Default::default()
+    };
+    let server_handle = GameServer::start(config).expect("Failed to start GameServer");
+    let server_addr = server_handle.local_addr();
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind client UdpSocket");
+    client_socket
+        .connect(server_addr)
+        .await
+        .expect("Failed to connect client to GameServer");
+
+    let mut buf = [0u8; 2048];
+
+    // 1. Client Hello (570B unsequenced) -> 46B Server Challenge
+    let mut client_hello = vec![0u8; 570];
+    client_hello[8..10].copy_from_slice(&[0x00, 0x10]);
+    client_hello[10..16].copy_from_slice(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06]);
+    client_hello[22..24].copy_from_slice(&72u16.to_le_bytes());
+    client_hello[538..570].copy_from_slice(&[0xCC; 32]);
+
+    client_socket.send(&client_hello).await.unwrap();
+    let n = timeout(Duration::from_millis(500), client_socket.recv(&mut buf))
+        .await
+        .expect("Timeout waiting for ServerChallenge")
+        .unwrap();
+    assert_eq!(n, 46);
+    let challenge_frame = DedicatedControlFrame::parse(&buf[..n]).expect("Parse ServerChallenge");
+    let (server_token, challenge_flag) = match challenge_frame {
+        DedicatedControlFrame::ServerChallenge { handshake_flag, server_cookie, .. } => {
+            (server_cookie, handshake_flag)
+        }
+        other => panic!("Expected ServerChallenge, got {:?}", other),
+    };
+    assert_eq!(challenge_flag, 0x5D);
+    assert_eq!(server_token, [0x78, 0x7E, 0x10, 0x7B, 0x9A, 0x8F]);
+
+    // 2. PMTU Probe (1440B unsequenced) -> 1440B reply
+    let mut pmtu = vec![0u8; 1440];
+    pmtu[0..4].copy_from_slice(&[0x01, 0x00, 0x00, 0x00]);
+    pmtu[8..10].copy_from_slice(&[0x00, 0x10]);
+    pmtu[10..16].copy_from_slice(&[0x25, 0x3E, 0x4E, 0xED, 0xA3, 0x7C]);
+    pmtu[16..22].copy_from_slice(&[0xFB, 0x73, 0x09, 0xF1, 0x45, 0x49]);
+
+    client_socket.send(&pmtu).await.unwrap();
+    let n = timeout(Duration::from_millis(500), client_socket.recv(&mut buf))
+        .await
+        .expect("Timeout waiting for PMTU probe reply")
+        .unwrap();
+    assert_eq!(n, 1440);
+
+    // 3. Sequenced Seq 1 with 6-byte session token barrier: NMT_MapLoaded (0x2A)
+    let prefix = PcomPrefix::dedicated_sequenced(1, Some(server_token));
+    let mut c1 = Ue3Packet::new_with_prefix(prefix, 1);
+    c1.bunches.push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
+
+    let wire1 = c1.encode_pcom(EXUDP_MAX_PACKET_BITS).unwrap();
+    client_socket.send(&wire1).await.unwrap();
+
+    let n = timeout(Duration::from_millis(500), client_socket.recv(&mut buf))
+        .await
+        .expect("Timeout waiting for replication reply")
+        .unwrap();
+
+    let s1 = Ue3Packet::decode_with_max_bits(&buf[..n], EXUDP_MAX_PACKET_BITS).expect("Decode dedicated server reply");
+    assert_eq!(s1.pcom_prefix.sequence(), Some(1));
+    assert_eq!(s1.pcom_prefix.session_token(), Some(&server_token));
+    assert_eq!(s1.acks, vec![1]);
+    assert!(!s1.bunches.is_empty(), "MapLoaded must trigger replication bunches");
+
+    // Verify Fernando and Channel 3 bunches
+    assert_eq!(s1.bunches[0].header.ch_index, ACTOR_CHANNEL_INDEX);
+    assert!(s1.bunches[0].header.flags.b_open);
+
+    server_handle.shutdown().await.unwrap();
 }

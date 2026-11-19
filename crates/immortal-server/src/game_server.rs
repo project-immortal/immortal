@@ -13,11 +13,11 @@ use crate::replication::ReplicationSession;
 use anyhow::{anyhow, Result};
 use immortal_net::{
     current_time_millis, parse_cpack_udp, Bunch, CPackUdpPacket, ControlChannelHandshake,
-    ControlMessage, HandshakePhase, HelloRecvReply, PingRecv, Ue3Packet, ACTOR_CHANNEL_INDEX,
-    CONTROL_CHANNEL_INDEX, DEFAULT_GAME_CLASS, DEFAULT_GAME_PORT, DEFAULT_HMAC_KEY,
-    DEFAULT_MAX_PACKET, DEFAULT_MAX_PACKET_BITS, DEFAULT_NET_SPEED, DEFAULT_SHOOTING_RANGE_LEVEL,
-    HELLO_MIN_LEN, HELLO_PAYLOAD_OFFSET, MAX_CHSEQUENCE, MAX_PACKETID, PCOM_PREFIX_LEN,
-    PcomPrefix,
+    ControlMessage, DedicatedControlFrame, HandshakePhase, HelloRecvReply, PingRecv, Ue3Packet,
+    ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX, DEFAULT_GAME_CLASS, DEFAULT_GAME_PORT,
+    DEFAULT_HMAC_KEY, DEFAULT_MAX_PACKET, DEFAULT_MAX_PACKET_BITS, DEFAULT_NET_SPEED,
+    DEFAULT_SHOOTING_RANGE_LEVEL, EXUDP_MAX_PACKET_BITS, HELLO_MIN_LEN, HELLO_PAYLOAD_OFFSET,
+    MAX_CHSEQUENCE, MAX_PACKETID, PCOM_PREFIX_LEN, PcomPrefix,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -35,6 +35,7 @@ pub enum SessionPhase {
     Connected,
     HelloCompleted,
     HandshakeCompleted,
+    MapLoaded,
     Replicating,
 }
 
@@ -48,6 +49,9 @@ pub struct ClientSession {
     pub ctrl_sequence: u32,
     pub in_reliable_ctrl: u16,
     pub map_loaded: bool,
+    pub is_dedicated: bool,
+    pub dedicated_server_seq: u32,
+    pub session_token: Option<[u8; 6]>,
     pub handshake: ControlChannelHandshake,
     pub replication: ReplicationSession,
     pub last_seen: Instant,
@@ -70,6 +74,9 @@ impl ClientSession {
             ctrl_sequence: 1,
             in_reliable_ctrl: 0,
             map_loaded: false,
+            is_dedicated: false,
+            dedicated_server_seq: 1,
+            session_token: None,
             handshake: ControlChannelHandshake::new(
                 Some(level_url),
                 Some(game_class),
@@ -91,6 +98,13 @@ impl ClientSession {
     pub fn next_ctrl_seq(&mut self) -> u32 {
         let seq = self.ctrl_sequence;
         self.ctrl_sequence = (self.ctrl_sequence + 1) % MAX_CHSEQUENCE;
+        seq
+    }
+
+    /// Allocates the next 1-based monotonic dedicated server sequence counter.
+    pub fn next_dedicated_seq(&mut self) -> u32 {
+        let seq = self.dedicated_server_seq;
+        self.dedicated_server_seq = self.dedicated_server_seq.saturating_add(1);
         seq
     }
 }
@@ -229,7 +243,75 @@ impl GameServer {
 
     /// Handles an incoming datagram and returns any outgoing response datagrams.
     pub async fn handle_datagram(&self, data: &[u8], src: SocketAddr) -> Result<Vec<Vec<u8>>> {
-        // 1. Route UE3 / PComNetConn datagrams (`0x00` outer prefix + bit-packed UE3 payload)
+        // 0. Dedicated server unsequenced control / handshake / PMTU frames (`0x0010`)
+        if data.len() >= 10
+            && (data.starts_with(&[0x01, 0x00, 0x00, 0x00])
+                || data.starts_with(&[0x00, 0x00, 0x00, 0x00]))
+            && data[8..10] == [0x00, 0x10]
+        {
+            if let Some(frame) = DedicatedControlFrame::parse(data) {
+                let mut sessions = self.sessions.write().await;
+                let session = get_or_insert_session(&mut sessions, src, &self.config);
+                session.is_dedicated = true;
+                match frame {
+                    DedicatedControlFrame::ClientHello {
+                        connection_nonce, ..
+                    } => {
+                        debug!("Ingested dedicated unsequenced ClientHello (570B) from {}", src);
+                        let mut client_cookie = [0u8; 5];
+                        client_cookie.copy_from_slice(&connection_nonce[0..5]);
+                        // Established 6-byte session token barrier (Claim 18)
+                        let server_cookie = [0x78, 0x7E, 0x10, 0x7B, 0x9A, 0x8F];
+                        session.session_token = Some(server_cookie);
+                        session.phase = SessionPhase::HelloCompleted;
+                        let reply = DedicatedControlFrame::ServerChallenge {
+                            magic: [0x01, 0x00, 0x00, 0x00],
+                            handshake_flag: 0x5D,
+                            client_cookie,
+                            server_cookie,
+                            challenge: [0xAA; 24],
+                        };
+                        return Ok(vec![reply.encode()]);
+                    }
+                    DedicatedControlFrame::PmtuProbe {
+                        probe_token,
+                        probe_marker,
+                        total_len,
+                        ..
+                    } => {
+                        debug!("Ingested dedicated PMTU probe ({}B) from {}", total_len, src);
+                        let probe_reply = DedicatedControlFrame::PmtuProbe {
+                            magic: [0x01, 0x00, 0x00, 0x00],
+                            probe_token,
+                            probe_marker,
+                            total_len: 1440,
+                        };
+                        return Ok(vec![probe_reply.encode()]);
+                    }
+                    DedicatedControlFrame::HandshakeComplete { .. } => {
+                        debug!("Ingested dedicated HandshakeComplete from {}", src);
+                        session.phase = SessionPhase::HandshakeCompleted;
+                        return Ok(Vec::new());
+                    }
+                    DedicatedControlFrame::Other { .. }
+                    | DedicatedControlFrame::ServerChallenge { .. } => {
+                        return Ok(Vec::new());
+                    }
+                }
+            }
+        }
+
+        // 1. Dedicated server sequenced gameplay datagrams (`0x0001`)
+        if data.len() >= 10
+            && (data.starts_with(&[0x01, 0x00, 0x00, 0x00])
+                || data.starts_with(&[0x00, 0x00, 0x00, 0x00]))
+            && data[8..10] == [0x00, 0x01]
+        {
+            let pkt = Ue3Packet::decode_with_max_bits(data, EXUDP_MAX_PACKET_BITS)?;
+            return self.process_ue3_pcom_packet(pkt, src).await;
+        }
+
+        // 2. Route UE3 / PComNetConn datagrams (`0x00` outer prefix + bit-packed UE3 payload)
         if data.len() >= PCOM_PREFIX_LEN + 2
             && data[0] == 0x00
             && data.len() <= DEFAULT_MAX_PACKET + PCOM_PREFIX_LEN
@@ -247,7 +329,7 @@ impl GameServer {
             }
         }
 
-        // 2. Legacy CPackUdp dispatch path (`HelloSend`, `PingSend`, `CPACK_OP_BUNCH`)
+        // 3. Legacy CPackUdp dispatch path (`HelloSend`, `PingSend`, `CPACK_OP_BUNCH`)
         let packet = parse_cpack_udp(data)?;
         let mut responses = Vec::new();
 
@@ -326,7 +408,13 @@ impl GameServer {
     ) -> Result<Vec<Vec<u8>>> {
         let mut sessions = self.sessions.write().await;
         let session = get_or_insert_session(&mut sessions, src, &self.config);
-        session.pcom_prefix = pkt.pcom_prefix;
+        session.pcom_prefix = pkt.pcom_prefix.clone();
+        if let Some(token) = pkt.pcom_prefix.session_token() {
+            session.session_token = Some(*token);
+        }
+        if matches!(pkt.pcom_prefix, PcomPrefix::DedicatedSequenced { .. }) {
+            session.is_dedicated = true;
+        }
 
         debug!(
             "🎮 Ingested UE3 PComNetConn pkt from {} (pkt_id={}, acks={:?}, bunches={})",
@@ -343,14 +431,27 @@ impl GameServer {
 
         // Bare keepalive (no bunches, no ACKs): return standalone ACK
         if pkt.bunches.is_empty() {
-            let mut ack_pkt = Ue3Packet::new_with_prefix(session.pcom_prefix.clone(), session.next_packet_id());
+            let prefix = if session.is_dedicated {
+                let seq = session.next_dedicated_seq();
+                let token = if seq == 1 { session.session_token } else { None };
+                PcomPrefix::dedicated_sequenced(seq, token)
+            } else {
+                session.pcom_prefix.clone()
+            };
+            let mut ack_pkt = Ue3Packet::new_with_prefix(prefix, session.next_packet_id());
             ack_pkt.acks.push(pkt.packet_id);
-            return Ok(vec![ack_pkt.encode()?]);
+            let max_bits = if session.is_dedicated {
+                EXUDP_MAX_PACKET_BITS
+            } else {
+                DEFAULT_MAX_PACKET_BITS
+            };
+            return Ok(vec![ack_pkt.encode_with_max_bits(max_bits)?]);
         }
 
         let mut staged_handshake = session.handshake.clone();
         let mut staged_in_reliable = session.in_reliable_ctrl;
         let mut staged_reply_msgs: Vec<ControlMessage> = Vec::new();
+        let mut staged_reply_actor_bunches: Vec<Bunch> = Vec::new();
         let mut suppress_ack = false;
         let mut closed_channel_seq: Option<u32> = None;
 
@@ -390,7 +491,12 @@ impl GameServer {
                         debug!("Ingested Channel 0 ControlMessage from {}: {:?}", src, msg);
                         if let ControlMessage::MapLoaded = msg {
                             session.map_loaded = true;
-                            info!("🗺️ Client {} loaded map (NMT_MapLoaded 0x2A)", src);
+                            session.phase = SessionPhase::Replicating;
+                            info!("🗺️ Client {} loaded map (NMT_MapLoaded 0x2A) — queuing initial actor replication bunches", src);
+                            if !session.replication.channel_opened {
+                                let actor_bunches = session.replication.initial_replication_bunches();
+                                staged_reply_actor_bunches.extend(actor_bunches);
+                            }
                         }
                         let replies = staged_handshake.handle_control_message(msg)?;
                         staged_reply_msgs.extend(replies);
@@ -400,9 +506,18 @@ impl GameServer {
                         staged_in_reliable = incoming_seq;
                     }
                 }
+                ACTOR_CHANNEL_INDEX => {
+                    debug!(
+                        "Ingested Actor Channel {} bunch (len: {}) from {}",
+                        ACTOR_CHANNEL_INDEX,
+                        bunch.data.len(),
+                        src
+                    );
+                    staged_reply_actor_bunches.push(session.replication.stream_baseline_delta(0.016));
+                }
                 other_ch => {
                     debug!(
-                        "Ignoring non-control bunch on channel {} from {} (Actor Channel deferred to UNK-UDP-004)",
+                        "Ignoring non-control bunch on channel {} from {}",
                         other_ch, src
                     );
                 }
@@ -438,7 +553,7 @@ impl GameServer {
                 HandshakePhase::Joined => {
                     session.phase = SessionPhase::Replicating;
                     info!(
-                        "🎉 Client {} sent NMT_Join — entering Replicating phase (Actor Channel deferred to UNK-UDP-004)",
+                        "🎉 Client {} sent NMT_Join — entering Replicating phase",
                         src
                     );
                 }
@@ -446,10 +561,11 @@ impl GameServer {
             }
         }
 
-        let mut reply_bunches = Vec::with_capacity(staged_reply_msgs.len());
+        let mut reply_bunches = Vec::with_capacity(staged_reply_msgs.len() + staged_reply_actor_bunches.len());
         for reply_msg in staged_reply_msgs {
             reply_bunches.push(Bunch::control(session.next_ctrl_seq(), reply_msg.encode()));
         }
+        reply_bunches.extend(staged_reply_actor_bunches);
 
         pack_ue3_replies(session, pkt.packet_id, reply_bunches)
     }
@@ -590,31 +706,51 @@ fn bunch_wire_bits(bunch: &Bunch, max_packet_bits: usize) -> usize {
 }
 
 /// Packs `ack_packet_id` + `reply_bunches` into one or more `Ue3Packet` datagrams,
-/// splitting cleanly only when total bit count would reach `DEFAULT_MAX_PACKET_BITS`.
+/// splitting cleanly only when total bit count would reach maximum allowed bits.
 fn pack_ue3_replies(
     session: &mut ClientSession,
     ack_packet_id: u16,
     reply_bunches: Vec<Bunch>,
 ) -> Result<Vec<Vec<u8>>> {
+    let max_packet_bits = if session.is_dedicated {
+        EXUDP_MAX_PACKET_BITS
+    } else {
+        DEFAULT_MAX_PACKET_BITS
+    };
+
     let mut encoded_packets = Vec::new();
-    let mut current = Ue3Packet::new_with_prefix(session.pcom_prefix.clone(), session.next_packet_id());
+    let prefix = if session.is_dedicated {
+        let seq = session.next_dedicated_seq();
+        let token = if seq == 1 { session.session_token } else { None };
+        PcomPrefix::dedicated_sequenced(seq, token)
+    } else {
+        session.pcom_prefix.clone()
+    };
+    let mut current = Ue3Packet::new_with_prefix(prefix, session.next_packet_id());
     current.acks.push(ack_packet_id);
     let mut current_bits = 14 + 15; // 14-bit PacketId + 15-bit ACK
 
     for bunch in reply_bunches {
-        let b_bits = bunch_wire_bits(&bunch, DEFAULT_MAX_PACKET_BITS);
-        if current_bits + b_bits >= DEFAULT_MAX_PACKET_BITS
+        let b_bits = bunch_wire_bits(&bunch, max_packet_bits);
+        if current_bits + b_bits >= max_packet_bits
             && (!current.bunches.is_empty() || !current.acks.is_empty())
         {
-            encoded_packets.push(current.encode()?);
-            current = Ue3Packet::new_with_prefix(session.pcom_prefix.clone(), session.next_packet_id());
+            encoded_packets.push(current.encode_with_max_bits(max_packet_bits)?);
+            let next_prefix = if session.is_dedicated {
+                let seq = session.next_dedicated_seq();
+                let token = if seq == 1 { session.session_token } else { None };
+                PcomPrefix::dedicated_sequenced(seq, token)
+            } else {
+                session.pcom_prefix.clone()
+            };
+            current = Ue3Packet::new_with_prefix(next_prefix, session.next_packet_id());
             current_bits = 14;
         }
         current_bits += b_bits;
         current.bunches.push(bunch);
     }
 
-    encoded_packets.push(current.encode()?);
+    encoded_packets.push(current.encode_with_max_bits(max_packet_bits)?);
     Ok(encoded_packets)
 }
 
