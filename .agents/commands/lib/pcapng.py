@@ -36,8 +36,16 @@ def parse_nflog_payload(packet_data: bytes) -> Optional[bytes]:
 def is_cpack_udp_packet(payload: bytes) -> Optional[str]:
     """
     Identifies CPackUdp transport datagrams (e.g. HelloSend 570B/650B, PingSend, PingRecv, HelloRecvReply)
-    prior to UE3 bitstream bunch parsing.
+    or dedicated control frames prior to UE3 bitstream bunch parsing.
     """
+    if len(payload) >= 10 and payload[8:10] == b"\x00\x10":
+        if len(payload) == 570:
+            return "Dedicated::ClientHello (570 B)"
+        elif len(payload) == 46:
+            return "Dedicated::ServerChallenge/Handshake (46 B)"
+        elif len(payload) == 1440:
+            return "Dedicated::PmtuProbe (1440 B)"
+        return f"Dedicated::ControlFrame ({len(payload)} B)"
     if len(payload) in (570, 650):
         return f"CPackUdp::HelloSend ({len(payload)} B)"
     if len(payload) == 16 and payload[0] == 0x01:
