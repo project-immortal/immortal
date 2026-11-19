@@ -19,19 +19,17 @@
 An audit of all captures prior to `CAP-01` (`2026-10-28` session) revealed **two critical preservation gaps**:
 
 1. **Zero Dedicated-Server UE3 UDP Traffic Captured (`0` packets)**: `paladins_live_session.pcap` (228.7 MB) contained **zero** packets on UDP ports `7000–8999`. Its paired `live_paladins_launch.log` confirmed Shooting Range (`mapGameId = 1615`) launched locally as `NM_Standalone (0)` without opening a `UPComNetConn` UDP socket to any dedicated game server. Consequently, dedicated-server UE3 UDP traffic—blocking open unknowns **`UNK-UDP-003`** (`NMT_Uses` + Channel 1 `CHTYPE_Marshal` `0x27`) and **`UNK-UDP-004`** (Channel 3+ `UActorChannel` spawn/property/movement replication)—remained uncaptured.  
-   *(Update 2026-11-19: Fully unblocked by `CAP-01_bot_siege_20261119.pcapng` capturing 74,559 dedicated UE3 UDP packets on `20.153.152.2:9198`!)*
+   *(Update 2026-11-19: Fully unblocked by `CAP-01_bot_siege_20261119.pcapng` capturing 46,252 dedicated UE3 UDP packets on `20.153.152.2:9222`!)*
 2. **Retail MCTS TCP `9000` Is Encrypted Post-Handshake (`flags=0x0100`)**: `mcts_only.pcap` (`20.153.141.49:9000`, 3.4 MB) is plaintext only through Frame 4 (`0xb44c4107`); Frames 6–8 perform RSA/session key exchange (using the 2048-bit RSA modulus embedded in `8.1.5839.0-PC-402.sdd.orig`), and **Frame 10 onward is encrypted ciphertext**. In retail `8.1.5839.0` release builds, `-dumpallmar` does not emit raw per-RPC plaintext dumps to `Launch.log` (compiled out or developer gated). However, `Launch.log` outputs deep engine parameters (`UMarshalChannel::CacheBandwidthCap`, client rate 48000, and MCTS lobby status events), while live UE3 gameplay traffic on UDP is completely unencrypted at the bitstream level.
 
 ### 1.2 Capture Inventory & Golden Master Traces
 
 | File (`.dirtyroom/pcaps/`) | Size | Date | SHA-256 Digest | Verified Coverage & Gaps |
 | :--- | ---: | :--- | :--- | :--- |
-| `CAP-01_bot_siege_20261119.pcapng` | 18 MB | `2026-11-19` | `ecf15e80e9270178cf10b629932e57e574a2003a50ab02e79ac31946b9b669c8` | **Complete Golden Dedicated-Server Match Capture** (74,559 dedicated UE3 UDP pkts on `20.153.152.2:9198` + 1,278 MCTS TCP 9000 pkts; 18.8 min full match). Full 10-byte prefix, `?exudp=2`, Opcode `0x2A` (`NMT_MapLoaded`), `NMT_Join`, `UMarshalChannel`, `UActorChannel` pawn spawn & HUD mount. |
-| `CAP-01_bot_siege_20261119_Launch.log` | 996 KB | `2026-11-19` | `1201ebe1505cd3702256d8f93ac183155cd79e3e1787a4e5cd0b5197bd23d075` | Paired 1:1 retail log with `-log -dumpallmar`. Confirms dedicated server URL `20.153.152.2:9198?exudp=2`, `sg_jaguarfalls_rework_p`, `TgGame.TgGame_Paladins_Siege_Practice`, `UMarshalChannel::CacheBandwidthCap` parameters, and HUD mount at 0113.76s. |
-| `paladins_live_session.pcap` | 228.7 MB | `2026-10-28` | `c8bf4ebd0ced626096f91a722b02c549bed97e6cbbabc6cc7632bd9d46ae653c` | Full host capture (280,635 pkts; >98% non-Paladins noise). Has MCTS TCP `9000` (encrypted), UDP `9002` ping (`0xBEEF`), `discovery.hirez.net` TLS, Vivox HTTPS + SIP idle, Akamai CDN. **0 UE3 dedicated-server UDP packets.** |
-| `mcts_only.pcap` | 3.4 MB | `2026-10-28` | `10b5ab2143fb417681278d62b27c2e8eee771b57e3990e35492c311d9223102c` | Filtered TCP `9000` slice (`20.153.141.49:9000`, 2,624 pkts). Plaintext handshake init only; ciphertext post-Frame 8. |
-| `mcts_stream_6761.raw` | 6.26 MB | `2026-10-28` | `fc55621a2044ad754cb5975c773dd83746ad48005bd4b4f27c426f0c0e6ca458` | Raw hex export of TCP stream 6761 from above. |
-| `live_paladins_launch.log` | 171 KB | `2026-10-28` | `e9f3a63cc7651599e86c94831493df42ea59afff335d9fc91e19fe7d7ff76403` | Retail log (`-pid=402 -steam -NoEAC -seekfreeloadingPCConsole`, **no `-dumpallmar`**). Confirms `Shootingrange_P` ran `NM_Standalone`. |
+| `CAP-01_bot_siege_20261119.pcapng` | 36.4 MB | `2026-11-19` | `4f21c120e39c74dedc7803a781b8bc24a7a0998d76cb204538f4738cf39deb5d` | **Complete Golden Dedicated-Server Match Capture (Dawnforge / cgroup isolated)** (46,252 dedicated UE3 UDP pkts on `20.153.152.2:9222` + 3,503 MCTS TCP 9000 pkts on `20.153.141.80:9000`; 10.05 min full match on `s_celestialfortress_p`). Full 10-byte prefix (`[01 00 00 00] [seq 4B] [flags 2B]`), `?exudp=2`, Opcode `0x2A` (`NMT_MapLoaded`), `NMT_Join`, `UMarshalChannel`, `UActorChannel` pawn spawn & HUD mount. |
+| `CAP-01_bot_siege_20261119_Launch.log` | 710.5 KB | `2026-11-19` | `16376a1dd649d32e9c906e04d90cf7165998dffec6c8cc437f156537889c2463` | Paired 1:1 retail log with `-log -dumpallmar` (8,245 lines). Confirms dedicated server URL `20.153.152.2:9222?exudp=2`, Dawnforge map (`s_celestialfortress_p`), `TgGame.TgGame_Paladins_Siege_Practice`, `UMarshalChannel::CacheBandwidthCap` parameters, and HUD mount. |
+| `CAP-00_shooting_range_20261119.pcapng` | 4.34 MB | `2026-11-19` | `9b3b78b0f3b813ac206bf49efc7d672092c9ae1238aa225cfe1ae681fcf4ee13` | **Refreshed Shooting Range Baseline (cgroup isolated)**. 6,010 clean packets on nflog:42 with zero host noise. MCTS TCP 9000 (3,106 pkts on `20.153.141.49:9000`), UDP 9002 ping (16 pkts), Vivox SIP (10 pkts). 0 dedicated UDP packets (re-verifies solo Shooting Range runs `NM_Standalone`). |
+| `CAP-00_shooting_range_20261119_Launch.log` | 159.8 KB | `2026-11-19` | `58009f20b948c15acd63668961d4775b7c9308ce63f7cacd5c729a87b2f0c294` | Paired 1:1 retail log (1,701 lines). Confirms `Shootingrange_P` loaded locally with `NM_Standalone (0)`. Clean exit. |
 
 ### 1.3 Verified Retail Network Topology & Ports (`8.1.5839.0`)
 
@@ -40,8 +38,8 @@ flowchart LR
     Client["Paladins Retail Client 8.1.5839.0 (PComNetDriver)"]
     Disc["discovery.hirez.net (TCP 443 TLS)"]
     MCTS["Hi-Rez MCTS Lobby: 20.153.141.49 / 20.153.141.80 (TCP 9000, Encrypted)"]
-    Ping["Hi-Rez Regional Ping: 20.157.19.59 (UDP 9002, 16B 0xBEEF)"]
-    GameSrv["Dedicated Match Server: 20.153.152.2:9198 (?exudp=2, 27 Hz PComNetConn)"]
+    Ping["Hi-Rez Regional Ping: 20.157.19.11 / 20.153.152.2 (UDP 9002, 16B 0xBEEF)"]
+    GameSrv["Dedicated Match Server: 20.153.152.2:9222 (?exudp=2, 27 Hz PComNetConn)"]
     Vivox["Vivox Voice: hrpp.www.vivox.com (TCP 443) + hrpp.disp.vivox.com (UDP 6250 SIP + RTP)"]
     Aux["CDN / EAC / EOS / RallyHere Telemetry (TCP 443 TLS)"]
 
@@ -57,24 +55,75 @@ flowchart LR
 > **Critical Port Discovery (`DefaultEngine.ini` vs. `BaseEngine.ini`)**: While stock UE3 defaults `URL.Port=7777`, `ChaosGame/Config/DefaultEngine.ini` overrides `URL.Port=7000` (`NetDriver=PlatformCommon.PComNetDriver`, `NetConnection=PlatformCommon.PComNetConn`, `NetServerMaxTickRate=27`, `MaxClientRate=24000`), and Hi-Rez multi-instance cloud game servers bind dynamically across regional UDP port pools (`7000–9999` or ephemeral UDP ports). **Never restrict retail UDP captures solely to `udp port 7777`.**
 >
 > **Empirical Match Server Ground Truth (`CAP-01` on 2026-11-19)**:
-> - **Endpoint**: `20.153.152.2:9198` (dynamically bound match port `9198`).
+> - **Endpoint**: `20.153.152.2:9222` (dynamically bound match port `9222`, allocated from regional pool `7000–9999`).
 > - **Match URL Parameter**: `?exudp=2` (`EXUDP_MAX_PACKET_BITS = 3968 bits` / 496 bytes).
-> - **10-Byte Outer UDP Framing**: Dedicated server datagrams use a 10-byte outer prefix on the wire: `[01 00 00 00]` (4B magic/flags) + `[f1 06 00 00]` (4B sequence) + `[00 01]` (2B channel/ack tag). The UE3 bitstream begins at byte offset 10 (`ue3_bytes = &datagram[10..]`). Standalone / shooting range mode uses the 6-byte prefix (`PCOM_PREFIX_LEN = 6`), whereas dedicated cloud match servers use this 10-byte prefix.
+> - **10-Byte Outer UDP Framing**: Dedicated server datagrams use a 10-byte outer prefix on the wire:
+>   - Bytes 0..4: `[01 00 00 00]` (4B magic/flags)
+>   - Bytes 4..8: `[seq 4B LE]` (4B monotonic packet sequence counter)
+>   - Bytes 8..10: `[sub_flags 2B]` (`[00 10]` for unsequenced/handshake/control frames such as 1440-byte handshake fragments and 46-byte ACK frames; `[00 01]` for active sequenced UE3 game datagrams).
+>   The UE3 bitstream begins at byte offset 10 (`ue3_bytes = &datagram[10..]`). Standalone / shooting range mode uses the 6-byte prefix (`PCOM_PREFIX_LEN = 6`), whereas dedicated cloud match servers use this 10-byte prefix.
 
-### 1.4 Standard Single-Domain Capture Run SOP
+### 1.4 Standard Capture Methodologies & Run SOP
 
-Every capture run (`CAP-01` through `CAP-14`) MUST follow this strict single-domain hygiene workflow:
+To guarantee cleanroom isolation, reproducibility, and 100% packet preservation across unpredictable cloud game server port allocations, Project Immortal supports two standardized capture methodologies plus a documented legacy baseline:
 
-1. **Pre-Run Host Isolation**:
-   - Close browsers, Discord/WebRTC calls, Steam background downloads, and torrent clients before launching capture.
-   - Restore original retail Service Discovery (`8.1.5839.0-PC-402.sdd.orig` pointing to `20.153.141.49` / `20.153.141.80`; keep a separate backup of the local `127.0.0.1` emulator `.sdd`!).
-   - Rotate or archive previous `ChaosGame/Logs/Launch.log` before each run so every capture has a **1:1 paired log**.
-2. **MCTS Plaintext Visibility Check (Pre-Flight Gate before `CAP-01`)**:
-   - Retail matches with EasyAntiCheat (`-EACALT -allow64`) require authentic EAC sessions for public queues, whereas MCTS TCP `9000` is encrypted post-Frame 8.
-   - During Pre-Flight, test whether Steam Launch Options `-log -dumpallmar` (or `-dumpmar`) write plaintext marshal dumps to `ChaosGame/Logs/` under live retail EAC without EAC rejection.
-   - Record the exact outcome in the run notes: if EAC permits `-dumpallmar`, keep it enabled for every P0–P3 run to directly resolve **`UNK-MCTS-002`**; if EAC blocks `-dumpallmar`, keep `-log` enabled (capturing `MATCH LOBBY LOG`, `ReceiveChangeMap`, `Browse`, and server IP:port) while preserving encrypted MCTS TCP `9000` frames alongside unencrypted/wire-level UE3 UDP `PComNetConn` gameplay traffic (which directly resolves **`UNK-UDP-003`** and **`UNK-UDP-004`**).
-3. **Standard Filtered Capture Command (`tshark` / `tcpdump`)**:
-   - Captures: **DNS** (for endpoint attribution), **MCTS TCP `9000`**, **Hi-Rez UDP `9002` ping**, **Vivox SIP UDP `6250`**, **UE3 Dedicated Server UDP (`7000–9999` plus high dynamic UDP game ports)**, and **Hi-Rez Service Discovery / Vivox / CDN HTTPS (`tcp port 443`)**, while dropping LAN broadcast/mDNS/SSDP/Steam SDR/WebRTC noise:
+| Methodology | Command / Mode | Packet Isolation Mechanism | Traffic Purity | Dynamic Cloud Port Support | Root / Sudo Requirement |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Method A: Process Cgroup (`--mode cgroup`)** *(Recommended Standard)* | `agyis capture start --mode cgroup --run-id <ID>` | Linux cgroup v2 socket matching via `nftables` + `immortalcapture.slice` + `dumpcap -i nflog:42` | **100% Pure** (Zero host packet leak) | **Universal** (Captures 100% of game sockets regardless of port) | Requires `sudo` for initial slice & nftables rule creation |
+| **Method B: Network BPF Filter (`--mode filter`)** *(Non-Root Fallback)* | `agyis capture start --mode filter --run-id <ID>` or manual `tshark -f "$BPF_FILTER"` | Promiscuous BPF interface packet filtering (`tcp port 9000 or udp port 9002 ...`) | **Filtered** (May capture background host traffic on matching ports) | **Constrained** (Misses traffic if cloud server binds outside BPF port range) | Non-root (Requires `wireshark` group access to raw network sockets) |
+| **Method C: Legacy Full Host (`CAP-00-LEGACY`)** *(Historical Reference)* | `dumpcap -i any` (Unfiltered) | No filtering or process isolation | **Polluted** (>98% non-game host traffic) | Captures all interfaces | Non-root |
+
+---
+
+#### 1.4.1 Method A: Process-Isolated Cgroup v2 + Netfilter NFLOG (The Immortal Standard)
+
+This is the **primary and preferred capture standard** for all Project Immortal runs. Because retail Paladins servers dynamically assign UDP game ports from regional cloud pools (`7000–9999`), static BPF filters can miss traffic or capture irrelevant host background packets. Method A binds packet capture directly to the Linux process tree:
+
+1. **Systemd Slice & Netfilter Queue Architecture**:
+   - The game and Proton runtime execute inside an isolated systemd cgroup slice: `immortalcapture.slice`.
+   - An `nftables` netfilter rule matches all outbound and inbound socket packets belonging to that slice:
+     ```nft
+     meta cgroup "immortalcapture.slice" counter log prefix "[immortal-capture] " group 42
+     ```
+   - Packets are diverted to Netfilter userland queue `nflog:42` without altering network routing or introducing latency.
+   - `dumpcap -i nflog:42 -w <output.pcapng>` records only the exact datagrams flowing through sockets created by processes inside `immortalcapture.slice`.
+
+2. **Valve Scope-Escape Mitigation (`PRESSURE_VESSEL_SYSTEMD_SCOPE`)**:
+   - *The Root Cause of Empty Captures*: Valve's `steam-launch-wrapper` and Pressure Vessel detect systemd and dynamically migrate the running game process into a separate transient scope (`app-steam-app444090-<PID>.scope` under `app.slice`), silently escaping `immortalcapture.slice` and leaving netfilter matching 0 packets.
+   - *The Definitive Fix*: Exporting `PRESSURE_VESSEL_SYSTEMD_SCOPE=0 STEAM_LAUNCH_WRAPPER_SCOPE=0` in the launch environment and Steam launch options wrapper completely disables scope migration. All Proton, Wine, EAC, and `ShippingPC-ChaosGame.exe` processes remain locked inside `immortalcapture.slice`.
+
+3. **Automated CLI Workflow (`agyis capture`)**:
+   ```bash
+   # Start isolated capture daemon for a specific run ID
+   agyis capture start --mode cgroup --run-id CAP-02_casual_siege
+
+   # Play match cleanly to EOM scoreboard...
+
+   # Stop capture daemon, archive logs, and compute SHA-256 manifests
+   agyis capture stop
+   ```
+
+4. **NFLOG PCAPNG Decapsulation & Format Conversion**:
+   - `dumpcap` writes PCAPNG files with Linktype 141 or 239 (`DLT_NFLOG` / `DLT_NETLINK`).
+   - The workspace pure-Python streaming library (`.agents/commands/lib/pcapng.py`) decapsulates Netfilter TLV 9 (`NFULA_PAYLOAD`) in $<1.0\text{s}$ with zero external dependencies.
+   - To inspect with classic external tools (`tcpdump`, Wireshark, standard tshark), convert the capture to standard `DLT_RAW` (Linktype 101):
+     ```bash
+     agyis pcap convert <file.pcapng> -o <file_classic.pcap>
+     ```
+   - To decode UE3 packets, bunch channels, and control opcodes directly:
+     ```bash
+     agyis pcap decode <file.pcapng> -p 9222 -n 50
+     ```
+
+---
+
+#### 1.4.2 Method B: Network Interface BPF Filtering (Non-Root Fallback)
+
+Method B serves as a non-privileged fallback when `sudo` is unavailable or when operating on remote workstations without cgroup v2 netfilter modules:
+
+1. **Host Isolation**: Close all browsers, Discord/WebRTC calls, Steam downloads, and torrent clients before capture.
+2. **BPF Filter String**:
+   Captures DNS (port 53), MCTS TCP `9000`, Hi-Rez UDP `9002` ping, Vivox SIP UDP `6250`, dedicated server UDP (`7000–9999`), and Hi-Rez HTTPS (`443`), while discarding LAN broadcast, mDNS (5353), SSDP (1900), NTP (123), Steam SDR (27000–27060), and WebRTC (19302–19350):
 
 ```bash
 # Set single-domain run identifier (e.g., CAP-01_bot_siege) and date
@@ -97,7 +146,7 @@ BPF_FILTER='(
     and not portrange 137-138 and not portrange 19302-19350 and not portrange 27000-27060)
 )'
 
-# Start capture BEFORE launching Paladins; stop cleanly with Ctrl-C AFTER clean client exit
+# Start capture before launching game; stop with Ctrl-C on exit
 tshark -i "$IFACE" -s 0 -f "$BPF_FILTER" -w "${CAP_DIR}/${RUN_ID}_${STAMP}.pcapng"
 ```
 
@@ -110,23 +159,38 @@ tshark -r "${CAP_DIR}/${RUN_ID}_${STAMP}.pcapng" -q -z conv,udp | head -n 30
 tshark -r "${CAP_DIR}/${RUN_ID}_${STAMP}.pcapng" -Y "tcp.port == 9000" -q -z conv,tcp | head -n 15
 ```
 
-4. **Mandatory Artifact Pairing & Cryptographic Manifest (`.dirtyroom/pcaps/`)**:
-   - Every single run MUST archive **four co-located files** in `/mnt/fast_data/re_dirtyroom/paladins_8.1.5839.0/pcaps/`:
-     1. `<run_id>_<YYYYMMDD>.pcapng` — Raw packet capture (`pcapng` preserves interface/timestamp/comment metadata).
-     2. `<run_id>_<YYYYMMDD>_Launch.log` — Exact paired `ChaosGame/Logs/Launch.log` (plus `MCTS-*.log` if generated).
-     3. `<run_id>_<YYYYMMDD>_notes.md` — Short operator timeline (UTC timestamps of queue click, match accept, champion lock, map load, key gameplay actions, and exact server IP:port observed).
-     4. `SHA256SUMS.txt` — Append immutable SHA-256 digests immediately post-capture:
+---
+
+#### 1.4.3 Standard Run Hygiene Protocol (Both Methods)
+
+Every capture run (`CAP-00` through `CAP-14`) MUST adhere to these four invariants:
+
+1. **MCTS Plaintext Visibility Check (Pre-Flight Gate)**:
+   - Ensure Steam Launch Options include `-log -dumpallmar` (or `-log`).
+   - If EAC permits `-dumpallmar`, deep engine network parameters and MCTS lobby statuses are written to `Launch.log`.
+2. **Mandatory Artifact Quad-Pairing (`.dirtyroom/pcaps/`)**:
+   - Every single run MUST archive **four co-located files**:
+     1. `<run_id>_<YYYYMMDD>.pcapng` — Raw packet capture.
+     2. `<run_id>_<YYYYMMDD>_Launch.log` — Exact paired 1:1 `ChaosGame/Logs/Launch.log`.
+     3. `<run_id>_<YYYYMMDD>_notes.md` — Operator timeline (queue click, accept, lock, map load, server IP:port observed).
+     4. `SHA256SUMS.txt` — Appended with immutable cryptographic digests immediately post-capture:
 
 ```bash
 (cd "$CAP_DIR" && sha256sum "${RUN_ID}_${STAMP}.pcapng" "${RUN_ID}_${STAMP}_Launch.log" >> SHA256SUMS.txt)
 ```
 
-5. **Zero-PII Cleanroom Boundary & Sanitization Rules (`PSL-INV-007`)**:
-   - **Never commit** `.pcapng`, `.pcap`, `.raw`, `Launch.log`, or `MCTS-*.log` files to git (all remain quarantined inside `/mnt/fast_data/re_dirtyroom/`).
-   - Before promoting any derived fixture, token table, or sequence diagram across the cleanroom membrane into `docs/specs/` or `crates/immortal-net/tests/fixtures/`:
-     - Strip or replace operator home IPv4/IPv6 addresses with RFC 5737 documentation addresses (`192.0.2.x` / `198.51.100.x`).
-     - Strip all Steam auth tickets, EOS session tokens, Vivox auth keys (`VIVOX_AUTH_KEY`), Hi-Rez session tokens, account passwords, lobby/spectator passwords, and third-party player display names/SteamIDs.
-     - Cite only the immutable SHA-256 digest of the quarantined dirty-room capture in `docs/specs/CLEANROOM_LEDGER.md` and `.agents/ledger/`.
+3. **Immediate Post-Run Conversation Audit**:
+   - Verify UDP conversation completeness immediately after client exit:
+     ```bash
+     agyis pcap status
+     tshark -r "${CAP_DIR}/${RUN_ID}_${STAMP}.pcapng" -q -z conv,udp | head -n 30
+     ```
+   - Assert that dedicated UE3 UDP conversations contain $>0$ packets for all non-standalone runs.
+4. **Zero-PII Cleanroom Boundary & Sanitization Rules (`PSL-INV-007`)**:
+   - Never commit raw `.pcap`, `.pcapng`, `.raw`, or `Launch.log` files to git (all remain quarantined in `/mnt/fast_data/re_dirtyroom/`).
+   - Scrub operator home IP addresses to RFC 5737 documentation addresses (`192.0.2.x` / `198.51.100.x`).
+   - Strip Steam auth tickets, EOS session tokens, Vivox auth keys, and third-party player identities before citing evidence.
+   - Record only immutable SHA-256 digests in `docs/specs/CLEANROOM_LEDGER.md`.
 
 ---
 
@@ -256,10 +320,11 @@ All 71 persistent map packages are already preserved locally on disk, ensuring f
 
 Completing the **14 clean, non-overlapping, single-domain runs** below achieves **100% live retail protocol coverage** while minimizing human coordination (only 4 runs require a second account or live public matchmaking; 10 runs are deterministic solo or 1-alt captures).
 
-### Already-Captured Legacy Baseline
+### Already-Captured Baseline & Verified Ingress Runs
 
 | Status | Run ID | Priority | Domain / Mode | Availability | Protocol Surfaces Captured vs. Missing | Artifacts & SHA-256 |
-| :---: | :--- | :---: | :--- | :--- | :--- | :--- |
+| :---: | :--- | :--- | :--- | :--- | :--- | :--- |
+| `[x]` | **`CAP-00`** | **Baseline** | **Shooting Range Baseline (cgroup isolated)** | Standalone (`NM_Standalone`) | **Captured**: 6,010 clean packets on nflog:42 cgroup slice (zero host leak). MCTS TCP `9000` (3,106 pkts on `20.153.141.49:9000`), UDP `9002` ping (16 pkts), Vivox SIP (10 pkts). 0 dedicated UDP packets (re-verifies solo Shooting Range runs `NM_Standalone (0)`). | `CAP-00_shooting_range_20261119.pcapng` (`9b3b78b0...`)<br>`CAP-00_shooting_range_20261119_Launch.log` (`58009f20...`)<br>`CAP-00_shooting_range_20261119_notes.md` (`4aa671d9...`) — `2026-11-19` |
 | `[~]` | `CAP-00-LEGACY` | Baseline (Partial) | Retail Login + Standalone Shooting Range | Standalone (`NM_Standalone`) | **Captured**: `discovery.hirez.net` TLS, MCTS TCP `9000` (plaintext Frames 1–8; **ciphertext Frame 10+**), UDP `9002` ping (`0xBEEF`), Vivox HTTPS/SIP idle. **Missing**: 0 dedicated-server UE3 UDP packets, no `-dumpallmar` log, 98% background noise. | `paladins_live_session.pcap` (`c8bf4ebd...`), `mcts_only.pcap` (`10b5ab21...`), `live_paladins_launch.log` (`e9f3a63c...`) — `2026-10-28` |
 
 ---
@@ -269,7 +334,7 @@ Completing the **14 clean, non-overlapping, single-domain runs** below achieves 
 
 | Status | Run ID | Priority | Domain / Mode | Availability | Protocol Surfaces & Unknowns Resolved | End-to-End Capture Script / Actions | Required Artifacts | SHA-256 / Date |
 | :---: | :--- | :---: | :--- | :--- | :--- | :--- | :--- | :--- |
-| `[x]` | **`CAP-01`** | **P0** | **Training: Bot Siege** *(Solo Full Match + Pre-Flight Check)* | **Bot Queue** (Live Dedicated Server; solo deterministic ~10s pop) | **RESOLVES `UNK-UDP-003` & `UNK-UDP-004`**, tests `-dumpallmar` for `UNK-MCTS-002`. Captured 74,559 dedicated UE3 UDP packets on `20.153.152.2:9198` (`?exudp=2`, 10-byte prefix) + 1,278 MCTS TCP 9000 packets across 18.8 min full match. Identified Opcode `0x2A` (`NMT_MapLoaded`, 0B payload), `NMT_Join`, Channel 1 `UMarshalChannel` parameters, and complete `UActorChannel` pawn spawn/possession (`TgPlayerController_1 setplayer TgLocalPlayer_0`), HUD mount, combat, capture point, payload escort, and EOM. | 1. Run Pre-Flight (`PF-1..PF-7`) & test `-log -dumpallmar`.<br>2. Start clean `tshark` filter -> launch Paladins -> Login.<br>3. Queue **Training → Siege**.<br>4. Lock Fernando (matches Milestone C baseline!), pick Talent + Loadout.<br>5. In-match: mount/dismount, open 5×4 Item Store & buy 1 item from each row (Defense/Utility/Healing/Offense), cast all 4 abilities + Ultimate, take damage, die & respawn once, capture point, push payload, finish full match to EOM scoreboard.<br>6. Exit cleanly & verify non-zero UDP convs. | `CAP-01_bot_siege_20261119.pcapng`<br>`CAP-01_bot_siege_20261119_Launch.log` | `ecf15e80e9270178cf10b629932e57e574a2003a50ab02e79ac31946b9b669c8` (pcapng)<br>`1201ebe1505cd3702256d8f93ac183155cd79e3e1787a4e5cd0b5197bd23d075` (log)<br>`2026-11-19` |
+| `[x]` | **`CAP-01`** | **P0** | **Training: Bot Siege** *(Solo Full Match + Pre-Flight Check)* | **Bot Queue** (Live Dedicated Server; solo deterministic ~10s pop) | **RESOLVES `UNK-UDP-003` & `UNK-UDP-004`**, tests `-dumpallmar` for `UNK-MCTS-002`. Captured 46,252 dedicated UE3 UDP packets on `20.153.152.2:9222` (`?exudp=2`, 10-byte prefix) + 3,503 MCTS TCP 9000 packets on `20.153.141.80:9000` across 10.05 min full match. Identified Opcode `0x2A` (`NMT_MapLoaded`, 0B payload), `NMT_Join`, Channel 1 `UMarshalChannel` parameters, and complete `UActorChannel` pawn spawn/possession (`TgPlayerController_1 setplayer TgLocalPlayer_0`), HUD mount, combat, capture point, payload escort, and EOM. | 1. Run Pre-Flight (`PF-1..PF-7`) & test `-log -dumpallmar`.<br>2. Start cgroup capture daemon (`agyis capture start --mode cgroup --run-id CAP-01_bot_siege`).<br>3. Launch Paladins -> Login.<br>4. Queue **Training → Siege**.<br>5. Lock Fernando, pick Talent + Loadout.<br>6. In-match: mount/dismount, buy items, cast abilities + Ultimate, contest point, escort payload, finish match to EOM scoreboard.<br>7. Exit cleanly & stop capture (`agyis capture stop`). | `CAP-01_bot_siege_20261119.pcapng`<br>`CAP-01_bot_siege_20261119_Launch.log`<br>`CAP-01_bot_siege_20261119_notes.md` | `4f21c120e39c74dedc7803a781b8bc24a7a0998d76cb204538f4738cf39deb5d` (pcapng)<br>`16376a1dd649d32e9c906e04d90cf7165998dffec6c8cc437f156537889c2463` (log)<br>`2026-11-19` |
 | `[ ]` | **`CAP-02`** | **P0** | **Quick Play: Casual Siege** *(5v5 Multi-Player PvP)* | **Live Queue** (Flagship PvP, healthiest pop) | Multi-player (10-human) UE3 `UActorChannel` scaling, PvP hit-reg/lag-comp/movement deltas, 10-player Gazebo lock/skin/booster/team chat, full multi-round Siege scoring + Overtime + Underdog capture-rate bonus, EOM Commendations (`2485–2486`) & Match History write. | 1. Start `tshark` -> Login -> Queue **Quick Play → Siege**.<br>2. In Gazebo: send 1 team chat message, toggle Skin/Weapon skin, equip/observe booster if active, lock champion.<br>3. Play full 5v5 match through at least 2 rounds (incl. both Attack & Defense phases + Overtime if triggered).<br>4. On EOM screen: send 1 Commendation, inspect Stats/Overview tabs, return to lobby, exit cleanly. | `CAP-02_casual_siege_<YYYYMMDD>.pcapng`<br>`CAP-02_casual_siege_<YYYYMMDD>_Launch.log`<br>`CAP-02_casual_siege_<YYYYMMDD>_notes.md` | *Pending* |
 | `[ ]` | **`CAP-03`** | **P0** | **Custom Match: Baseline Siege + Lobby/Region/Bot/Password Sweep** | **Custom Match** (Live Dedicated Server; solo + bot or 2 accounts) | Minimal-actor golden UE3 UDP trace (1 human + 1 bot = cleanest differential decode for `UNK-UDP-003`/`004`!), plus MCTS Custom browser (`DATA_SET_CUSTOMS` `1537`), Create Lobby (`1658`, `1649`, `1104`), `SYS_SITE` region switch, `Change Teams`, `Add Bot` (`2877`/`121`), password set/clear, and clean early match end. | 1. Start `tshark` -> Login -> Open **Custom** browser (refresh list).<br>2. Create Custom Siege (`1v1`, NA -> switch region EU -> back to lowest-ping region, set Password, clear Password, toggle `Change Teams`, click `Add Bot` on enemy team [or join w/ alt]).<br>3. Launch match -> capture clean 2-actor UE3 UDP spawn, walk to point, fire primary/alt/ult once, capture 1 point, end/leave cleanly. | `CAP-03_custom_baseline_<YYYYMMDD>.pcapng`<br>`CAP-03_custom_baseline_<YYYYMMDD>_Launch.log`<br>`CAP-03_custom_baseline_<YYYYMMDD>_notes.md` | *Pending* |
 
@@ -359,7 +424,8 @@ Modes confirmed retired or rotated out of live maintenance-mode queues do **not*
 
 1. **Session 1 (Solo, ~45 min — Highest ROI)**:
    - [x] **`PF-1`**: Test `-log -dumpallmar` under retail EAC (Completed: accepted, deep parameters captured, raw RPC dumps compiled out in release build).
-   - [x] **`CAP-01`**: Bot Siege full match (Completed 2026-11-19: 74,559 dedicated UDP packets on `20.153.152.2:9198` + 1,278 MCTS TCP 9000 packets; Opcode `0x2A` = `NMT_MapLoaded` resolved).
+   - [x] **`CAP-00`**: Refreshed Solo Shooting Range Baseline via cgroup (`CAP-00_shooting_range_20261119.pcapng`, 6,010 clean packets on nflog:42, re-verifies standalone mode).
+   - [x] **`CAP-01`**: Bot Siege full match via cgroup (`CAP-01_bot_siege_20261119.pcapng`, 46,252 dedicated UDP packets on `20.153.152.2:9222` + 3,503 MCTS TCP 9000 packets; Opcode `0x2A` = `NMT_MapLoaded` resolved).
    - [ ] **`CAP-03`**: Custom Baseline (1 human + 1 bot clean differential trace, region/password sweep).
    - [ ] **`CAP-13`**: Menu/Meta/Economy walkthrough (Loadouts, Store, Quests, Profile).
 2. **Session 2 (Solo + Bots / Custom, ~60 min)**: Execute **`CAP-05`** (Onslaught) -> **`CAP-06`** (TDM) -> **`CAP-07`** (KOTH) -> **`CAP-08`** (Payload) -> **`CAP-09`** (Tutorial/Wave Defense/Arcade) -> **`CAP-11`** (All 24 Custom Mutators).
