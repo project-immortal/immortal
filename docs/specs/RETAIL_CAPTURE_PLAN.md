@@ -428,7 +428,7 @@ Modes confirmed retired or rotated out of live maintenance-mode queues do **not*
    - [x] **`PF-1`**: Test `-log -dumpallmar` under retail EAC (Completed: accepted, deep parameters captured, raw RPC dumps compiled out in release build).
    - [x] **`CAP-00`**: Refreshed Solo Shooting Range Baseline via cgroup (`CAP-00_shooting_range_20261119.pcapng`, 6,010 clean packets on nflog:42, re-verifies standalone mode).
    - [x] **`CAP-01`**: Bot Siege full match via cgroup (`CAP-01_bot_siege_20261119.pcapng`, 46,252 dedicated UDP packets on `20.153.152.2:9222` + 3,503 MCTS TCP 9000 packets; Opcode `0x2A` = `NMT_MapLoaded` resolved).
-   - [ ] **`CAP-03`**: Custom Baseline (1 human + 1 bot clean differential trace, region/password sweep).
+   - [x] **`CAP-03`**: Custom Baseline (1 human + 1 bot clean differential trace, region/password sweep). (Completed: 21.26 MB pcapng, 53,008 dedicated UDP packets on `20.33.35.9:9113`, paired 247.3 KB `Launch.log`, SHA256 archived).
    - [ ] **`CAP-13`**: Menu/Meta/Economy walkthrough (Loadouts, Store, Quests, Profile).
 2. **Session 2 (Solo + Bots / Custom, ~60 min)**: Execute **`CAP-05`** (Onslaught) -> **`CAP-06`** (TDM) -> **`CAP-07`** (KOTH) -> **`CAP-08`** (Payload) -> **`CAP-09`** (Tutorial/Wave Defense/Arcade) -> **`CAP-11`** (All 24 Custom Mutators).
 3. **Session 3 (Peak EU/NA Public Hours, ~60 min)**: Execute **`CAP-02`** (Casual Siege PvP) -> **`CAP-04`** (Ranked Siege Draft).

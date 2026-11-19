@@ -63,11 +63,11 @@ flowchart TD
 
 ---
 
-## 3. The 6 Strategic Milestones & Chronological Timeline
+## 3. Strategic Milestones & Chronological Timeline
 
 ```mermaid
 timeline
-    title Project Immortal Strategic Development Timeline (Target: 3-Month Standalone Drop-In)
+    title Project Immortal Strategic Development Timeline (Target: 3-Month Standalone Drop-In + Long-Term Ascension)
     Milestone 0 : Cleanroom Tooling & Database : Headless Ghidra Pipeline : 356k Functions Indexed : Complete
     Milestone 1 : MCTS Auth & Lobby Unfreeze : TCP 9000 Gateway : Retail Main Menu Unblocked (Lobby State 2) : Complete
     Milestone 2 : Map Orchestration & Sandbox : 0x15c61937 + ChangeMap 1615 : LoadMap & Bringing World Shootingrange_P (Flight 035) : Complete
@@ -75,6 +75,7 @@ timeline
     Milestone 4 : Retail Captures & Actor Replication : CAP-01 Bot Siege Capture : Opcode 0x2A + Ch 3+ Actor Replication & 3D Render : Active
     Milestone 5 : Combat & Fernando Abilities : Flame Lance, Shield, Fireball, Immortal : Hitbox Authority : Month 2.5
     Milestone 6 : Drop-in Linux Server : Multi-Champion Support : Dedicated Server Packaging : Month 3 (Gold)
+    Milestone 7 : Client Enhancement & Ascension : Meritocratic Progression : Neural Audio Restoration : Post-Gold
 ```
 
 ---
@@ -145,6 +146,28 @@ timeline
   - Match life cycle governance: Map voting, draft phase, round scoring, game over, post-match scoreboard.
   - Headless container packaging (`Dockerfile`, systemd unit files, CLI configuration).
   - Victory Auditor certification and 100% automated test coverage.
+
+#### Milestone 7: Client Enhancement, Meritocratic Progression & Eternal Preservation 🌟
+- **Status**: **LONG-TERM VISION (Post-Drop-in Server / Ascension Phase)**
+- **Objectives**: Elevate Project Immortal beyond dedicated server preservation into an enhanced, completely de-monetized, community-governed master edition of *Paladins: Champions of the Realm*.
+- **Key Deliverables**:
+  - **7.1 100% De-Monetized Meritocratic Progression Architecture**:
+    - **Liberation from Predatory Microtransactions**: Complete eradication of loot chests, battle passes, crystal currencies, and FOMO monetization models.
+    - **100% Cosmetic Catalog Availability**: All 60+ champions, hundreds of skins (Obsidian, Cosmic, Mastery, Event, and Crossover variants), weapon models, mounts, announcer packs, sprays, avatars, loading frames, and titles are unlockable exclusively through in-game gameplay, champion mastery tiers (Levels 1–100+), account prestige, and skill achievements.
+    - **Cleanroom MCTS Inventory Emulation**: Cleanroom emulation of MCTS inventory tokens (`PLAYER_SVC_USER_LOGIN_RESPONSE`, `INVENTORY_ROWSET`, `0x7a4036ab`) driven by a local SQLite progression profile. The client natively unlocks and displays equipment without client binary patching.
+  - **7.2 Neural Audio Restoration & Missing Voice Line Synthesis**:
+    - **The Legacy Audio Void**: Retail client execution reveals persistent `AkAudioDevice` warning logs (`AkEvent: Knight_TR_BehindUs_Play failed to post`) where older champion skins and legacy voice packs lack audio assets for newer VGS commands (e.g. `[VB*]` series: *"Enemies behind us!"*), directed death/taunt reactions, or contextual map pings.
+    - **Zero-Shot / Few-Shot Neural Voice Pipeline**: Utilizing cleanroom-extracted Wwise acoustic datasets (`.wem` / `.bnk` in UPKs) as authentic voice models, generate the missing voice lines matching the exact timbre, resonance, accent, and dramatic cadence of the original voice actors (e.g., Fernando, Cassie, Evie, Mal'Damba).
+    - **Non-Invasive SoundBank Injection**: Package synthesized lines into cleanroom drop-in Wwise SoundBanks (`.bnk` / `.pck`) without touching game executables, delivering 100% complete voice coverage for every champion skin and announcer in the game.
+  - **7.3 Protocol Verification Blind-Test Benchmark Matrix**:
+    - Formal ground-truth validation benchmark against operator photographic match recall from retail capture `CAP-03` (1v1 Fernando vs Bot Evie on Jaguar Falls):
+      - **Blind Test 1 (Fernando Talent Identification)**: Cleanroom bitstream decoder must deterministically infer whether *Scorch* or *Formidable* was selected from actor replication bunches (operator verified *Aegis* was NOT chosen, reflecting modern patch mechanics where shield is resource-metered by default).
+      - **Blind Test 2 (In-Match Economy & Item Upgrades)**: Exact deduction of the 4 item purchases across Round 1 (`t=249s`) and Round 2 (`t=547s`) and their respective credit costs from replication bunches and RPCs.
+      - **Blind Test 3 (Custom Room Parameters & Passwords)**: Deterministic extraction of custom match configuration parameters from MCTS TCP Frame 6240 (`MLS_CustomLobby` creation payload: room password, spectator password, draft style, bot difficulty, region routing).
+  - **7.4 Community Sovereignty & Custom Content**:
+    - Native offline play support and LAN peer discovery.
+    - Community server hosting with custom balance patch definitions, mutator presets, and map rotation governance.
+    - Built-in replay streaming and match analysis integration.
 
 ---
 
