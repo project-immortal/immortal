@@ -139,8 +139,10 @@ timeline
 #### Milestone 6: Combat Authority, World SAT Collision & Retail Oracle 🏆
 - **Status**: **ACTIVE (Current Milestone — Target: Month 2.5–3)**
 - **Objectives**: Implement authoritative combat mechanics for Fernando, extract pure-Rust SAT collision from UPK levels (`ADOPT-01`), deploy the Headless Wine Retail Dedicated Server Oracle (`ADOPT-09`), and implement dual-stage hitboxes (`ADOPT-02`, `ADOPT-03`).
-- **Key Deliverables**:
-  - **ADOPT-09: Headless Wine Dedicated Server Oracle**: Deploy `scripts/dirtyroom/launch_retail_server.sh` wrapping `ShippingPC-ChaosGame.exe server` with headless Wine (`unset DISPLAY`, `-eac-nop-loaded`) for differential bitstream oracle testing in `.dirtyroom/oracle/`.
+- **Phase 1 Completed Deliverables (Verified & Committed)**:
+  - **ADOPT-09: Headless Wine Dedicated Server Oracle**: Deployed `scripts/dirtyroom/launch_retail_server.sh` wrapping `ShippingPC-ChaosGame.exe server` with headless Wine (`unset DISPLAY`, `-eac-nop-loaded`, port 7000). Verified lifecycle controls (`--daemon`, `--status`, `--logs`, `--stop`) and behavior tree initialization.
+  - **UNK-PROP-001 Extraction**: Cleanroom property bitstream extraction implemented in `crates/immortal-net/examples/extract_deck_items.rs`. Grounded Fernando's card deck allocation (Deck ID 16381, Formidable talent `TgDevice_DoubleCharge`, 5 cards / 15 points) and 4 in-game item purchases (Device ID 11059 / `ServerPurchaseItem` RPC) from `CAP-03` under PSL-INV-012. Resolved in `CLEANROOM_LEDGER.md` Claim 19.
+- **Pending Deliverables (Phase 2 & Phase 3)**:
   - **ADOPT-01: Server Physical World Collision Extractor**: Extract `BrushAggGeom.ConvexElems` from cooked UPKs (`sg_jaguarfalls_rework_p.upk`) into `crates/immortal-extract/src/collision.rs` for server-side SAT collision.
   - **Authoritative Combat & Fernando Abilities**:
     - **Flame Lance (Primary Fire)**: Continuous raycast cone, ammo/heat consumption, tick-based burn damage.
@@ -148,8 +150,7 @@ timeline
     - **Fireball (Ability 1)**: Linear projectile spawning, velocity integration, pierced target scaling.
     - **Charge (Ability 2)**: Forward velocity acceleration, collision impact knockup.
     - **Immortal (Ultimate)**: AoE damage immunity aura (pawns cannot drop below 1500 HP), duration timer.
-  - **ADOPT-02 / ADOPT-03: Dual-Stage Hitboxes & SAT Overlap**: Outer bounding cylinder for body hits + inner skeletal head bone raycast for headshots.
-  - **UNK-PROP-001 Extraction**: Cleanroom property bitstream extraction for in-game item purchases and card deck allocations from `CAP-03`.
+  - **ADOPT-02 / ADOPT-03: Dual-Stage Hitboxes & SAT Overlap**: Outer bounding cylinder for body hits + inner skeletal head bone raycast for headshots; rooftop and heavy wall correction.
 
 #### Milestone 7: Client Enhancement, Meritocratic Progression & Eternal Preservation 🌟
 - **Status**: **LONG-TERM VISION (Post-Drop-in Server / Ascension Phase)**
