@@ -38,5 +38,10 @@
     "entrypoint": ".agents/commands/pcap.py",
     "description": "Inspect and decode PCAP/PCAPNG network captures and UE3 datagrams",
     "type": "python"
+  },
+  "oracle": {
+    "entrypoint": ".agents/commands/oracle.py",
+    "description": "Headless Wine retail dedicated server oracle control and live verification",
+    "type": "python"
   }
 }

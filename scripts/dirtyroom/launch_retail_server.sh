@@ -20,8 +20,10 @@ WINE_PREFIX="$ORACLE_DIR/prefix"
 # Defaults
 DEFAULT_MAP="sg_jaguarfalls_rework_p"
 DEFAULT_PORT="7000"
+DEFAULT_MULTIHOME="127.0.0.1"
 MAP="$DEFAULT_MAP"
 PORT="$DEFAULT_PORT"
+MULTIHOME="$DEFAULT_MULTIHOME"
 MODE="foreground" # foreground | daemon | stop | status | logs
 TAIL_LINES=50
 
@@ -65,6 +67,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --port)
             PORT="$2"
+            shift 2
+            ;;
+        --multihome)
+            MULTIHOME="$2"
             shift 2
             ;;
         --daemon)
@@ -301,6 +307,7 @@ do_start() {
         "server"
         "$map_query"
         "-port=$PORT"
+        "-multihome=$MULTIHOME"
         "-seekfreeloadingpcconsole"
         "-pid=402"
         "-eac-nop-loaded"
