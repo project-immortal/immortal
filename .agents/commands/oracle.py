@@ -35,7 +35,7 @@ PID_FILE = ORACLE_DIR / "retail_server.pid"
 LOG_FILE = ORACLE_DIR / "retail_server.log"
 UE3_LAUNCH_LOG = Path(os.path.expanduser("~/Documents/My Games/Tempest/ChaosGame/Logs/Launch.log"))
 
-DEFAULT_MAP = "sg_jaguarfalls_rework_p"
+DEFAULT_MAP = "SG_JaguarFalls_Rework_P"
 DEFAULT_PORT = 7000
 DEFAULT_MULTIHOME = "127.0.0.1"
 
@@ -117,10 +117,23 @@ def cmd_status(args: argparse.Namespace) -> int:
         mem_str = f"{rss:.1f} MB" if rss else "N/A"
         print(f"State:            RUNNING (PID: {pid})")
         print(f"Memory RSS:       {mem_str}")
-        if is_udp_port_bound(port):
-            print(f"UDP Port {port}:     LISTENING (bound to network)")
+
+        candidate_ports = [port]
+        for p in [7777, 7778]:
+            if p not in candidate_ports:
+                candidate_ports.append(p)
+
+        bound_port = None
+        for p in candidate_ports:
+            if is_udp_port_bound(p):
+                bound_port = p
+                break
+
+        if bound_port is not None:
+            print(f"UDP Port {bound_port}:     LISTENING (bound to network)")
         else:
-            print(f"UDP Port {port}:     INITIALIZING (UE3 engine load phase)")
+            ports_desc = f"{port}" if port in (7777, 7778) else f"{port}/7777/7778"
+            print(f"UDP Port {ports_desc}: INITIALIZING (UE3 engine load phase)")
         return 0
     else:
         if PID_FILE.is_file():
@@ -246,21 +259,26 @@ def cmd_start(args: argparse.Namespace) -> int:
     # Environment configuration
     env = os.environ.copy()
     env.update(runner_env)
-    env.pop("DISPLAY", None)
-    env.pop("WAYLAND_DISPLAY", None)
+    # Ensure DISPLAY is available for D3D viewport initialization
+    if not env.get("DISPLAY"):
+        if os.environ.get("DISPLAY"):
+            env["DISPLAY"] = os.environ["DISPLAY"]
+        elif os.path.exists("/tmp/.X11-unix/X0"):
+            env["DISPLAY"] = ":0"
+        elif os.path.exists("/tmp/.X11-unix/X1"):
+            env["DISPLAY"] = ":1"
 
     map_name = getattr(args, "map", None) or DEFAULT_MAP
     port = getattr(args, "port", None) or DEFAULT_PORT
     multihome = getattr(args, "multihome", None) or DEFAULT_MULTIHOME
     is_daemon = getattr(args, "daemon", True)
 
-    map_query = f"{map_name}?game=TgGame.TgGame_Paladins?maxplayers=2"
+    map_query = f"{map_name}?listen?game=TgGame.TgGame_Paladins?maxplayers=2"
     server_args = (
         [runner_bin]
         + runner_prefix_args
         + [
             str(target_bin),
-            "server",
             map_query,
             f"-port={port}",
             f"-multihome={multihome}",
@@ -377,16 +395,24 @@ def cmd_test(args: argparse.Namespace) -> int:
         print("[!] Test failed: PID not recorded or process exited immediately.", file=sys.stderr)
         return 1
 
-    print(f"[*] Server active (PID: {pid}). Monitoring initialization for {timeout}s...")
-    bound = False
+    candidate_ports = [port]
+    for p in [7777, 7778]:
+        if p not in candidate_ports:
+            candidate_ports.append(p)
+
+    print(f"[*] Server active (PID: {pid}). Monitoring initialization for {timeout}s (ports {candidate_ports})...")
+    bound_port = None
     start_time = time.time()
     while time.time() - start_time < timeout:
         if not pid_is_running(pid):
             print(f"[*] Process {pid} completed or exited after {time.time() - start_time:.1f}s.")
             break
-        if is_udp_port_bound(port):
-            print(f"[✓] SUCCESS: UDP port {port} bound and listening after {time.time() - start_time:.1f}s!")
-            bound = True
+        for p in candidate_ports:
+            if is_udp_port_bound(p):
+                print(f"[✓] SUCCESS: UDP port {p} bound and listening after {time.time() - start_time:.1f}s!")
+                bound_port = p
+                break
+        if bound_port is not None:
             break
         time.sleep(1.0)
 
@@ -395,7 +421,14 @@ def cmd_test(args: argparse.Namespace) -> int:
     if UE3_LAUNCH_LOG.is_file():
         try:
             log_text = UE3_LAUNCH_LOG.read_text(errors="replace")
-            for milestone in ["WinSock:", "Executing Class Engine.ServerCommandlet", "Initializing Game Engine", "Browse:", "LoadMap:"]:
+            for milestone in [
+                "WinSock:",
+                "Assembly load completed",
+                "Initializing Game Engine",
+                "Browse:",
+                "LoadMap:",
+                "[FSocketWin::Bind]",
+            ]:
                 found = milestone in log_text
                 print(f"    - Milestone '{milestone}': {'FOUND' if found else 'NOT REACHED'}")
         except Exception as e:

@@ -18,7 +18,7 @@ LOG_FILE="$ORACLE_DIR/retail_server.log"
 WINE_PREFIX="$ORACLE_DIR/prefix"
 
 # Defaults
-DEFAULT_MAP="sg_jaguarfalls_rework_p"
+DEFAULT_MAP="SG_JaguarFalls_Rework_P"
 DEFAULT_PORT="7000"
 DEFAULT_MULTIHOME="127.0.0.1"
 MAP="$DEFAULT_MAP"
@@ -171,11 +171,19 @@ do_status() {
         mem=$(ps -o rss= -p "$pid" 2>/dev/null | awk '{printf "%.1f MB", $1/1024}' || echo "N/A")
         echo "Memory RSS:       $mem"
 
-        # Check UDP listener on configured port
-        if ss -ulnp 2>/dev/null | grep -q ":$PORT "; then
-            echo "UDP Port $PORT:     LISTENING (bound to network)"
+        # Check UDP listener on configured port and standard UE3 listen ports
+        local bound_port=""
+        for p in "$PORT" 7777 7778; do
+            if ss -ulnp 2>/dev/null | grep -q ":$p "; then
+                bound_port="$p"
+                break
+            fi
+        done
+
+        if [[ -n "$bound_port" ]]; then
+            echo "UDP Port $bound_port:     LISTENING (bound to network)"
         else
-            echo "UDP Port $PORT:     INITIALIZING (UE3 engine load phase)"
+            echo "UDP Port $PORT (7777/7778): INITIALIZING (UE3 engine load phase)"
         fi
         return 0
     else
@@ -298,13 +306,18 @@ do_start() {
     export WINEDLLOVERRIDES="mscoree,mshtml="
     export WINEDEBUG="-all"
     export OPENSSL_ia32cap="~0x20000000"
-    unset DISPLAY
-    unset WAYLAND_DISPLAY
+    # Display configuration for D3D viewport initialization
+    if [[ -z "${DISPLAY:-}" ]]; then
+        if [[ -S /tmp/.X11-unix/X0 ]]; then
+            export DISPLAY=":0"
+        elif [[ -S /tmp/.X11-unix/X1 ]]; then
+            export DISPLAY=":1"
+        fi
+    fi
 
     # Assemble server arguments per ADOPT-09 specification
-    local map_query="${MAP}?game=TgGame.TgGame_Paladins?maxplayers=2"
+    local map_query="${MAP}?listen?game=TgGame.TgGame_Paladins?maxplayers=2"
     local server_args=(
-        "server"
         "$map_query"
         "-port=$PORT"
         "-multihome=$MULTIHOME"
