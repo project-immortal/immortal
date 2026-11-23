@@ -3,7 +3,8 @@ name = "immortal-server"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license = "AGPL-3.0"
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
 immortal-core = { path = "../immortal-core" }

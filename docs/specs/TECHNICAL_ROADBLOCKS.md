@@ -53,16 +53,20 @@ Paladins' user interface is powered by Autodesk Scaleform GFx (Flash/ActionScrip
 
 ---
 
-## 4. UE3 Map Travel Handshake (`NMT_Hello` → `NMT_Welcome`) & `UNK-UDP-001`
+## 4. UE3 Map Travel Handshake (`NMT_Hello` → `NMT_Welcome`) & `UNK-UDP-001` (Resolved)
 
 ### The Challenge
-When transitioning from the 2D/Gazebo UI into the 3D map (`Shootingrange_P`), the gateway first emits `0x15c61937` (`MAP_INSTANCE_ASSIGNED` with Table `1583`), `LaunchMapInstance` (`0x4bee2ed8`), and `ChangeMap` (`0x847de68b`). Flight 033 verified `Match composition cached [96E3D70]`, `ReceiveChangeMap: mapGameId 1615`, and live client UDP `7777` datagram arrival, but `BROWSE_RANGE` / `NMT_Welcome` is currently blocked by **`UNK-UDP-001`**:
-- Live client datagrams on UDP `7777` carry non-zero header bytes in `data[1..6]` (e.g., `[00, 8a, ce, 31, c6, f6, 00, 80, ...]`) instead of `[0; 5]`, so `immortal-server` currently drops/skips them before dispatching `NMT_Welcome`.
+When transitioning from the 2D/Gazebo UI into the 3D map (`Shootingrange_P`), the gateway first emits `0x15c61937` (`MAP_INSTANCE_ASSIGNED` with Table `1583`), `LaunchMapInstance` (`0x4bee2ed8`), and `ChangeMap` (`0x847de68b`). Flight 033 verified `Match composition cached [96E3D70]`, `ReceiveChangeMap: mapGameId 1615`, and live client UDP `7777` datagram arrival, where initial datagrams carried non-zero header bytes in `data[1..6]` (`UNK-UDP-001`):
+- Live client datagrams on UDP `7777` carry non-zero header bytes in `data[1..6]` (e.g., `[00, 8a, ce, 31, c6, f6, 00, 80, ...]`) instead of `[0; 5]`.
 - The client sends `NMT_Hello` on Control Channel 0 with client version (`8.1.5839.0`).
-- The server must validate `data[1..6]` framing, reply with `NMT_Challenge` / `NMT_Welcome` specifying the level URL (`Shootingrange_P?...&Team=0`), and open Actor Channel 2.
+- The server must validate `data[1..6]` framing, reply with `NMT_Challenge` / `NMT_Welcome` specifying the level URL (`Shootingrange_P?...&Team=0`), and open Actor Channel 2+.
 
-### De-risking Invariant & Strategy (`OBL-NET-005`, `UNK-UDP-001`)
-Any header framing or control message mismatch causes the client to fall back to `DevNet: Browse: 0.0.0.0:7777/LobbyMapV4_P?...`. Both `0x15c61937` / `0x07FE` MCTS framing (`crates/immortal-net`) and the UDP handshake (`crates/immortal-server/src/game_server.rs`) are covered by hermetic unit and integration suites (`cargo test --workspace`).
+### De-risking Invariant & Resolution (`OBL-NET-005`, `UNK-UDP-001` — Closed)
+**Status: Resolved (Claim 15 & Claim 16 in Flight 034/035).**
+- REA disassembly of `UPComNetConn::ReceivedRawPacket` (`0x140bc8770`) confirmed that `ShippingPC-ChaosGame.exe` unconditionally strips the 6-byte `PComNetConn` outer prefix.
+- Echoing the client's 6-byte `pcom_prefix` (`[0x00, token[0..5]]`) satisfies prefix-echo symmetry.
+- The inner bitstream is governed by LSB-first UE3 bunch framing terminated by a single stop-bit.
+- Full 7-stage handshake completes to `NMT_Welcome` in `24 ms` (`crates/immortal-server/src/game_server.rs`). Covered by hermetic unit and loopback integration suites (`cargo test --workspace`).
 
 ---
 
