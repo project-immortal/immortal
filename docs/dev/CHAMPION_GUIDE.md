@@ -66,8 +66,9 @@ Champion character textures (diffuse, normal, specular, mask maps) are rarely st
 
 ```text
 ChaosGame/CookedPCConsole/CharNormals0.tfc
-ChaosGame/CookedPCConsole/Char_Textures.tfc
-ChaosGame/CookedPCConsole/Textures.tfc
+ChaosGame/CookedPCConsole/CharTextures0.tfc
+ChaosGame/CookedPCConsole/Lighting0.tfc
+ChaosGame/CookedPCConsole/Textures0.tfc
 ```
 
 #### Resolving Mipmaps
@@ -77,15 +78,16 @@ When inspecting a `UTexture2D` object in the package:
 3. Check the bulk data flags:
    - `BULKDATA_StoreInSeparateFile`: The texture data resides in the external `.tfc` container referenced by filename.
    - `BULKDATA_CompressedLZO` / `BULKDATA_CompressedZLIB`: Payload chunk must be decompressed before saving.
-4. Extract the top mip level to standard PNG/DDS format using `immortal-extract`.
+4. Extract the top mip level to standard `.dds` format using `immortal-extract`.
 
-### 2. Audio Bank Preservation (Wwise & FSB)
+### 2. Audio Bank Preservation (Wwise `.pck` / `.bnk` / `.wem`)
 
-Sound assets for champion voice lines, weapon fire effects, and ultimate abilities are packaged as Audiokinetic Wwise soundbanks (`.pck`, `.wem`) and FMOD soundbanks (`.bank`):
+Sound assets for champion voice lines, weapon fire effects, and ultimate abilities are packaged exclusively as Audiokinetic Wwise containers (`AKPK` v1 `.pck` archives containing `BKHD` v120 soundbanks and `0xFFFF` Wwise Vorbis `.wem` streams — there are no FMOD `.bank` files):
 
 ```text
-ChaosGame/CookedPCConsole/Wwise_SoundBank_Default.pck
-ChaosGame/CookedPCConsole/<CHAMPION>_VOICE.pck
+ChaosGame/CookedPCConsole/Init.pck
+ChaosGame/CookedPCConsole/WWB_PC_Knight.pck
+ChaosGame/CookedPCConsole/WWB_ENV_Abyss.pck
 ```
 
 #### Audio Extraction Pipeline
@@ -165,11 +167,11 @@ cargo test -p immortal-core
 
 ## 4. Network Bunch Handling & Replication
 
-When emulating matches in `immortal-server` and `immortal-net`, each champion actor replicates state to clients over Channel 2+:
+When emulating matches in `immortal-server` and `immortal-net`, each champion actor replicates state to clients over Actor Channel 3+ (`CHTYPE_Actor = 2`, `ChIndex >= 3`):
 
 ```text
 +------------------------------------------------------------------------+
-| UNetConnection Channel 2 (Actor Channel)                               |
+| UNetConnection Channel 3+ (Actor Channel, CHTYPE_Actor = 2)            |
 |  - Actor: TgPawn_<CHAMPION> (Spawned with NetGUID)                     |
 |  - Bunch Flags: BUNCH_Open | BUNCH_Reliable                            |
 +------------------------------------------------------------------------+
@@ -186,14 +188,15 @@ When emulating matches in `immortal-server` and `immortal-net`, each champion ac
 ## 5. Tool-Native Reverse Engineering Reminder
 
 > [!CAUTION]
-> **No Throwaway Python Scripts**: Inspecting package export tables, name tables, and property offsets must always be performed using the native `rea` CLI tool or the official `immortal-extract` utility. Never author ad-hoc Python scrapers, which risk copyright contamination and data drift.
+> **No Throwaway Python Scripts**: Inspecting package export tables, name tables, and property offsets must always be performed using `immortal-extract` or the native `agyis re` CLI (`agyis re find`, `agyis re decompile`). Never author ad-hoc Python scrapers, which risk copyright contamination and data drift.
 
 ```bash
-# Analyze champion package structure natively with REA
-rea analyze "$PALADINS_INSTALL_PATH/ChaosGame/CookedPCConsole/VIKTOR_ASSETS_SF.upk"
+# Inspect indexed symbols, strings, and RTTI natively via agyis re
+./agyis re status
+./agyis re find "TgPawn_" --type rtti
 
-# Search for pawn export definitions
-rea search --pattern "TgPawn_" "$PALADINS_INSTALL_PATH/ChaosGame/CookedPCConsole/VIKTOR_ASSETS_SF.upk"
+# Run immortal-extract tests and inspection examples
+cargo test -p immortal-extract
 ```
 
 ---
@@ -203,8 +206,8 @@ rea search --pattern "TgPawn_" "$PALADINS_INSTALL_PATH/ChaosGame/CookedPCConsole
 Before submitting a champion integration PR, ensure every step is checked:
 
 - [ ] **Asset Discovery**: Verified UPK and TFC locations in legally acquired client.
-- [ ] **Native REA Inspection**: Export table inspected natively; findings recorded.
-- [ ] **Obligations Ledger**: New claim recorded in `.agents/ledger/obligations.json`.
+- [ ] **Native Inspection**: Export table / symbols inspected cleanly; findings recorded.
+- [ ] **Obligations Ledger**: New claim recorded in `.agents/ledger/obligation_ledger.json` (and `CLEANROOM_LEDGER.md`).
 - [ ] **Core Registration**: `ChampionId` enum and helper methods updated in `immortal-core`.
 - [ ] **Sub-Second Tests**: `cargo test --workspace` passes hermetically in <0.5s.
 - [ ] **Cleanroom Verification**: `agyis verify` passes with exit code 0.

@@ -1,0 +1,1 @@
+{{#include ../../reports/FLIGHT036_STATIC_RECONNAISSANCE_REPORT.md}}

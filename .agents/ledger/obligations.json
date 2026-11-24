@@ -2,64 +2,218 @@
   {
     "id": "OBL-G1-001",
     "subject": "upk_package_header",
-    "claim": "CookedPCConsole packages start with magic 0x9E2A83C1 and specify file version 860+",
-    "evidence_criteria": "Inspection of ChaosGame/CookedPCConsole package binary headers",
+    "claim": "CookedPCConsole packages start with magic 0x9E2A83C1 and specify UE3 file version v893",
+    "evidence_criteria": "Inspection of ChaosGame/CookedPCConsole package binary headers (EV-UPK-001..005)",
     "status": "satisfied"
   },
   {
     "id": "OBL-G1-002",
-    "subject": "lzo_chunk_compression",
-    "claim": "Packages with PKG_Compressed flag use LZO chunked compression with uncompressed/compressed chunk tables",
+    "subject": "lzo_zlib_chunk_compression",
+    "claim": "Packages with PKG_Compressed (0x02000000) use LZO/Zlib chunked compression tables",
     "evidence_criteria": "Inspection of package compression chunk headers in CookedPCConsole",
     "status": "satisfied"
   },
   {
-    "id": "OBL-G2-001",
-    "subject": "ue3_network_magic",
-    "claim": "Multiplayer UDP connection follows UE3 bit-packed bunch framing over Channel 0 (Control) and Channel 2+ (Actor)",
-    "evidence_criteria": "Packet traces and UNetConnection protocol specification",
-    "status": "satisfied"
-  },
-  {
-    "id": "OBL-G2-002",
+    "id": "OBL-MCTS-001",
     "subject": "mcts_tcp_framing",
-    "claim": "MCTS TCP Gateway framing uses 16-bit magic tokens 0xCBB0 (Zlib compressed) and 0xCBBC (uncompressed) with 16-bit payload length",
-    "evidence_criteria": "REA / Ghidra decompilation of CPackCoder::Decode (0x18002c570, evidence ev_e5b26e8ebfe414ea3b3e755432cd178aa7ea4f1ed4db59342a86383e8c7293fe)",
+    "claim": "MCTS TCP Gateway framing uses 4-byte little-endian headers validated on golden_mcts_stream.bin",
+    "evidence_criteria": "golden_conformance_test.rs + EV-BIN-001",
     "status": "satisfied"
   },
   {
-    "id": "OBL-G2-003",
-    "subject": "client_cli_overrides",
-    "claim": "Paladins ShippingPC-ChaosGame.exe supports native CLI redirection flags (-host=, -tcp=, -servicediscoveryhost=, -dumpallmar) for local backend testing",
-    "evidence_criteria": "String inspection and binary analysis of ShippingPC-ChaosGame.exe at offset 51257616-51258128",
+    "id": "OBL-MCTS-002",
+    "subject": "mcts_rpc_fnv1_dispatch",
+    "claim": "Incoming MCTS marshal payloads dispatch 32-bit FNV-1 function hashes (H0=0x811c9dc5, prime=0x01000193)",
+    "evidence_criteria": "EV-BIN-001 + mcts_handshake.rs verified hashes; generic marshal.rs engine pending (ADOPT-10/11)",
+    "status": "in_progress"
+  },
+  {
+    "id": "OBL-MCTS-003",
+    "subject": "mcts_two_step_handshake",
+    "claim": "Two-step MCTS TCP 9000 handshake framing (405->433, 1117->21+75)",
+    "evidence_criteria": "EV-BIN-002 + Flight 035 live client login",
     "status": "satisfied"
   },
   {
-    "id": "OBL-G2-004",
-    "subject": "cpack_udp_wire_framing",
-    "claim": "CPackUdp on port 7777 uses a 570-byte minimum datagram for HelloSend with Function ID 0 at offset +0x5a, SHA-256 HMAC over 524 bytes at +0x26a, and negotiated MTU 1414 bytes",
-    "evidence_criteria": "REA / Ghidra decompilation of CPackUdpDrv::DoHello (0x18004c3f0, evidence ev_017e402eacb02b101262b026e37b90a439af662833dcc9731d177b65b682126c) and CPackUdpConn::SendGame (0x18004d7f0, evidence ev_1c0913d8b91d3250ae6fd4cf05d10c79374115f36a654d8192a0cbc4c904a847)",
+    "id": "OBL-MCTS-004",
+    "subject": "mcts_on_login_response_and_4cache_batching",
+    "claim": "OnLoginResponse (0x7a4036ab) unblocks LOBBY_STATE_2; generic CMarshal 4-cache integer batching engine (ADOPT-10) tracked for marshal.rs upgrade",
+    "evidence_criteria": "EV-BIN-001 + Flight 035 live lobby unfreeze (OnLoginResponse); ADOPT-10 generic engine pending",
+    "status": "partial"
+  },
+  {
+    "id": "OBL-MCTS-005",
+    "subject": "mcts_launch_map_and_token_table",
+    "claim": "LaunchMapInstance (0x4bee2ed8) + Table 312 Token 838/LocalNetId binding verified; full 1,084-fn / 3,731-field typed enum (ADOPT-11) pending",
+    "evidence_criteria": "EV-BIN-001 + EV-BIN-002 + Flight 035",
+    "status": "partial"
+  },
+  {
+    "id": "OBL-MCTS-006",
+    "subject": "mcts_queue_status_table242",
+    "claim": "QUEUE_STATUS (0x2cdbafe1) Table 242 drives QueueState lifecycle",
+    "evidence_criteria": "EV-BIN-001 + EV-BIN-002 + Flight 035",
     "status": "satisfied"
   },
   {
-    "id": "OBL-G2-005",
-    "subject": "ue3_shootingrange_handshake",
-    "claim": "Client connects to Level URL ShootingRange?game=ChaosGame.ChaosGameInfo over Channel 0 NMT_Welcome (0x01) and opens Actor Channel 2 for PlayerController",
-    "evidence_criteria": "Decompilation of ShippingPC-ChaosGame.exe UControlChannel::ReceivedBunch and string references at 0x18033a170-0x18033a310",
+    "id": "OBL-MCTS-007",
+    "subject": "mcts_query_servers_catalog",
+    "claim": "MCTS_FUNCTION_ID_QUERY_SERVERS (0xaf434825) primes CMctsQueue map prior to QUEUE_STATUS",
+    "evidence_criteria": "EV-BIN-002 + Flight 035",
     "status": "satisfied"
   },
   {
-    "id": "OBL-G2-006",
-    "subject": "mcts_map_instance_assigned",
-    "claim": "Function ID 0x15c61937 (MAP_INSTANCE_ASSIGNED) supplies Tokens 682/588/685, Table 1583 (DATA_SET_MATCH_COMPOSITION), and Token 2287 (PORTAL_SESSION_ID) while omitting bail-out tokens 1116/2838/2637 to cache match composition and trigger ReceiveChangeMap: mapGameId 1615",
-    "evidence_criteria": "Static-linked MCTS SDK inspection in ShippingPC-ChaosGame.exe, Flight 033 client logs (Match composition cached [96E3D70], ReceiveChangeMap: mapGameId 1615), and immortal-net integration tests",
+    "id": "OBL-MCTS-008",
+    "subject": "mcts_change_map_rpc",
+    "claim": "ChangeMap (0x847de68b) with Token 1536=1, Token 682=1615 commits map travel",
+    "evidence_criteria": "EV-BIN-001 + EV-BIN-002 + Flight 035",
     "status": "satisfied"
   },
   {
-    "id": "OBL-G2-007",
+    "id": "OBL-MCTS-009",
+    "subject": "gazebo_queuestate7_launch_gate",
+    "claim": "UTgMatchLobby->QueueState == 7 or 9 required at 0x140d39f1b for ReceiveChangeMap",
+    "evidence_criteria": "EV-BIN-001 + Flight 035",
+    "status": "satisfied"
+  },
+  {
+    "id": "OBL-MCTS-010",
+    "subject": "mcts_map_instance_assigned_table1583",
+    "claim": "MAP_INSTANCE_ASSIGNED (0x15c61937) + Table 1583 + bail-out exclusions trigger ReceiveChangeMap",
+    "evidence_criteria": "EV-BIN-001 + Flight 033/035",
+    "status": "satisfied"
+  },
+  {
+    "id": "OBL-MCTS-011",
     "subject": "mcts_tcp_0x07fe_chunk_framing",
-    "claim": "Post-login MCTS TCP headers with field0 == 0 (e.g., [00, 00, 08, 01]) encode a full 0x07FE (2046-byte) payload chunk rather than an empty frame",
-    "evidence_criteria": "Flight 032/033 live MCTS TCP stream captures and immortal-net post-login framing tests",
+    "claim": "Post-login MCTS TCP headers with field0 == 0 encode a 0x07FE (2046-byte) payload chunk",
+    "evidence_criteria": "Flight 032/033 live MCTS TCP stream + gateway.rs tests",
     "status": "satisfied"
+  },
+  {
+    "id": "OBL-MAP-001",
+    "subject": "shooting_range_map_game_id",
+    "claim": "Shootingrange_P maps to mapGameId 1615 and Team=0 safe pavilion spawn",
+    "evidence_criteria": "EV-LOG-005 + EV-BIN-001",
+    "status": "satisfied"
+  },
+  {
+    "id": "OBL-UDP-001",
+    "subject": "pcom_6byte_outer_prefix",
+    "claim": "Standalone UDP 7777 datagrams strip 6-byte PComNetConn outer prefix at 0x140bc8770",
+    "evidence_criteria": "EV-BIN-001 + Flight 034/035 live client captures",
+    "status": "satisfied"
+  },
+  {
+    "id": "OBL-UDP-002",
+    "subject": "ue3_bitpacked_handshake_7stage",
+    "claim": "LSB-first UE3 FInBunch/Ue3Packet codec and 7-stage Control Channel 0 handshake -> NMT_Welcome",
+    "evidence_criteria": "EV-BIN-001 + Flight 034 Packets 0..2 + Flight 035 24ms handshake",
+    "status": "satisfied"
+  },
+  {
+    "id": "OBL-UDP-005",
+    "subject": "pcom_exudp_max_packet_bits",
+    "claim": "MaxPacket=0x240 (4608 bits) for standard UDP and 0x1F0 (3968 bits) for ?exudp>=1",
+    "evidence_criteria": "EV-BIN-001 (0x140d4d700, 0x140bba970) + Flight 034 Packet 0",
+    "status": "satisfied"
+  },
+  {
+    "id": "OBL-UDP-003",
+    "subject": "dedicated_10byte_prefix_and_marshal_channel",
+    "claim": "Dedicated ?exudp=2 10-byte outer framing and 0x0010 handshake sizes verified; 0x2A & UMarshalChannel unverified on encrypted CAP-01/CAP-03",
+    "evidence_criteria": "EV-NET-003 + EV-NET-005 + EV-LOG-004 + EV-BIN-001",
+    "status": "partial"
+  },
+  {
+    "id": "OBL-UDP-004",
+    "subject": "actor_channel_bitpacked_replication",
+    "claim": "Post-NMT_Join UActorChannel (ChIndex>=3) bit-packed replication for TgPlayerController and TgPawn_Fernando",
+    "evidence_criteria": "Retracted prior false claim; requires unencrypted Flight 036 / Oracle captures or UNK-CRYPTO-001 break",
+    "status": "open"
+  },
+  {
+    "id": "OBL-PROP-001",
+    "subject": "loadout_and_item_purchase_bunch_decoding",
+    "claim": "Bit-level extraction of m_CardDeck and ServerPurchaseItem from UDP bunches",
+    "evidence_criteria": "Retracted prior false claim (extract_deck_items.rs is log-correlation only over encrypted frames)",
+    "status": "open"
+  },
+  {
+    "id": "UNK-CRYPTO-001",
+    "subject": "exudp2_sequenced_payload_cipher",
+    "claim": "Reverse ?exudp=2 UDP sequenced (0x0001) payload cipher/obfuscation (~7.55 bits/byte entropy in CAP-01/CAP-03)",
+    "evidence_criteria": "EV-NET-003 + EV-NET-005 + EV-BIN-001 (0x140bc8770, 0x140d504d0)",
+    "status": "open"
+  },
+  {
+    "id": "OBL-COL-001",
+    "subject": "adopt_01_sat_collision_extractor",
+    "claim": "Cleanroom UPK FPropertyTag + UBrushComponent/URB_BodySetup ConvexHull SAT collision extractor",
+    "evidence_criteria": "EV-UPK-003..005 + cargo test -p immortal-extract (45 unit + 12 integration incl. 413 real UPK hulls passing validate_closure(0.1))",
+    "status": "satisfied"
+  },
+  {
+    "id": "OBL-COMBAT-001",
+    "subject": "adopt_02_dual_stage_hitboxes",
+    "claim": "Dual-stage cylinder + skeletal b_head sphere headshot model & Fernando kit math",
+    "evidence_criteria": "cargo test -p immortal-server (combat.rs unit tests passing)",
+    "status": "satisfied"
+  },
+  {
+    "id": "OBL-PHYS-001",
+    "subject": "adopt_03_rooftop_heavy_wall_physics",
+    "claim": "m_bCanBaseOn cos(45 deg) angle invariant preventing vertical heavy-wall stickiness",
+    "evidence_criteria": "cargo test -p immortal-server (physics.rs unit tests passing)",
+    "status": "satisfied"
+  },
+  {
+    "id": "OBL-NAV-001",
+    "subject": "adopt_04_havok_navmesh_astar",
+    "claim": "Havok AI 2016.1 TAG0 NavMesh parser (x16.0 scale) and A* pathfinder",
+    "evidence_criteria": "EV-UPK-002, EV-UPK-004, EV-UPK-005",
+    "status": "planned"
+  },
+  {
+    "id": "OBL-AUDIO-001",
+    "subject": "adopt_05_wwise_vorbis_soundbank",
+    "claim": "Pure-Rust Wwise Vorbis (0xFFFF) decoder/encoder and BKHD/AKPK builder",
+    "evidence_criteria": "CookedPCConsole/*.pck",
+    "status": "planned"
+  },
+  {
+    "id": "OBL-HOOK-001",
+    "subject": "adopt_06_sha1_detour",
+    "claim": "Package SHA-1 verification detour for research UPK loading",
+    "evidence_criteria": "EV-BIN-001",
+    "status": "planned"
+  },
+  {
+    "id": "OBL-HOOK-002",
+    "subject": "adopt_07_tls_xor_decryption",
+    "claim": "Dynamic TAntiCheatArray TLS XOR key discovery for live inspection",
+    "evidence_criteria": "EV-BIN-001",
+    "status": "planned"
+  },
+  {
+    "id": "OBL-INJECT-001",
+    "subject": "adopt_08_zig_injector",
+    "claim": "Minimalist statically-linked research DLL injector",
+    "evidence_criteria": "tools/immortal-inject",
+    "status": "planned"
+  },
+  {
+    "id": "OBL-ORACLE-001",
+    "subject": "adopt_09_headless_wine_retail_oracle",
+    "claim": "Headless Wine retail dedicated server oracle (ShippingPC-ChaosGame-Server.exe)",
+    "evidence_criteria": "EV-BIN-001 + agyis oracle test (SG_JaguarFalls_Rework_P & Shootingrange_P 6/6 milestones, UDP 127.0.0.1:7000 bound)",
+    "status": "satisfied"
+  },
+  {
+    "id": "OBL-UPK-002",
+    "subject": "adopt_12_differential_upk_patching",
+    "claim": "Object-keyed differential package patching (.tdelta/.tobj)",
+    "evidence_criteria": "crates/immortal-extract",
+    "status": "planned"
   }
 ]

@@ -1,6 +1,6 @@
 {
   "status": "verified",
-  "evidence_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "evidence_hash": "af2a6776a08b8adb36b3ce53a4c24f0b230f600123926b2bb9f75b3f948f005e",
   "obligations": [
     {
       "id": "OBL-G1-001",
@@ -11,32 +11,122 @@
       "status": "satisfied"
     },
     {
-      "id": "OBL-G2-001",
+      "id": "OBL-MCTS-001",
       "status": "satisfied"
     },
     {
-      "id": "OBL-G2-002",
+      "id": "OBL-MCTS-003",
       "status": "satisfied"
     },
     {
-      "id": "OBL-G2-003",
+      "id": "OBL-MCTS-006",
       "status": "satisfied"
     },
     {
-      "id": "OBL-G2-004",
+      "id": "OBL-MCTS-007",
       "status": "satisfied"
     },
     {
-      "id": "OBL-G2-005",
+      "id": "OBL-MCTS-008",
       "status": "satisfied"
     },
     {
-      "id": "OBL-G2-006",
+      "id": "OBL-MCTS-009",
       "status": "satisfied"
     },
     {
-      "id": "OBL-G2-007",
+      "id": "OBL-MCTS-010",
       "status": "satisfied"
+    },
+    {
+      "id": "OBL-MCTS-011",
+      "status": "satisfied"
+    },
+    {
+      "id": "OBL-MAP-001",
+      "status": "satisfied"
+    },
+    {
+      "id": "OBL-UDP-001",
+      "status": "satisfied"
+    },
+    {
+      "id": "OBL-UDP-002",
+      "status": "satisfied"
+    },
+    {
+      "id": "OBL-UDP-005",
+      "status": "satisfied"
+    },
+    {
+      "id": "OBL-COL-001",
+      "status": "satisfied"
+    },
+    {
+      "id": "OBL-COMBAT-001",
+      "status": "satisfied"
+    },
+    {
+      "id": "OBL-PHYS-001",
+      "status": "satisfied"
+    },
+    {
+      "id": "OBL-ORACLE-001",
+      "status": "satisfied"
+    }
+  ],
+  "open_obligations": [
+    {
+      "id": "OBL-MCTS-002",
+      "status": "in_progress"
+    },
+    {
+      "id": "OBL-MCTS-004",
+      "status": "partial"
+    },
+    {
+      "id": "OBL-MCTS-005",
+      "status": "partial"
+    },
+    {
+      "id": "OBL-UDP-003",
+      "status": "partial"
+    },
+    {
+      "id": "OBL-UDP-004",
+      "status": "open"
+    },
+    {
+      "id": "OBL-PROP-001",
+      "status": "open"
+    },
+    {
+      "id": "UNK-CRYPTO-001",
+      "status": "open"
+    },
+    {
+      "id": "OBL-NAV-001",
+      "status": "planned"
+    },
+    {
+      "id": "OBL-AUDIO-001",
+      "status": "planned"
+    },
+    {
+      "id": "OBL-HOOK-001",
+      "status": "planned"
+    },
+    {
+      "id": "OBL-HOOK-002",
+      "status": "planned"
+    },
+    {
+      "id": "OBL-INJECT-001",
+      "status": "planned"
+    },
+    {
+      "id": "OBL-UPK-002",
+      "status": "planned"
     }
   ]
 }

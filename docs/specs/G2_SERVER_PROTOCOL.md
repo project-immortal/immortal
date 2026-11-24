@@ -245,6 +245,7 @@ When local travel URLs or authoritative pawn spawn options specify a `Team` para
 | `Team=1` | **Chaos** (Enemy Bot Team) | **Bot Lanes**: Used for dummy bot targets in the practice shooting lanes. |
 | `Team=255` | **Spectator / Neutral** | **Hazard**: Spawns inside or immediately activates the spawn pavilion kill volume (`KillerPawn`), causing immediate pawn death upon spawn. |
 
-**Post-`NMT_Join` Actor Channel Boundary (`UNK-UDP-004`)**:
+**Post-`NMT_Join` Actor Channel & `?exudp=2` Boundaries (`UNK-UDP-004`, `UNK-CRYPTO-001`)**:
 - Engine channel assignments (`UNetConnection::CreateChannel`, `0x140b25e90`): `Ch0 = Control (CHTYPE_Control = 1)`, `Ch1 = Marshal (CHTYPE_Marshal = 5)`, `Ch2 = Voice (CHTYPE_Voice = 4)`, `Ch3+ = Actor (CHTYPE_Actor = 2, ACTOR_CHANNEL_INDEX = 3)`.
-- Upon receiving `NMT_Join (0x09)`, `immortal-server` enters `SessionPhase::Replicating` and cleanly holds Actor Channel 3 bit-packed traffic until `UNK-UDP-004` completes REA verification of `UActorChannel::ReceivedBunch` for `TgPawn_Fernando` (`ChampionId::Fernando = 1026`).
+- On `NMT_MapLoaded (0x2A)`, the server records `map_loaded` without queuing actor bunches; upon receiving `NMT_Join (0x09)`, `immortal-server` enters `SessionPhase::Replicating` (currently holding / simulated prototype only until `UNK-UDP-004` completes bit-exact `UActorChannel` `PackageMap` / `FClassNetCache` serialization from unencrypted Flight 036 / Oracle captures).
+- On dedicated retail servers (`?exudp=2`), sequenced `0x0001` datagrams from Seq 1 onward carry encrypted/obfuscated payloads (`UNK-CRYPTO-001`, ~7.55 bits/byte entropy in CAP-01/CAP-03), so only the 10-byte outer framing and `0x0010` handshake frames are currently decoded on dedicated captures.

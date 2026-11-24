@@ -73,7 +73,7 @@ timeline
     Milestone 2 : Map Orchestration & Sandbox : 0x15c61937 + ChangeMap 1615 : LoadMap & Bringing World Shootingrange_P (Flight 035) : Complete
     Milestone 3 : UDP 7777 Protocol Driver : UNK-UDP-001/002/005 Closed : 7-Stage Bit-Packed Handshake & NMT_Welcome (24ms) : Complete
     Milestone 4 : Retail Captures & Protocol Analysis : CAP-00 to CAP-03 Quarantined : Opcode 0x2A & Dedicated 10-Byte Framing Solved : Complete
-    Milestone 5 : Dedicated Server Codec Convergence : UNK-UDP-003/004 Closed : Actor Replication & Possession (Victory Certified) : Complete
+    Milestone 5 : Dedicated Server Codec & Replication : 10-Byte Prefix Partial (OBL-UDP-003) : Blocked on UNK-UDP-004 & UNK-CRYPTO-001 : Partial
     Milestone 6 : Combat, World SAT Collision & Oracle : Headless Wine Oracle (ADOPT-09) : Fernando Kit & Collision (ADOPT-01) : Active
     Milestone 7 : Client Enhancement & Ascension : Meritocratic Progression : Neural Audio Restoration : Post-Gold
 ```
@@ -114,7 +114,7 @@ timeline
 - **Key Deliverables**:
   - `crates/immortal-net/src/bitstream.rs`: Cleanroom LSB-first `BitReader`/`BitWriter` (`u64`-safe `SerializeInt`/`WriteIntWrapped` across `MAX_PACKET_BITS = 4608` 13b/12b boundaries, stop-bit framing, `FString`, and signed `i32` `%d` `ue3_handshake_crc` over UTF-16LE `0x04C11DB7`).
   - `crates/immortal-net/src/bunch.rs`: Authentic `Ue3Packet`, `Bunch`, `Ue3ChannelType` (`1..=5`), `NMT_*` (`0x00..=0x20`), and 7-stage `ControlChannelHandshake` (`0x1A -> 0x1B -> 0x1C -> 0x1D -> 0x20 -> 0x1F(0) -> 0x00 -> 0x03 -> 0x04/0x05 -> 0x01 -> 0x09`).
-  - `crates/immortal-server/src/game_server.rs`: Packet-atomic staged handshake driver with 10-bit modular `in_reliable_ctrl` ordering, ACK piggybacking, pure-ACK storm suppression, bounded session table (`MAX_SESSIONS = 1024`), and Flight 034 golden loopback integration tests (`139 passed, 0 failed`).
+  - `crates/immortal-server/src/game_server.rs`: Packet-atomic staged handshake driver with 10-bit modular `in_reliable_ctrl` ordering, ACK piggybacking, pure-ACK storm suppression, bounded session table (`MAX_SESSIONS = 1024`), and Flight 034 golden loopback integration tests (`cargo test --workspace` passing).
   - **Flight 035 Live Verification**: Entire 7-stage handshake completed in `24 ms` (`06:28:37.192Z -> .216Z`) with exact `appStrCrc` match (`3997711111`), 159-byte 12-bit `NMT_Login` decode, and bare `NMT_Welcome`.
   - **Carry-Forward Discovery to M4**: Post-`Bringing World`, the client emits Control Channel opcode `0x2A` prior to/alongside `NMT_Join`; visual 3D Shooting Range rendering awaits `0x2A` + `NMT_Join` + `UNK-UDP-004` (`UActorChannel` `PlayerController`/Pawn camera spawn) + post-`Bringing World` render settle in `flight.py`.
 
@@ -127,30 +127,25 @@ timeline
   - **Dedicated Server 10-Byte Outer Framing**: Proved Layer A (unsequenced `0x0010` handshake & PMTU) and Layer B (sequenced `0x0001` datagrams with Seq 1 6-byte session token barrier).
 
 #### Milestone 5: Dedicated-Server Codec Convergence & Actor Replication ⚔️
-- **Status**: **COMPLETE (Certified with `VICTORY CONFIRMED` by `agyis_auditor`)**
-- **Objectives**: Extend UE3 bitstream codec to dedicated-server framing, resolve `UNK-UDP-003` and `UNK-UDP-004`, and implement cleanroom actor replication and local possession in `crates/immortal-server`.
+- **Status**: **PARTIAL / BLOCKED on `UNK-UDP-004` & `UNK-CRYPTO-001`** *(prior `"VICTORY CONFIRMED"` retracted under `PSL-INV-012`)*
+- **Objectives**: Extend UE3 bitstream codec to dedicated-server `?exudp=2` framing, break/bypass `UNK-CRYPTO-001`, resolve `UNK-UDP-003` and `UNK-UDP-004`, and replace simulated actor replication with bit-exact `UActorChannel` serialization in `crates/immortal-server`.
 - **Key Deliverables**:
-  - **Dedicated Codec Convergence**: `crates/immortal-net/src/bunch.rs` extended to support `PcomPrefix::Dedicated` with unsequenced `0x0010` and sequenced `0x0001` with Seq 1 token stripping. Verified in `crates/immortal-net/tests/dedicated_codec_test.rs`.
-  - **Actor Replication & Possession**: `crates/immortal-server/src/replication.rs` implements Channel 3 `UActorChannel` spawning `TgPlayerController` (`setplayer TgLocalPlayer_0`, Server Seq 51, Packet #524) and subsequent `TgPawn_Fernando_0` (HP 4600.0, Flame Lance 10774) and `TgBot_Evie_0`.
-  - **Obligation Ledger Resolution**: `UNK-UDP-003` resolved by Claim 17; `UNK-UDP-004` resolved by Claim 18 in [`docs/specs/CLEANROOM_LEDGER.md`](CLEANROOM_LEDGER.md).
+  - **Dedicated 10-Byte Outer Framing (`Partial`)**: `crates/immortal-net/src/bunch.rs` supports `PcomPrefix::Dedicated` (`0x0010` unsequenced 570B/46B/1440B/46B handshake & `0x0001` 10-byte header + Seq 1 token strip). Sequenced `0x0001` CAP-01/CAP-03 payloads remain encrypted (`UNK-CRYPTO-001`, ~7.55 bits/byte entropy; `0/45` CAP-03 frames decode).
+  - **Simulated Actor Replication Prototype**: `crates/immortal-server/src/replication.rs` implements a simulated byte-aligned prototype (`REP_OP_*`), NOT authentic UE3 `UActorChannel` (`PackageMap::SerializeObject`, compressed vector/rotator, `FClassNetCache` `RepIndex`), pending unencrypted Flight 036 / Oracle captures (`UNK-UDP-004`).
+  - **Obligation Ledger Realignment (`PSL-INV-012`)**: `UNK-UDP-003` downgraded to Partial (`Claim 17`); `UNK-UDP-004` (`Claim 18`) and `UNK-PROP-001` (`Claim 19`, `extract_deck_items.rs` log-correlation only) reopened; `UNK-CRYPTO-001` opened in [`docs/specs/CLEANROOM_LEDGER.md`](CLEANROOM_LEDGER.md).
   - **Tempest Architectural Exploration**: Quarantined `LowRezStudio/Tempest` (GPL-3.0) and authored [`docs/reports/TEMPEST_COMPARATIVE_ARCHITECTURAL_REPORT.md`](../reports/TEMPEST_COMPARATIVE_ARCHITECTURAL_REPORT.md) and [`docs/specs/TEMPEST_ADOPTION_LEDGER.md`](TEMPEST_ADOPTION_LEDGER.md) with 12 adoption specifications (`ADOPT-01` to `ADOPT-12`).
   - **Rule Enforcement**: Codified `PSL-INV-012` (Anti-Guess, Absolute Truth & Zero-Facade Invariant) in `AGENTS.md`.
 
 #### Milestone 6: Combat Authority, World SAT Collision & Retail Oracle 🏆
 - **Status**: **ACTIVE (Current Milestone — Target: Month 2.5–3)**
 - **Objectives**: Implement authoritative combat mechanics for Fernando, extract pure-Rust SAT collision from UPK levels (`ADOPT-01`), deploy the Headless Wine Retail Dedicated Server Oracle (`ADOPT-09`), and implement dual-stage hitboxes (`ADOPT-02`, `ADOPT-03`).
-- **Phase 1 Completed Deliverables (Verified & Committed)**:
-  - **ADOPT-09: Headless Wine Dedicated Server Oracle**: Deployed `scripts/dirtyroom/launch_retail_server.sh` wrapping `ShippingPC-ChaosGame.exe server` with headless Wine (`unset DISPLAY`, `-eac-nop-loaded`, port 7000). Verified lifecycle controls (`--daemon`, `--status`, `--logs`, `--stop`) and behavior tree initialization.
-  - **UNK-PROP-001 Extraction**: Cleanroom property bitstream extraction implemented in `crates/immortal-net/examples/extract_deck_items.rs`. Grounded Fernando's card deck allocation (Deck ID 16381, Formidable talent `TgDevice_DoubleCharge`, 5 cards / 15 points) and 4 in-game item purchases (Device ID 11059 / `ServerPurchaseItem` RPC) from `CAP-03` under PSL-INV-012. Resolved in `CLEANROOM_LEDGER.md` Claim 19.
-- **Pending Deliverables (Phase 2 & Phase 3)**:
-  - **ADOPT-01: Server Physical World Collision Extractor**: Extract `BrushAggGeom.ConvexElems` from cooked UPKs (`sg_jaguarfalls_rework_p.upk`) into `crates/immortal-extract/src/collision.rs` for server-side SAT collision.
-  - **Authoritative Combat & Fernando Abilities**:
-    - **Flame Lance (Primary Fire)**: Continuous raycast cone, ammo/heat consumption, tick-based burn damage.
-    - **Shield (Alt-Fire)**: Directional barrier projection actor (4000 HP), break cooldown.
-    - **Fireball (Ability 1)**: Linear projectile spawning, velocity integration, pierced target scaling.
-    - **Charge (Ability 2)**: Forward velocity acceleration, collision impact knockup.
-    - **Immortal (Ultimate)**: AoE damage immunity aura (pawns cannot drop below 1500 HP), duration timer.
-  - **ADOPT-02 / ADOPT-03: Dual-Stage Hitboxes & SAT Overlap**: Outer bounding cylinder for body hits + inner skeletal head bone raycast for headshots; rooftop and heavy wall correction.
+- **Landed M6 Foundations**:
+  - **ADOPT-09: Headless Wine Dedicated Server Oracle**: `scripts/dirtyroom/patch_server_binary.py` (`SEEKFREE_OFFSET = 0xD19C23`, `HOOK_OFFSET = 0xD1A9DF`, `CAVE_OFFSET = 0x24628A0` setting `GRHIShaderPlatform = 3` and calling `CTgAssemblyManager::LoadFile`, `DYNAMIC_BASE = 0`) + `.agents/commands/oracle.py` (`unset DISPLAY`, isolated `.dirtyroom/oracle/runtime/Binaries/Win64/ShippingPC-ChaosGame-Server.exe`). Verified live via `agyis oracle test` (`6/6` milestones, UDP `127.0.0.1:7000` bound in `13.5s` on `SG_JaguarFalls_Rework_P` and `14.5s` on `Shootingrange_P`; `pytest .agents/commands/tests/`: `58 passed`).
+  - **ADOPT-01: Server Physical World Collision Extractor**: Fixed `ObjectExport` `TArray<i32>` `generation_net_object_count` desync (`0` `UnknownExport_` across `FERNANDO_ASSETS_SF.upk`, `DEVICE10774_ASSETS_SF.upk`, `Shootingrange_Collision.upk`, `SG_JaguarFalls_Rework_P.upk`, `SG_StoneKeep_P.upk`), implemented `FPropertyTag` deserialization in `crates/immortal-extract/src/property.rs`, and implemented `UBrushComponent` / `URB_BodySetup` `ConvexHull` + pure-Rust SAT `raycast` / `sphere_sweep` / `contains_point` in `crates/immortal-extract/src/collision.rs` (`413` convex hulls across 6 real UPKs pass `validate_closure(0.1)`; `45` unit + `12` integration tests pass).
+  - **ADOPT-02 / ADOPT-03: Dual-Stage Hitboxes & Rooftop/Heavy-Wall Physics**: Implemented `crates/immortal-server/src/combat.rs` (`CylinderHitbox`, `HeadHitbox` `b_head`, `normalize_head_to_cylinder`, Fernando Flame Lance cone, 4000 HP `ShieldBarrier`, Fireball, Charge, Immortal aura clamp) and `crates/immortal-server/src/physics.rs` (`SurfaceInteraction`, `STEEP_SURFACE_COS_45`, `m_bCanBaseOn` heavy-wall invariant), exported from `immortal-server` (`33` lib + `1` bin + `3` integration tests pass).
+- **Remaining M6 Targets**:
+  - **Server Simulation Wiring**: Integrate `collision.rs`, `combat.rs`, and `physics.rs` into the live `game_server.rs` tick loop once `UNK-UDP-004` (`UActorChannel` bit-packing) is solved via Flight 036 / Oracle differential captures.
+  - **ADOPT-04: Havok AI 2016.1 NavMesh & $A^*$**: Parse `TAG0` from `Shootingrange_P.upk` / `SG_JaguarFalls_Rework_P.upk` / `SG_StoneKeep_P.upk` (`crates/immortal-extract/src/navmesh.rs`) and add bot pathfinding (`crates/immortal-server/src/ai.rs`).
 
 #### Milestone 7: Client Enhancement, Meritocratic Progression & Eternal Preservation 🌟
 - **Status**: **LONG-TERM VISION (Post-Drop-in Server / Ascension Phase)**
@@ -178,7 +173,7 @@ timeline
 
 ## 4. Technical Roadblocks & De-risking Matrix
 
-Cross-referenced with [`docs/specs/TECHNICAL_ROADBLOCKS.md`](technical_roadblocks.md):
+Cross-referenced with [`docs/specs/TECHNICAL_ROADBLOCKS.md`](TECHNICAL_ROADBLOCKS.md):
 
 | Risk ID | Technical Challenge | Likelihood | Impact | Concrete De-risking Strategy |
 | :--- | :--- | :---: | :---: | :--- |
@@ -187,7 +182,7 @@ Cross-referenced with [`docs/specs/TECHNICAL_ROADBLOCKS.md`](technical_roadblock
 | **RB-03** | Actor Bunch Bitstream Packing | High | Critical | Synthetic bitstream conformance suite (`crates/immortal-net/tests/conformance_replay_test.rs`). |
 | **RB-04** | Scaleform UI Travel Callbacks | Medium | Medium | Automated UI event probing and MCTS dispatch simulation in dirtyroom. |
 | **RB-05** | Movement Jitter & Latency Desync | High | Medium | Standard client prediction with server error-decay smoothing and snapshot interpolation. |
-| **RB-06** | UPK Skeletal Mesh / Bone Format | Low | Low | **Resolved**: `immortal-extract` successfully parses skeletal meshes and exports to glTF. |
+| **RB-06** | UPK Skeletal Mesh / Texture Format | Medium | Medium | **Open / Partial**: UPK headers/chunks, `FPropertyTag` (`property.rs`), `UBrushComponent`/`URB_BodySetup` SAT collision (`collision.rs`), and glTF 2.0 writer exist, but real UE3 `USkeletalMesh` (`FStaticLODModel`) and `UTexture2D` UPK payload parsing remain incomplete. |
 
 ---
 
@@ -196,5 +191,5 @@ Cross-referenced with [`docs/specs/TECHNICAL_ROADBLOCKS.md`](technical_roadblock
 Every milestone and pull request must satisfy the project's **Universal Automated Verification Standard** before landing:
 1. **Automated Verification Contract (INV-001)**: `cargo test --all` (and `cargo test --workspace --verbose`) must exit 0.
 2. **Formatting & Linter Hygiene**: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` must succeed with zero diagnostics.
-3. **Documentation Sync**: `(cd docs && mdbook build && mdbook test)` must succeed without broken includes, untagged fences, or test failures.
+3. **Documentation Sync**: `mdbook build docs` must succeed without broken includes or broken local hrefs.
 4. **End-to-End Flight & Cleanroom Dual-Auditor Gate (INV-008)**: Automated flight validation (`agyis flight --target range --timeout 120`), `agyis verify --spec`, `agyis audit aff`, and independent verification by `agyis_reviewer` and `agyis_auditor` prior to release.

@@ -32,7 +32,7 @@ Project Immortal operates under strict cleanroom engineering standards supported
    - Binary disassembly, decompiler analysis (Ghidra, REA), and packet traces exist strictly in gitignored dirty-room sandboxes (`.rea/`, `dirty_room/`, `disassembly/`, `captures/`).
    - Cleanroom source code is authored exclusively by engineers implementing markdown specifications and protocol RFCs (`docs/specs/`).
 3. **Typed Obligation Ledgers (`.agents/ledger/`)**:
-   - Every protocol claim is backed by immutable cryptographic digests in `.agents/ledger/evidence_bundle.json` and formally tracked in `obligations.json`. Verified via `agyis verify`.
+   - Every protocol claim is tracked in `.agents/ledger/obligation_ledger.json` (and legacy `obligations.json` / `evidence_bundle.json`) backed by immutable SHA-256 digests of source binaries and captures. Verified via `./agyis verify`.
 
 > [!IMPORTANT]
 > **Nominative Fair Use & Trademark Disclaimer**:  
@@ -63,13 +63,13 @@ To foster widespread archival tool adoption while preventing proprietary rogue s
 ```
 
 - **[G1] Complete Asset Preservation Automation**:
-  - High-throughput cleanroom extractor for CookedPCConsole Unreal Packages (`.upk`), Texture File Caches (`.tfc`), and FMOD audio banks.
-  - Converts proprietary cooked structures to open standards (`.gltf`, `.dds`/`.png`, `.wav`).
-- **[G2] MVP Server Protocol & Offline Range (Immediate Focus)**:
-  - Auth gateway and UDP server implementation speaking the Unreal Engine 3 bit-packed bunch protocol.
-  - Offline local simulation: boots client into `ShootingRange` sandbox with Fernando.
-- **[G3] Baseline E2E Multiplayer Game**:
-  - Full actor replication, health/shield tracking, ability cooldowns, and round state machines for Siege mode.
+  - Cleanroom extractor (`crates/immortal-extract`) for CookedPCConsole Unreal Packages (`.upk`, UE3 `v893`), Texture File Caches (`.tfc`), and Audiokinetic Wwise containers (`.pck` / `.bnk` / `.wem`).
+  - Converts cooked structures and geometry to open standards (`.gltf`, `.dds`, `.wav`). *(UPK `FPropertyTag` / `USkeletalMesh` / `UTexture2D` / `UBrushComponent` parsers are actively being expanded; see [`docs/specs/ROADMAP.md`](docs/specs/ROADMAP.md)).*
+- **[G2] MVP Server Protocol & Offline Range (M0–M4 Complete; M5 Partial)**:
+  - MCTS TCP 9000 auth gateway and UE3 UDP 7777 handshake (`NMT_Hello` -> `NMT_Welcome` -> `LoadMap`) are verified live on `Shootingrange_P`.
+  - Dedicated `?exudp=2` cipher (`UNK-CRYPTO-001`) and bit-packed `UActorChannel` pawn replication (`UNK-UDP-004`) remain open targets blocking full 3D `Shootingrange_P` possession.
+- **[G3] Baseline E2E Multiplayer Game (M6 Active)**:
+  - Headless Wine retail server oracle (`ADOPT-09`), pure-Rust SAT level collision (`ADOPT-01`), dual-stage hitboxes (`ADOPT-02`), rooftop/heavy-wall physics (`ADOPT-03`), health/shield tracking, and round state machines for Siege mode.
 - **[G4] Community Store & Ecosystem Runtime**:
   - Decentralized local/community inventory server replacing proprietary microtransactions with unlocked champions, cosmetics, and card loadouts.
 - **[G5] Modern Client Enhancements**:
@@ -86,18 +86,18 @@ graph TD
     subgraph SteamData["Local BYOD Storage (Private/Untracked)"]
         UPK["ChaosGame/CookedPCConsole/*.upk"]
         TFC["ChaosGame/CookedPCConsole/*.tfc"]
-        EXE["Binaries/Win64/Paladins.exe"]
+        EXE["Binaries/Win64/ShippingPC-ChaosGame.exe"]
     end
 
     subgraph CleanroomSuite["Project Immortal Rust Workspace"]
-        EXTRACT["crates/immortal-extract<br/>(LZO/Zlib UPK & TFC Parser)"]
+        EXTRACT["crates/immortal-extract<br/>(LZO/Zlib UPK, TFC & Wwise Parser)"]
         CORE["crates/immortal-core<br/>(Types, Math, Champion Enums)"]
         NET["crates/immortal-net<br/>(UE3 Bunch Framing & Bitstream)"]
         SERVER["crates/immortal-server<br/>(Tokio Auth Gateway & UDP Game Daemon)"]
     end
 
     subgraph ClientRuntime["Paladins Client (Wine/Proton 9)"]
-        CLIENT["Paladins.exe"]
+        CLIENT["ShippingPC-ChaosGame.exe"]
     end
 
     UPK --> EXTRACT

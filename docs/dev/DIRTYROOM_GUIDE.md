@@ -46,7 +46,7 @@ Project Immortal adheres strictly to the **Cleanroom Reverse Engineering Standar
 
 ### The Invariants
 1. **Zero Asset Pollution**: The `.dirtyroom/` folder is gitignored. Disassembly listings, decompiled C stubs, binary dumps, and Ghidra `.rep` directories must never cross the git boundary.
-2. **Obligation Ledger Gate**: Every behavioral claim or network packet format derived from the dirty room must be logged in [`docs/specs/CLEANROOM_LEDGER.md`](../specs/cleanroom_ledger.md).
+2. **Obligation Ledger Gate**: Every behavioral claim or network packet format derived from the dirty room must be logged in [`docs/specs/CLEANROOM_LEDGER.md`](../specs/CLEANROOM_LEDGER.md).
 3. **Reproducibility**: Any developer with a licensed copy of Paladins and standard open-source tools (Ghidra, OpenJDK, Python 3, SQLite 3) can generate the exact same dirty-room database and tooling.
 
 ---
@@ -317,12 +317,12 @@ Launch and manage the local test matrix:
 When you discover new protocol structures, packet schemas, or function behaviors in the dirty room, follow this 3-step handoff:
 
 1. **Record the Evidence**:
-   - In [`docs/specs/CLEANROOM_LEDGER.md`](../specs/cleanroom_ledger.md), add a new claim with:
+   - In [`docs/specs/CLEANROOM_LEDGER.md`](../specs/CLEANROOM_LEDGER.md), add a new claim with:
      - Binary name & SHA-256.
      - Virtual Address (`0x...`).
      - Observed behavior (described in high-level prose, *not* verbatim disassembled/decompiled code).
 2. **Author the Cleanroom Specification**:
-   - Translate the observed packet schema into abstract byte definitions in [`docs/specs/G2_SERVER_PROTOCOL.md`](../specs/g2_server_protocol.md).
+   - Translate the observed packet schema into abstract byte definitions in [`docs/specs/G2_SERVER_PROTOCOL.md`](../specs/G2_SERVER_PROTOCOL.md).
 3. **Implement in Pure Rust**:
    - Write the implementation in `crates/immortal-net` or `crates/immortal-core`.
    - Add hermetic unit tests with synthetic packet fixtures.

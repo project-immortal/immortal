@@ -18,9 +18,8 @@ On modern Linux workstations (Ubuntu 22.04+, Arch Linux, Fedora 40+), bootstrap 
 git clone https://github.com/project-immortal/immortal.git
 cd immortal
 
-# Single-command environment bootstrap & verification
-curl -sSf https://raw.githubusercontent.com/project-immortal/immortal/main/scripts/bootstrap.sh | bash || \
-  (rustup update stable && cargo build --workspace && cargo test --workspace && agyis verify)
+# Verify toolchain and run workspace build, tests, and cleanroom verification
+rustup update stable && cargo build --workspace && cargo test --workspace && ./agyis verify
 ```
 
 For fully hermetic manual bootstrap, proceed through the prerequisite checklist below.
@@ -104,9 +103,8 @@ agyis verify
 ### Ledger Validation
 
 The verification runner checks the following files:
-- `.agents/ledger/obligations.json`: Validates that every reverse-engineered structure and protocol claim is mapped to an active obligation with explicit `evidence_criteria` and status `satisfied`.
-- `.agents/ledger/manifest.json`: Ensures the manifest integrity matches the verified state with zero residual unproven claims.
-- `.agents/ledger/evidence_bundle.json`: Confirms immutable sha256 cryptographic digests of dirty-room observations without storing copyrighted binaries in git.
+- `.agents/ledger/obligation_ledger.json`: Typed REA 6.9.0+ obligation ledger validated via `rea build-reconstruction-obligation-ledger` (and `obligations.json` / `manifest.json` / `evidence_bundle.json` for legacy summary compatibility).
+- `.agents/ledger/evidence_bundle.json`: Confirms immutable SHA-256 cryptographic digests of dirty-room observations without storing copyrighted binaries in git.
 
 ---
 
@@ -119,19 +117,12 @@ The verification runner checks the following files:
 
 ### Extracting Local Assets
 
-Run the extraction pipeline via `immortal-extract`:
+Run the extraction examples and tests via `immortal-extract` (note: `immortal-extract` is a library crate exposing examples rather than a standalone binary target):
 
 ```bash
-# Extract CookedPCConsole packages into local assets directory
-cargo run -p immortal-extract -- \
-  --paladins-dir "$PALADINS_INSTALL_PATH" \
-  --output-dir assets/extracted
-
-# Extract specific champion assets (e.g. Fernando)
-cargo run -p immortal-extract -- \
-  --paladins-dir "$PALADINS_INSTALL_PATH" \
-  --package "FERNANDO_ASSETS_SF.upk" \
-  --output-dir assets/extracted/champions/fernando
+# Run UPK package inspection & extraction examples against local CookedPCConsole UPKs
+cargo run -p immortal-extract --example smoke_extract_fernando
+cargo run -p immortal-extract --example extract_weapon_flame_lance
 ```
 
 Extracted assets are written directly to `assets/extracted/` which is ignored by `.gitignore`.

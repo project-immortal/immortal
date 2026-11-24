@@ -1,0 +1,1 @@
+{{#include ../../reports/TEMPEST_COMPARATIVE_ARCHITECTURAL_REPORT.md}}
