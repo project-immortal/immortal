@@ -110,5 +110,19 @@
     "provider": "host_sha256_upk",
     "digest": "dd1fa76a3583c64305a305f7d7177c441356463f31a2531bb25d1bf0921bdbf8",
     "source_path": "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole/TgGame.upk"
+  },
+  {
+    "evidence_id": "EV-PCAP-004",
+    "subject": "CAP-04 Retail Oracle Shooting Range ?exudp=0 Capture",
+    "provider": "retail_oracle_pcapng",
+    "digest": "ad989914f5efca7edd938f608cc7fcb07a497ce45ae4786196fca1a99756a9e0",
+    "source_path": ".dirtyroom/pcaps/CAP-04_oracle_shootingrange.pcapng"
+  },
+  {
+    "evidence_id": "EV-LOG-007",
+    "subject": "CAP-04 Retail Oracle Paired Launch Log",
+    "provider": "retail_client_log",
+    "digest": "091bba3443afe7fa9bb2972dd3dad1f2f48d3c0753eb2f7c3252b85fa17877d6",
+    "source_path": ".dirtyroom/pcaps/CAP-04_oracle_shootingrange_Launch.log"
   }
 ]

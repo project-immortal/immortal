@@ -121,22 +121,22 @@
   {
     "id": "OBL-UDP-003",
     "subject": "dedicated_10byte_prefix_and_marshal_channel",
-    "claim": "Wire spec verified bit-exact against Retail Oracle (?exudp=0, 281 NMT_UsesOpt/0x2D + 281 NMT_Have + 0x2A, ch=3,4,5,12,13,80,81); ?exudp=2 10-byte prefix & 0x0010 sizes verified (Seq 1 token barrier retracted per #42); Rust integration & Live Flight 036 in progress",
-    "evidence_criteria": "UACTOR_CHANNEL_WIRE_SPEC.md + EV-BIN-001 + EV-NET-003 + EV-NET-005 + EV-LOG-004 + Retail Oracle parity + Flight 036",
+    "claim": "Flight 036 Core Verified Live: post-NMT_Join NMT_UsesOpt/0x2D + NMT_Have + 0x2A handshake and UActorChannel opens (ch=3, 4, 57, 61, 80, 81) accepted by retail 8.1.5839.0 with 0 errors, TgPlayerController_1 setplayer TgLocalPlayer_0, live Scaleform UIHudCredits 500 + crosshair, and decoded inbound C->S RPCs; CAP-04 3,898/3,898 UDP 7000 packets decoded (0 errors). Remaining M6 follow-up: external archway Fernando skin (FERNANDO_ASSETS_SF manifest) & interactive PlayerWalking (Hard(915)) pawn possession.",
+    "evidence_criteria": "UACTOR_CHANNEL_WIRE_SPEC.md + EV-BIN-001 + EV-NET-003 + EV-NET-005 + EV-LOG-004 + EV-PCAP-004 + EV-LOG-007 + Flight 036 live client run",
     "status": "partial"
   },
   {
     "id": "OBL-UDP-004",
     "subject": "actor_channel_bitpacked_replication",
-    "claim": "Post-NMT_Join UActorChannel (ChIndex>=3) wire spec verified bit-exact against Retail Oracle (ch=3,4,5,12,13,80,81, 0 leftover bits); Rust integration & Live Flight 036 in progress",
-    "evidence_criteria": "UACTOR_CHANNEL_WIRE_SPEC.md + EV-UPK-006 + EV-UPK-007 + Retail Oracle parity; remains open until Rust codec & Live Flight 036 succeed",
+    "claim": "Flight 036 Core Verified Live: bit-exact Rust FClassNetCache / UActorChannel codec (immortal-extract, immortal-net, immortal-server) opens ch=3, 4, 57, 61, 80, 81 with 0 errors on retail 8.1.5839.0, activates TgPlayerController_1 setplayer TgLocalPlayer_0 + live Scaleform UIHudCredits 500 + crosshair in Shootingrange_P courtyard, and decodes inbound C->S RPCs. Remaining M6 follow-up: rendering external archway Fernando skin (FERNANDO_ASSETS_SF manifest) & interactive PlayerWalking (Hard(915)) pawn possession.",
+    "evidence_criteria": "UACTOR_CHANNEL_WIRE_SPEC.md + EV-UPK-006 + EV-UPK-007 + EV-ORACLE-001 + EV-PCAP-004 + EV-LOG-007 + Flight 036 live client run",
     "status": "in_progress"
   },
   {
     "id": "OBL-PROP-001",
     "subject": "loadout_and_item_purchase_bunch_decoding",
-    "claim": "Bit-level extraction of m_CardDeck and ServerPurchaseItem from unencrypted UDP bunches (CAP-04 unencrypted Oracle blind-test matrix)",
-    "evidence_criteria": "Retracted prior CAP-03 log-correlation claim; unblocked via ?exudp=0 Retail Oracle + UACTOR_CHANNEL_WIRE_SPEC.md pending Rust integration & CAP-04",
+    "claim": "OPEN: CAP-04 (EV-PCAP-004) remained in Spectating (Hard(920)), so 0 ServerMove (Rep=65), ServerPurchaseItem (Rep=165), or m_CardDeck payloads fired on the wire; UPK FClassNetCache RepIndex schemas are extracted pending an interactive PlayerWalking / item-shop capture.",
+    "evidence_criteria": "EV-PCAP-004 + EV-UPK-007 + UACTOR_CHANNEL_WIRE_SPEC.md; awaits interactive PlayerWalking / shop capture for live wire verification",
     "status": "open"
   },
   {

@@ -179,7 +179,7 @@ def test_flight_target_map_patterns_and_post_hold() -> None:
         "Bringing World Shootingrange_P.TheWorld up for play",
     ]
     assert flight.FLIGHT_PATTERNS["MAP_LOADED"] == ["NMT_MapLoaded 0x2A"]
-    assert flight.FLIGHT_PATTERNS["ACTORS_REPLICATED"] == ["emitting UActorChannel opens (ch=3, 4, 80, 81)"]
+    assert flight.FLIGHT_PATTERNS["ACTORS_REPLICATED"] == ["emitting UActorChannel opens"]
 
     assert flight.compute_post_hold("WORLD_READY", None) == 5.0
     assert flight.compute_post_hold("ACTORS_REPLICATED", None) == 5.0
@@ -212,7 +212,7 @@ def test_dual_log_tailing_milestones_and_bounded_diagnostics(tmp_path: Path) -> 
                 "DevNet: Welcomed by server",
                 "DEBUG Ingested Actor Channel 3 bunch (len: 12)",
                 "INFO Client 127.0.0.1 loaded map (NMT_MapLoaded 0x2A)",
-                "INFO Client 127.0.0.1 satisfied NMT_Have + NMT_MapLoaded + NMT_Join — emitting UActorChannel opens (ch=3, 4, 80, 81)",
+                "INFO Client 127.0.0.1 satisfied NMT_Have + NMT_MapLoaded + NMT_Join — emitting UActorChannel opens (ch=3, 4, 57, 61, 80, 81)",
                 "WARN Error processing datagram from 127.0.0.1: Bunch protocol error",
                 "WARN Received NMT_Failure from peer",
                 "WARN Buffer Overflow in net driver",
@@ -236,6 +236,18 @@ def test_dual_log_tailing_milestones_and_bounded_diagnostics(tmp_path: Path) -> 
         assert milestones["MAP_LOADED"]["detected"] is True
         assert milestones["ACTORS_REPLICATED"]["detected"] is True
         assert milestones["LOBBY_MENU"]["detected"] is False
+
+        # Substring match must also accept the legacy 4-channel open log format
+        legacy_milestones = flight.create_milestones()
+        flight.process_log_lines(
+            ["INFO Client 127.0.0.1 — emitting UActorChannel opens (ch=3, 4, 80, 81)"],
+            "server",
+            legacy_milestones,
+            [],
+            100.0,
+            now_fn=lambda: 102.5,
+        )
+        assert legacy_milestones["ACTORS_REPLICATED"]["detected"] is True
 
         # Verify lowercase "bunch" debug line was NOT captured as an error diagnostic
         assert len(diagnostics) == 5
@@ -290,7 +302,7 @@ def test_main_warns_missing_ydotoold_and_passes_force_rebuild_json(tmp_path: Pat
         # Write server milestone directly to scratch/flight_server.log
         (tmp_path / "scratch").mkdir(parents=True, exist_ok=True)
         (tmp_path / "scratch" / "flight_server.log").write_text(
-            "NMT_MapLoaded 0x2A\nemitting UActorChannel opens (ch=3, 4, 80, 81)\nError processing datagram: test\n",
+            "NMT_MapLoaded 0x2A\nemitting UActorChannel opens (ch=3, 4, 57, 61, 80, 81)\nError processing datagram: test\n",
             encoding="utf-8",
         )
         return fake_server_proc

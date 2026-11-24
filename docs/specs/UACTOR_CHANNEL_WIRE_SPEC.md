@@ -13,8 +13,8 @@
 > **Package Authority (`EV-UPK-006`, `EV-UPK-007`)**:  
 > - `Engine.upk` (UE3 v893, licensee `0`, cooker `393358`, `3,813,766` bytes, SHA-256 `c8541aa0ab647d1952da0cbd0c7c36e236fcc1b6f12f48b6fc047bae19e91e48`)  
 > - `TgGame.upk` (UE3 v893, licensee `0`, cooker `393358`, `9,672,524` bytes, SHA-256 `dd1fa76a3583c64305a305f7d7177c441356463f31a2531bb25d1bf0921bdbf8`)  
-> **Empirical Parity Proof**: Verified bit-exact (`0` leftover bits, `0` parse errors) against live headless Wine Retail Oracle (`ADOPT-09`, `?exudp=0`) bunches (`ch=3, 4, 5, 12, 13, 80, 81`) captured in `oracle_probe_trace.json` (`464,255` bytes, SHA-256 `d57c83353cf4fa531d8b546885b5726b9a9b2a0fc50170430ac28a93e404564e`).  
-> **Current Status**: Wire spec verified bit-exact against Retail Oracle; Rust integration (`crates/immortal-net` / `crates/immortal-extract` / `crates/immortal-server`) and Live Flight 036 verification in progress.
+> **Empirical Parity Proof**: Verified bit-exact (`0` leftover bits, `0` parse errors) against live headless Wine Retail Oracle (`ADOPT-09`, `?exudp=0`) bunches (`ch=3, 4, 5, 12, 13, 80, 81`) captured in `oracle_probe_trace.json` (`464,255` bytes, SHA-256 `d57c83353cf4fa531d8b546885b5726b9a9b2a0fc50170430ac28a93e404564e`) and full-session `CAP-04` (`EV-PCAP-004`, `3,912` UDP 7000 datagrams; `3,898/3,898` non-empty decoded, `91/91` S->C channels `ch=3..93` & `907/907` S->C bunches, `2,785/2,785` C->S bunches, `0` errors), plus `1,895/1,895` Flight 036 C->S bunches.  
+> **Current Status**: **Flight 036 Core Verified Live** — `crates/immortal-extract`, `crates/immortal-net`, and `crates/immortal-server` emit bit-exact `UActorChannel` opens (`ch=3, 4, 57, 61, 80, 81`) accepted by retail `8.1.5839.0` with `0` errors, live Scaleform HUD (`UIHudCredits` `500` + crosshair), and decoded inbound C->S RPCs. Remaining M6 follow-ups: external archway Fernando skin (`FERNANDO_ASSETS_SF` manifest) and interactive `PlayerWalking` (`Hard(915)`) pawn possession.
 
 ---
 
@@ -232,3 +232,47 @@ Verified bit-exact (`0` leftover bits, `0` parse errors) against live headless W
 | **`ch=13`** | `TgPawn_Ying` | `2525` | **`2525/2525`** | `loc=(4,-1977,249)`, `Rotation=(0,16384,0)`, `Health=2200`, `r_nPawnId=36`, `r_nProfileId=2267` |
 | **`ch=80`** | `TgRepInfo_Player` | `318` | **`318/318`** | `PlayerName="Player"`, `StartTime=183`, `PlayerID=257`, `r_nCredits=500`, `r_nEarnedCredits=500` |
 | **`ch=81`** | `TgRepInfo_Game` | `1224` | **`1224/1224`** | `bMatchHasBegun=True`, `ElapsedTime=183`, `r_DifficultyDebugData`, `r_fPlayerViewDistance=7200.0`, `r_GameType=7` |
+
+---
+
+## 6. Empirically Decoded `CAP-04` S->C HUD/State & C->S Inbound RPCs
+
+Verified bit-exact (`0` errors, `0` leftover bits) across `CAP-04` (`EV-PCAP-004`, `3,912` UDP 7000 datagrams, `91/91` S->C channels `ch=3..93`, `907/907` S->C bunches, `2,785/2,785` C->S bunches) and Flight 036 (`1,895/1,895` C->S bunches).
+
+### 6.1 S->C `ch=3` `TgPlayerController` HUD, Streaming & State RPCs (`MaxIndex = 303`)
+
+In `CAP-04` Frame 713 (`bOpen=1`, `3203/3203` bits), after replicating `bCollideWorld=True` (`Rep=2`), `Role=ENetRole(2)` (`Rep=13`), `bNetOwner=True` (`Rep=5`), and `r_bInputEnabled[0..19]=1` (`Rep=292`), the server emits these RPCs in wire order:
+
+| `RepIndex` | RPC Signature | Observed `CAP-04` Wire Values & Notes |
+| :---: | :--- | :--- |
+| `207` | `TgPlayerController.ClientSetReadyState(bReadyToPlay: Bool)` | `False` |
+| `71` | `PlayerController.ClientCapBandwidth(Cap: Int)` | `25000` |
+| `118` | `PlayerController.ClientVoiceHandshakeComplete()` | *(no params)* |
+| `45` | `PlayerController.ClientSetHUD(newHUDType: Class)` | `Static(89536)` (`TgGame` `NetIndex=45835` -> `TgGame.TgHUD`; initializes Scaleform `UIHud`, `UIHudCredits` `500`, `UIHudCenter`, `UIWorldOverlay`, `Cursor`) |
+| `46` | `PlayerController.ClientSetSecondaryHUD(newHUDType: Class)` | `bHasParam=0` (omitted) |
+| `109` | `PlayerController.ClientUpdateLevelStreamingStatus(PackageName: Name, ...)` | 9× (`shootingrange_{lighting,collision,vfx,sound}`, `trm_{courtyard_abc,room_d,room_e-room_g,room_f-hallway,sky}`), `bHardcoded=0`, `number=0`, `3 × Bool(False)` |
+| `114` | `PlayerController.ClientFlushLevelStreaming()` | *(no params)* |
+| `117` | `PlayerController.ClientSetOnlineStatus()` | *(no params)* |
+| `131` | `PlayerController.ClientStartNetworkedVoice()` | *(no params)* |
+| `41` | `PlayerController.ClientGotoState(NewState: Name, NewLabel: Name)` | `NewState=Hard(920)` (`"Spectating"`), `NewLabel` omitted (`bHasParam=0`); also re-sent every `2.00s` (`bReliable=1`, `22` bits) |
+
+- **Hardcoded `ClientGotoState` FName Indices** (`ShippingPC-ChaosGame.exe` `0x1401dc332..0x1401dc3e1`):
+  - `915` (`0x393`) = `"PlayerWalking"`
+  - `920` (`0x398`) = `"Spectating"`
+  - `921` (`0x399`) = `"PlayerWaiting"`
+  - `922` (`0x39a`) = `"WaitingForPawn"`
+
+### 6.2 C->S Inbound Actor Channel RPCs (`CAP-04` `ch=3, 87` & Flight 036 `ch=3, 80`)
+
+| Channel | Class | `RepIndex` | RPC Signature | Observed Wire Values & Cadence |
+| :---: | :--- | :---: | :--- | :--- |
+| `ch=3` | `TgPlayerController` | `95` | `PlayerController.ServerSetSpectatorLocation(NewLoc: FVector)` | `(-224.0, 0.0, 203.0)` (`Bits=8`, paired with `Rep=79` in `84`-bit `CAP-04` / `81`-bit Flight 036 `bReliable=0` bunches) |
+| `ch=3` | `TgPlayerController` | `79` | `PlayerController.ServerUpdateCamera(CamLoc: FVector, CamPitchAndYaw: Optional Int)` | `(-474.0, 0.0, 233.0)` (`CAP-04`) / `(0.0, 0.0, 160.0)` (`Flight 036`); `CamPitchAndYaw` omitted (`bHasParam=0`) |
+| `ch=3` | `TgPlayerController` | `98` | `PlayerController.ServerViewSelf(TransitionParams: FViewTargetTransitionParams)` | `{BlendTime: 0.0, BlendFunction: 1, BlendExp: 2.0, bLockOutgoing: False}` (`161` bits, followed by `Rep=95`, `Rep=79`) |
+| `ch=3` | `TgPlayerController` | `110` | `PlayerController.ServerUpdateLevelVisibility(PackageName: Name, bIsVisible: Bool)` | 9× sublevel names (`bIsVisible=True`, bundled with `Rep=186` `ServerSetToggleZoom(False)` and `Rep=184` `ServerSetAutoPurchase(False)` in `1965`-bit reliable bunch) |
+| `ch=3` | `TgPlayerController` | `173` | `TgPlayerController.ServerRequestGraphData()` | `8` bits (`bReliable=1`) |
+| `ch=3` | `TgPlayerController` | `38`, `44` | `ServerShortTimeout()`, `ServerAcknowledgePossession(P: Actor)` | Observed in pre-fix Flight 036 when `ch=4` had `Controller=chan(3)` (`112` bits) |
+| `ch=87`/`80` | `TgRepInfo_Player` | `26` | `PlayerReplicationInfo.ServerUpdateRemoteUserData(Index: Optional Int, Value: Int)` | `Index` omitted (`bHasParam=0`), 10× (`387`-bit reliable bunch) |
+| `ch=87`/`80` | `TgRepInfo_Player` | `25` | `PlayerReplicationInfo.ServerFinalizeRemoteUserData(bGuest: Bool)` | `False` |
+
+> **`PSL-INV-012` Scope Boundary (`OBL-PROP-001` / `UNK-PROP-001`)**: Because `CAP-04` stayed in `Spectating` (`ClientGotoState(Hard(920))`), **0** `ServerMove` (`Rep=65`), `ServerPurchaseItem` (`Rep=165`), or `m_CardDeck` wire payloads fired in `CAP-04`; only their UPK `FClassNetCache` `RepIndex` schemas are extracted.

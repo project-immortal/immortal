@@ -88,7 +88,7 @@ FLIGHT_PATTERNS = {
         "Bringing World Shootingrange_P.TheWorld up for play",
     ],
     "MAP_LOADED": ["NMT_MapLoaded 0x2A"],
-    "ACTORS_REPLICATED": ["emitting UActorChannel opens (ch=3, 4, 80, 81)"],
+    "ACTORS_REPLICATED": ["emitting UActorChannel opens"],
 }
 
 DIAGNOSTIC_PATTERNS = (
