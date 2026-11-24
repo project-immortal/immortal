@@ -9,15 +9,16 @@
 //! (`0x1A -> 0x1B -> 0x1C -> 0x1D -> 0x20 -> 0x1F(0) -> 0x00 -> 0x03 -> 0x04/0x05 -> 0x01 -> 0x09`),
 //! bounded session management (`MAX_SESSIONS`), and legacy `CPackUdp` dispatch.
 
-use crate::replication::{ActorReplicationSchemas, ReplicationSession};
+use crate::replication::{ActorReplicationSchemas, ReplicationSession, PRI_CHANNEL_INDEX};
 use anyhow::{anyhow, Result};
 use immortal_extract::netcache::PackageMapManifest;
 use immortal_net::{
-    current_time_millis, parse_cpack_udp, sha256, Bunch, CPackUdpPacket, ControlChannelHandshake,
-    ControlMessage, DedicatedControlFrame, HandshakePhase, HelloRecvReply, PingRecv, Ue3Packet,
-    ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX, DEFAULT_GAME_PORT, DEFAULT_HMAC_KEY,
-    DEFAULT_MAX_PACKET, DEFAULT_MAX_PACKET_BITS, DEFAULT_NET_SPEED, EXUDP_MAX_PACKET_BITS,
-    HELLO_MIN_LEN, HELLO_PAYLOAD_OFFSET, MAX_CHSEQUENCE, MAX_PACKETID, PCOM_PREFIX_LEN, PcomPrefix,
+    current_time_millis, parse_cpack_udp, sha256, ActorBunchCodec, Bunch, CPackUdpPacket,
+    ControlChannelHandshake, ControlMessage, DedicatedControlFrame, HandshakePhase, HelloRecvReply,
+    PingRecv, Ue3Packet, ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX, DEFAULT_GAME_PORT,
+    DEFAULT_HMAC_KEY, DEFAULT_MAX_PACKET, DEFAULT_MAX_PACKET_BITS, DEFAULT_NET_SPEED,
+    EXUDP_MAX_PACKET_BITS, HELLO_MIN_LEN, HELLO_PAYLOAD_OFFSET, MAX_CHSEQUENCE, MAX_PACKETID,
+    PCOM_PREFIX_LEN, PcomPrefix,
 };
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
@@ -560,6 +561,7 @@ impl GameServer {
                         match msg {
                             ControlMessage::Login { url, unique_id, .. } => {
                                 staged_unique_id = *unique_id;
+                                staged_replication.client_unique_id = *unique_id;
                                 if let Some(name) = extract_url_param(url, "Name") {
                                     staged_replication.player_name = name.to_string();
                                 }
@@ -595,16 +597,43 @@ impl GameServer {
                         staged_in_reliable = incoming_seq;
                     }
                 }
-                ACTOR_CHANNEL_INDEX => {
-                    debug!(
-                        "Ingested Actor Channel {} bunch (len: {}) from {}",
-                        ACTOR_CHANNEL_INDEX,
-                        bunch.data.len(),
-                        src
-                    );
-                    if self.config.session.enable_simulated_replication {
+                ch_index @ (ACTOR_CHANNEL_INDEX | PRI_CHANNEL_INDEX) => {
+                    if ch_index == ACTOR_CHANNEL_INDEX
+                        && self.config.session.enable_simulated_replication
+                    {
+                        debug!(
+                            "Ingested simulated Actor Channel {} bunch (len: {}) from {}",
+                            ACTOR_CHANNEL_INDEX,
+                            bunch.data.len(),
+                            src
+                        );
                         staged_reply_actor_bunches
                             .push(staged_replication.stream_baseline_delta(0.016));
+                    } else {
+                        if !bunch.header.flags.b_close && bunch.num_bits > 0 {
+                            if let Some((cache, layout)) = self.schemas.for_channel(ch_index) {
+                                let open_layout = bunch.header.flags.b_open.then_some(layout);
+                                match ActorBunchCodec::decode_bunch(bunch, cache, open_layout) {
+                                    Ok(decoded) => {
+                                        staged_replication
+                                            .apply_inbound_actor_bunch(ch_index, &decoded);
+                                    }
+                                    Err(err) => {
+                                        debug!(
+                                            "Inbound actor bunch decode skipped on ch={} from {} ({} bits): {} (PSL-INV-012)",
+                                            ch_index, src, bunch.num_bits, err
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        if ch_index == ACTOR_CHANNEL_INDEX {
+                            if let Some(ts_bunch) =
+                                staged_replication.maybe_server_timestamp_heartbeat(&self.schemas)?
+                            {
+                                staged_reply_actor_bunches.push(ts_bunch);
+                            }
+                        }
                     }
                 }
                 other_ch => {
@@ -645,7 +674,7 @@ impl GameServer {
                 && !staged_replication.real_channels_opened
             {
                 info!(
-                    "🎉 Client {} satisfied NMT_Have ({}/{}) + NMT_MapLoaded + NMT_Join — emitting UActorChannel opens (ch=3, 4, 80, 81)",
+                    "🎉 Client {} satisfied NMT_Have ({}/{}) + NMT_MapLoaded + NMT_Join — emitting UActorChannel opens (ch=3, 4, 57, 61, 80, 81)",
                     src,
                     staged_acked_guids.len(),
                     self.schemas.manifest.entries.len()
@@ -1796,5 +1825,284 @@ mod tests {
         );
         assert_eq!(session.phase, SessionPhase::Connected);
         assert_eq!(session.in_reliable_ctrl, 0);
+    }
+
+    #[tokio::test]
+    async fn test_pcom_inbound_actor_rpcs_and_unknown_channels_handled_cleanly() {
+        use immortal_net::{
+            ActorBunch, NetName, NetStructFieldValue, NetValue, ObjectRef, ReplicatedItem,
+            RpcParamValue,
+        };
+
+        let config = GameServerConfig {
+            bind_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
+            upk_dir: None,
+            ..Default::default()
+        };
+        let server = GameServer::bind_with_config(config).await.unwrap();
+        let src: SocketAddr = "127.0.0.1:54331".parse().unwrap();
+        let prefix: [u8; PCOM_PREFIX_LEN] = [0x00, 0x0C, 0x33, 0x44, 0x55, 0x66];
+
+        // Mark session as joined & opened so timestamp heartbeat is active
+        {
+            let mut sessions = server.sessions.write().await;
+            let sess = get_or_insert_session(&mut sessions, src, &server.config);
+            sess.handshake.phase = HandshakePhase::Joined;
+            sess.phase = SessionPhase::Replicating;
+            let _ = sess
+                .replication
+                .open_real_actor_channels(&server.schemas)
+                .unwrap();
+        }
+
+        let pc_cache = &server.schemas.player_controller;
+        let pri_cache = &server.schemas.rep_info_player;
+        let rpc_id = |cache: &immortal_net::ClassNetCacheView, name: &str| {
+            cache.fields().find(|f| f.name == name).unwrap().rep_index
+        };
+
+        // Packet 0: ch=3 reliable RPCs (SetToggleZoom, SetAutoPurchase, UpdateLevelVisibility, RequestGraphData, ShortTimeout, AcknowledgePossession, ViewSelf)
+        let ch3_rel_bunch = ActorBunchCodec::encode_to_bunch(
+            ACTOR_CHANNEL_INDEX,
+            1,
+            true,
+            pc_cache,
+            &ActorBunch {
+                open_header: None,
+                items: vec![
+                    ReplicatedItem::Rpc {
+                        rep_index: rpc_id(pc_cache, "ServerSetToggleZoom"),
+                        name: "ServerSetToggleZoom".to_string(),
+                        params: vec![RpcParamValue {
+                            name: "bToggleZoom".to_string(),
+                            values: Some(vec![NetValue::Bool(true)]),
+                        }],
+                    },
+                    ReplicatedItem::Rpc {
+                        rep_index: rpc_id(pc_cache, "ServerSetAutoPurchase"),
+                        name: "ServerSetAutoPurchase".to_string(),
+                        params: vec![RpcParamValue {
+                            name: "bAutoPurchase".to_string(),
+                            values: Some(vec![NetValue::Bool(true)]),
+                        }],
+                    },
+                    ReplicatedItem::Rpc {
+                        rep_index: rpc_id(pc_cache, "ServerUpdateLevelVisibility"),
+                        name: "ServerUpdateLevelVisibility".to_string(),
+                        params: vec![
+                            RpcParamValue {
+                                name: "PackageName".to_string(),
+                                values: Some(vec![NetValue::Name(NetName::Dynamic {
+                                    name: "trm_courtyard_abc".to_string(),
+                                    number: 0,
+                                })]),
+                            },
+                            RpcParamValue {
+                                name: "bIsVisible".to_string(),
+                                values: Some(vec![NetValue::Bool(true)]),
+                            },
+                        ],
+                    },
+                    ReplicatedItem::Rpc {
+                        rep_index: rpc_id(pc_cache, "ServerRequestGraphData"),
+                        name: "ServerRequestGraphData".to_string(),
+                        params: vec![],
+                    },
+                    ReplicatedItem::Rpc {
+                        rep_index: rpc_id(pc_cache, "ServerShortTimeout"),
+                        name: "ServerShortTimeout".to_string(),
+                        params: vec![],
+                    },
+                    ReplicatedItem::Rpc {
+                        rep_index: rpc_id(pc_cache, "ServerAcknowledgePossession"),
+                        name: "ServerAcknowledgePossession".to_string(),
+                        params: vec![RpcParamValue {
+                            name: "P".to_string(),
+                            values: Some(vec![NetValue::Object(ObjectRef::DynamicChannel(4))]),
+                        }],
+                    },
+                    ReplicatedItem::Rpc {
+                        rep_index: rpc_id(pc_cache, "ServerViewSelf"),
+                        name: "ServerViewSelf".to_string(),
+                        params: vec![RpcParamValue {
+                            name: "TransitionParams".to_string(),
+                            values: Some(vec![NetValue::Struct(vec![
+                                NetStructFieldValue {
+                                    name: "BlendTime".to_string(),
+                                    values: vec![NetValue::Float(0.0)],
+                                },
+                                NetStructFieldValue {
+                                    name: "BlendFunction".to_string(),
+                                    values: vec![NetValue::Enum(1)],
+                                },
+                                NetStructFieldValue {
+                                    name: "BlendExp".to_string(),
+                                    values: vec![NetValue::Float(2.0)],
+                                },
+                                NetStructFieldValue {
+                                    name: "bLockOutgoing".to_string(),
+                                    values: vec![NetValue::Bool(false)],
+                                },
+                            ])]),
+                        }],
+                    },
+                ],
+            },
+        )
+        .unwrap();
+
+        // Also include ch=80 ServerUpdateRemoteUserData + ServerFinalizeRemoteUserData + unknown ch=99
+        let ch80_bunch = ActorBunchCodec::encode_to_bunch(
+            PRI_CHANNEL_INDEX,
+            1,
+            true,
+            pri_cache,
+            &ActorBunch {
+                open_header: None,
+                items: vec![
+                    ReplicatedItem::Rpc {
+                        rep_index: rpc_id(pri_cache, "ServerUpdateRemoteUserData"),
+                        name: "ServerUpdateRemoteUserData".to_string(),
+                        params: vec![
+                            RpcParamValue {
+                                name: "Device".to_string(),
+                                values: Some(vec![NetValue::Struct(vec![
+                                    NetStructFieldValue {
+                                        name: "Valid".to_string(),
+                                        values: vec![NetValue::Bool(true)],
+                                    },
+                                    NetStructFieldValue {
+                                        name: "DeviceCategory".to_string(),
+                                        values: vec![NetValue::Enum(0)],
+                                    },
+                                    NetStructFieldValue {
+                                        name: "DeviceType".to_string(),
+                                        values: vec![NetValue::Enum(1)],
+                                    },
+                                    NetStructFieldValue {
+                                        name: "Id".to_string(),
+                                        values: vec![NetValue::Str("dev-0".to_string())],
+                                    },
+                                    NetStructFieldValue {
+                                        name: "Sharing".to_string(),
+                                        values: vec![NetValue::Enum(0)],
+                                    },
+                                ])]),
+                            },
+                            RpcParamValue {
+                                name: "Index".to_string(),
+                                values: None,
+                            },
+                        ],
+                    },
+                    ReplicatedItem::Rpc {
+                        rep_index: rpc_id(pri_cache, "ServerFinalizeRemoteUserData"),
+                        name: "ServerFinalizeRemoteUserData".to_string(),
+                        params: vec![
+                            RpcParamValue {
+                                name: "bGuest".to_string(),
+                                values: Some(vec![NetValue::Bool(false)]),
+                            },
+                            RpcParamValue {
+                                name: "Id".to_string(),
+                                values: None,
+                            },
+                        ],
+                    },
+                ],
+            },
+        )
+        .unwrap();
+
+        let unknown_ch_bunch = Bunch::new(
+            immortal_net::BunchHeader {
+                ch_index: 99,
+                ch_type: immortal_net::Ue3ChannelType::Actor,
+                flags: immortal_net::BunchFlags {
+                    b_open: false,
+                    b_close: false,
+                    b_reliable: false,
+                    b_partial: false,
+                },
+                ch_sequence: 0,
+            },
+            vec![0xDE, 0xAD, 0xBE, 0xEF],
+        );
+
+        let mut p0 = Ue3Packet::new(prefix, 0);
+        p0.bunches.push(ch3_rel_bunch);
+        p0.bunches.push(ch80_bunch);
+        p0.bunches.push(unknown_ch_bunch);
+        let r0 = server.handle_datagram(&p0.encode().unwrap(), src).await.unwrap();
+        let s0 = Ue3Packet::decode(&r0[0]).unwrap();
+        assert_eq!(s0.acks, vec![0]);
+        // Within 45ms of open_real_actor_channels, no extra heartbeat should fire yet
+        assert!(s0.bunches.is_empty());
+
+        // Packet 1: ch=3 ServerSetSpectatorLocation + ServerUpdateCamera after >45ms
+        tokio::time::sleep(std::time::Duration::from_millis(55)).await;
+        let ch3_cam_bunch = ActorBunchCodec::encode_to_bunch(
+            ACTOR_CHANNEL_INDEX,
+            0,
+            false,
+            pc_cache,
+            &ActorBunch {
+                open_header: None,
+                items: vec![
+                    ReplicatedItem::Rpc {
+                        rep_index: rpc_id(pc_cache, "ServerSetSpectatorLocation"),
+                        name: "ServerSetSpectatorLocation".to_string(),
+                        params: vec![RpcParamValue {
+                            name: "NewLoc".to_string(),
+                            values: Some(vec![NetValue::Vector([355.0, 0.0, 203.0])]),
+                        }],
+                    },
+                    ReplicatedItem::Rpc {
+                        rep_index: rpc_id(pc_cache, "ServerUpdateCamera"),
+                        name: "ServerUpdateCamera".to_string(),
+                        params: vec![
+                            RpcParamValue {
+                                name: "CamLoc".to_string(),
+                                values: Some(vec![NetValue::Vector([105.0, 0.0, 233.0])]),
+                            },
+                            RpcParamValue {
+                                name: "CamPitchAndYaw".to_string(),
+                                values: Some(vec![NetValue::Int(1234)]),
+                            },
+                        ],
+                    },
+                ],
+            },
+        )
+        .unwrap();
+        let mut p1 = Ue3Packet::new(prefix, 1);
+        p1.bunches.push(ch3_cam_bunch);
+        let r1 = server.handle_datagram(&p1.encode().unwrap(), src).await.unwrap();
+        let s1 = Ue3Packet::decode(&r1[0]).unwrap();
+        assert_eq!(s1.acks, vec![1]);
+        assert_eq!(s1.bunches.len(), 1);
+        let ts_dec = ActorBunchCodec::decode_bunch(&s1.bunches[0], pc_cache, None).unwrap();
+        assert!(ts_dec.items.iter().any(|it| matches!(
+            it,
+            ReplicatedItem::Property { name, value: NetValue::Float(_), .. } if name == "r_fServerTimeStamp"
+        )));
+
+        let sessions = server.sessions.read().await;
+        let sess = sessions.get(&src).unwrap();
+        assert!(sess.replication.toggle_zoom);
+        assert!(sess.replication.auto_purchase);
+        assert_eq!(
+            sess.replication.visible_sublevels.get("trm_courtyard_abc"),
+            Some(&true)
+        );
+        assert_eq!(
+            sess.replication.acknowledged_possession,
+            Some(ObjectRef::DynamicChannel(4))
+        );
+        assert_eq!(sess.replication.remote_user_data_updates, 1);
+        assert!(sess.replication.remote_user_data_finalized);
+        assert_eq!(sess.replication.spectator_location, Some([355.0, 0.0, 203.0]));
+        assert_eq!(sess.replication.camera_location, Some([105.0, 0.0, 233.0]));
+        assert_eq!(sess.replication.camera_pitch_yaw, Some(1234));
     }
 }

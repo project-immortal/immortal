@@ -10,17 +10,20 @@
 
 use immortal_core::ChampionId;
 use immortal_net::{
-    ActorBunchCodec, BitWriter, Bunch, ControlMessage, HelloRecvReply, HelloSend, NetValue,
-    ObjectRef, PingRecv, PingSend, ReplicatedItem, Ue3ChannelType, Ue3Packet, ue3_handshake_crc,
-    ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX, CPACK_OP_BUNCH, DEFAULT_ENGINE_MIN_NET_VERSION,
-    DEFAULT_ENGINE_NET_VERSION, DEFAULT_HMAC_KEY, PCOM_PREFIX_LEN,
+    ActorBunch, ActorBunchCodec, BitWriter, Bunch, ControlMessage, HelloRecvReply, HelloSend,
+    NetName, NetValue, ObjectRef, PingRecv, PingSend, ReplicatedItem, RpcParamValue,
+    Ue3ChannelType, Ue3Packet, ue3_handshake_crc, ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX,
+    CPACK_OP_BUNCH, DEFAULT_ENGINE_MIN_NET_VERSION, DEFAULT_ENGINE_NET_VERSION, DEFAULT_HMAC_KEY,
+    PCOM_PREFIX_LEN,
 };
 use immortal_server::{
     game_server::{DEFAULT_WELCOME_GAME_CLASS, DEFAULT_WELCOME_LEVEL},
     ActorReplicationSchemas, GameServer, GameServerConfig, ReplicationPayload,
-    DEVICE_FERNANDO_FLAME_LANCE, FERNANDO_DEFAULT_TEAM, GRI_CHANNEL_INDEX, PHYS_WALKING,
-    PLAYER_CONTROLLER_CHANNEL_INDEX, PLAYER_PAWN_CHANNEL_INDEX, PRI_CHANNEL_INDEX,
-    ROLE_AUTONOMOUS_PROXY, TG_GAME_TYPE_SHOOTING_RANGE,
+    ARCHWAY_FERNANDO_SPAWN_X, ARCHWAY_FERNANDO_SPAWN_Y, ARCHWAY_FERNANDO_SPAWN_Z,
+    ARCHWAY_FERNANDO_YAW, BOT_PRI_CHANNEL_INDEX, DEVICE_FERNANDO_FLAME_LANCE,
+    FERNANDO_DEFAULT_TEAM, GRI_CHANNEL_INDEX, PHYS_WALKING, PLAYER_CONTROLLER_CHANNEL_INDEX,
+    PLAYER_PAWN_CHANNEL_INDEX, PRI_CHANNEL_INDEX, ROLE_AUTONOMOUS_PROXY, STATE_NAME_SPECTATING,
+    TASK_FORCE_CHANNEL_INDEX, TG_GAME_TYPE_SHOOTING_RANGE,
 };
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -748,34 +751,50 @@ async fn run_exudp0_full_handshake_case(config: GameServerConfig) {
     let s6 = Ue3Packet::decode(&buf[..n]).unwrap();
     assert!(s6.bunches.is_empty());
 
-    // 8. Send 0x09 NMT_Join -> receive authentic UActorChannel opens (ch=3, 4, 80, 81)
+    // 8. Send 0x09 NMT_Join -> receive authentic UActorChannel opens (ch=3, 57, 4, 61, 80, 81) + 2 follow-ups
     let mut c7 = Ue3Packet::new(prefix, client_pkt_id);
+    client_pkt_id += 1;
     c7.acks.push(s6.packet_id);
     c7.bunches
         .push(Bunch::control(ctrl_seq, ControlMessage::Join.encode()));
     client_socket.send(&c7.encode().unwrap()).await.unwrap();
 
     let mut actor_open_bunches = BTreeMap::new();
-    while actor_open_bunches.len() < 4 {
+    let mut actor_followup_bunches = BTreeMap::new();
+    let mut last_server_pkt_id = s6.packet_id;
+    while actor_open_bunches.len() < 6 || actor_followup_bunches.len() < 2 {
         let n = timeout(Duration::from_millis(500), client_socket.recv(&mut buf))
             .await
-            .expect("Timeout waiting for UActorChannel opens (ch=3, 4, 80, 81)")
+            .expect("Timeout waiting for UActorChannel opens (ch=3, 4, 57, 61, 80, 81)")
             .unwrap();
         let pkt = Ue3Packet::decode(&buf[..n]).unwrap();
+        last_server_pkt_id = pkt.packet_id;
         for b in pkt.bunches {
             assert_eq!(b.header.ch_type, Ue3ChannelType::Actor);
-            assert!(b.header.flags.b_open);
             assert!(b.header.flags.b_reliable);
-            actor_open_bunches.insert(b.header.ch_index, b);
+            if b.header.flags.b_open {
+                actor_open_bunches.insert(b.header.ch_index, b);
+            } else {
+                actor_followup_bunches.insert(b.header.ch_index, b);
+            }
         }
     }
 
-    assert!(actor_open_bunches.contains_key(&PLAYER_CONTROLLER_CHANNEL_INDEX));
-    assert!(actor_open_bunches.contains_key(&PLAYER_PAWN_CHANNEL_INDEX));
-    assert!(actor_open_bunches.contains_key(&PRI_CHANNEL_INDEX));
-    assert!(actor_open_bunches.contains_key(&GRI_CHANNEL_INDEX));
+    for ch in [
+        PLAYER_CONTROLLER_CHANNEL_INDEX,
+        PLAYER_PAWN_CHANNEL_INDEX,
+        TASK_FORCE_CHANNEL_INDEX,
+        BOT_PRI_CHANNEL_INDEX,
+        PRI_CHANNEL_INDEX,
+        GRI_CHANNEL_INDEX,
+    ] {
+        assert!(
+            actor_open_bunches.contains_key(&ch),
+            "Missing open bunch for ch={ch}"
+        );
+    }
 
-    // Decode all 4 opens via ActorBunchCodec (asserting 0 leftover bits) and validate values
+    // Decode all 6 opens + 2 follow-ups via ActorBunchCodec (asserting 0 leftover bits)
     let (pc_cache, pc_layout) = expected_schemas
         .for_channel(PLAYER_CONTROLLER_CHANNEL_INDEX)
         .unwrap();
@@ -795,17 +814,83 @@ async fn run_exudp0_full_handshake_case(config: GameServerConfig) {
     );
     assert!(pc_decoded.items.iter().any(|it| matches!(
         it,
+        ReplicatedItem::Property { name, value: NetValue::Bool(true), .. } if name == "bCollideWorld"
+    )));
+    assert!(pc_decoded.items.iter().any(|it| matches!(
+        it,
         ReplicatedItem::Property { name, value: NetValue::Enum(v), .. }
             if name == "Role" && *v == ROLE_AUTONOMOUS_PROXY
     )));
     assert!(pc_decoded.items.iter().any(|it| matches!(
         it,
-        ReplicatedItem::Property { name, value: NetValue::Object(ObjectRef::DynamicChannel(80)), .. }
-            if name == "PlayerReplicationInfo"
+        ReplicatedItem::Property { name, value: NetValue::Bool(true), .. } if name == "bNetOwner"
     )));
     assert!(pc_decoded.items.iter().any(|it| matches!(
         it,
         ReplicatedItem::Property { name, value: NetValue::Int(1), .. } if name == "r_bInputEnabled"
+    )));
+    assert!(pc_decoded.items.iter().any(|it| matches!(
+        it,
+        ReplicatedItem::Rpc { name, params, .. }
+            if name == "ClientSetHUD"
+                && matches!(
+                    params.first().and_then(|p| p.values.as_ref()).and_then(|v| v.first()),
+                    Some(NetValue::Object(ObjectRef::Static(id)))
+                        if *id == expected_schemas.archetypes.tg_hud
+                )
+    )));
+    assert!(pc_decoded.items.iter().any(|it| matches!(
+        it,
+        ReplicatedItem::Rpc { name, params, .. }
+            if name == "ClientGotoState"
+                && matches!(
+                    params.first().and_then(|p| p.values.as_ref()).and_then(|v| v.first()),
+                    Some(NetValue::Name(NetName::Hardcoded(state_id)))
+                        if *state_id == STATE_NAME_SPECTATING
+                )
+    )));
+
+    let pc_followup = ActorBunchCodec::decode_bunch(
+        actor_followup_bunches
+            .get(&PLAYER_CONTROLLER_CHANNEL_INDEX)
+            .unwrap(),
+        pc_cache,
+        None,
+    )
+    .expect("ch=3 follow-up must decode with 0 leftover bits");
+    assert!(pc_followup.items.iter().any(|it| matches!(
+        it,
+        ReplicatedItem::Property {
+            name,
+            value: NetValue::Object(ObjectRef::DynamicChannel(80)),
+            ..
+        } if name == "PlayerReplicationInfo"
+    )));
+    assert!(pc_followup.items.iter().any(|it| matches!(
+        it,
+        ReplicatedItem::Property { name, value: NetValue::Float(_), .. } if name == "r_fServerTimeStamp"
+    )));
+
+    let (tf_cache, tf_layout) = expected_schemas
+        .for_channel(TASK_FORCE_CHANNEL_INDEX)
+        .unwrap();
+    let tf_decoded = ActorBunchCodec::decode_bunch(
+        actor_open_bunches.get(&TASK_FORCE_CHANNEL_INDEX).unwrap(),
+        tf_cache,
+        Some(tf_layout),
+    )
+    .expect("ch=57 TgRepInfo_TaskForce must decode with 0 leftover bits");
+    assert_eq!(
+        tf_decoded.open_header.as_ref().unwrap().object_ref,
+        ObjectRef::Static(expected_schemas.archetypes.tg_rep_info_task_force)
+    );
+    assert!(tf_decoded.items.iter().any(|it| matches!(
+        it,
+        ReplicatedItem::Property { name, value: NetValue::Int(1), .. } if name == "TeamIndex"
+    )));
+    assert!(tf_decoded.items.iter().any(|it| matches!(
+        it,
+        ReplicatedItem::Property { name, value: NetValue::Byte(1), .. } if name == "r_nTaskForce"
     )));
 
     let (pawn_cache, pawn_layout) = expected_schemas
@@ -817,9 +902,18 @@ async fn run_exudp0_full_handshake_case(config: GameServerConfig) {
         Some(pawn_layout),
     )
     .expect("ch=4 TgPawn_Fernando must decode with 0 leftover bits");
+    let pawn_hdr = pawn_decoded.open_header.as_ref().unwrap();
     assert_eq!(
-        pawn_decoded.open_header.as_ref().unwrap().object_ref,
+        pawn_hdr.object_ref,
         ObjectRef::Static(expected_schemas.archetypes.tg_pawn_fernando)
+    );
+    assert_eq!(
+        pawn_hdr.location,
+        Some([
+            ARCHWAY_FERNANDO_SPAWN_X,
+            ARCHWAY_FERNANDO_SPAWN_Y,
+            ARCHWAY_FERNANDO_SPAWN_Z,
+        ])
     );
     assert!(pawn_decoded.items.iter().any(|it| matches!(
         it,
@@ -837,8 +931,52 @@ async fn run_exudp0_full_handshake_case(config: GameServerConfig) {
     )));
     assert!(pawn_decoded.items.iter().any(|it| matches!(
         it,
-        ReplicatedItem::Property { name, value: NetValue::Object(ObjectRef::DynamicChannel(3)), .. }
-            if name == "Controller"
+        ReplicatedItem::Property { name, value: NetValue::Rotator([0, yaw, 0]), .. }
+            if name == "Rotation" && *yaw == ARCHWAY_FERNANDO_YAW
+    )));
+    assert!(pawn_decoded.items.iter().any(|it| matches!(
+        it,
+        ReplicatedItem::Property { name, value: NetValue::Int(12203), .. } if name == "r_nSkinId"
+    )));
+    assert!(!pawn_decoded.items.iter().any(|it| matches!(
+        it,
+        ReplicatedItem::Property { name, .. } if name == "Controller"
+    )));
+
+    let pawn_followup = ActorBunchCodec::decode_bunch(
+        actor_followup_bunches
+            .get(&PLAYER_PAWN_CHANNEL_INDEX)
+            .unwrap(),
+        pawn_cache,
+        None,
+    )
+    .expect("ch=4 follow-up must decode with 0 leftover bits");
+    assert!(pawn_followup.items.iter().any(|it| matches!(
+        it,
+        ReplicatedItem::Property {
+            name,
+            value: NetValue::Object(ObjectRef::DynamicChannel(61)),
+            ..
+        } if name == "PlayerReplicationInfo"
+    )));
+
+    let (bot_pri_cache, bot_pri_layout) = expected_schemas
+        .for_channel(BOT_PRI_CHANNEL_INDEX)
+        .unwrap();
+    let bot_pri_decoded = ActorBunchCodec::decode_bunch(
+        actor_open_bunches.get(&BOT_PRI_CHANNEL_INDEX).unwrap(),
+        bot_pri_cache,
+        Some(bot_pri_layout),
+    )
+    .expect("ch=61 bot TgRepInfo_Player must decode with 0 leftover bits");
+    assert!(bot_pri_decoded.items.iter().any(|it| matches!(
+        it,
+        ReplicatedItem::Property { name, value: NetValue::Str(s), .. }
+            if name == "PlayerName" && s == "Fernando"
+    )));
+    assert!(bot_pri_decoded.items.iter().any(|it| matches!(
+        it,
+        ReplicatedItem::Property { name, value: NetValue::Bool(true), .. } if name == "bBot"
     )));
 
     let (pri_cache, pri_layout) = expected_schemas.for_channel(PRI_CHANNEL_INDEX).unwrap();
@@ -857,6 +995,11 @@ async fn run_exudp0_full_handshake_case(config: GameServerConfig) {
         it,
         ReplicatedItem::Property { name, value: NetValue::Int(500), .. } if name == "r_nCredits"
     )));
+    assert!(pri_decoded.items.iter().any(|it| matches!(
+        it,
+        ReplicatedItem::Property { name, value: NetValue::Int(500), .. }
+            if name == "r_nEarnedCredits"
+    )));
 
     let (gri_cache, gri_layout) = expected_schemas.for_channel(GRI_CHANNEL_INDEX).unwrap();
     let gri_decoded = ActorBunchCodec::decode_bunch(
@@ -871,8 +1014,86 @@ async fn run_exudp0_full_handshake_case(config: GameServerConfig) {
     )));
     assert!(gri_decoded.items.iter().any(|it| matches!(
         it,
+        ReplicatedItem::Property {
+            name,
+            value: NetValue::Object(ObjectRef::Static(id)),
+            ..
+        } if name == "GameClass" && *id == expected_schemas.archetypes.tg_game_paladins
+    )));
+    assert!(gri_decoded.items.iter().any(|it| matches!(
+        it,
         ReplicatedItem::Property { name, value: NetValue::Enum(v), .. }
             if name == "r_GameType" && *v == TG_GAME_TYPE_SHOOTING_RANGE
+    )));
+
+    // 9. Send C->S ch=3 ServerSetSpectatorLocation + ServerUpdateCamera after >45ms
+    //    and verify server ACKs and emits r_fServerTimeStamp heartbeat cleanly!
+    tokio::time::sleep(Duration::from_millis(55)).await;
+    let spec_rep = pc_cache
+        .fields()
+        .find(|f| f.name == "ServerSetSpectatorLocation")
+        .unwrap()
+        .rep_index;
+    let cam_rep = pc_cache
+        .fields()
+        .find(|f| f.name == "ServerUpdateCamera")
+        .unwrap()
+        .rep_index;
+    let c2s_actor_bunch = ActorBunchCodec::encode_to_bunch(
+        PLAYER_CONTROLLER_CHANNEL_INDEX,
+        0,
+        false,
+        pc_cache,
+        &ActorBunch {
+            open_header: None,
+            items: vec![
+                ReplicatedItem::Rpc {
+                    rep_index: spec_rep,
+                    name: "ServerSetSpectatorLocation".to_string(),
+                    params: vec![RpcParamValue {
+                        name: "NewLoc".to_string(),
+                        values: Some(vec![NetValue::Vector([-224.0, 0.0, 203.0])]),
+                    }],
+                },
+                ReplicatedItem::Rpc {
+                    rep_index: cam_rep,
+                    name: "ServerUpdateCamera".to_string(),
+                    params: vec![
+                        RpcParamValue {
+                            name: "CamLoc".to_string(),
+                            values: Some(vec![NetValue::Vector([-474.0, 0.0, 233.0])]),
+                        },
+                        RpcParamValue {
+                            name: "CamPitchAndYaw".to_string(),
+                            values: None,
+                        },
+                    ],
+                },
+            ],
+        },
+    )
+    .unwrap();
+
+    let mut c8 = Ue3Packet::new(prefix, client_pkt_id);
+    c8.acks.push(last_server_pkt_id);
+    c8.bunches.push(c2s_actor_bunch);
+    client_socket.send(&c8.encode().unwrap()).await.unwrap();
+
+    let n = timeout(Duration::from_millis(500), client_socket.recv(&mut buf))
+        .await
+        .expect("Timeout waiting for ch=3 ACK + r_fServerTimeStamp heartbeat")
+        .unwrap();
+    let s8 = Ue3Packet::decode(&buf[..n]).unwrap();
+    assert_eq!(s8.acks, vec![client_pkt_id]);
+    assert_eq!(s8.bunches.len(), 1);
+    assert_eq!(s8.bunches[0].header.ch_index, PLAYER_CONTROLLER_CHANNEL_INDEX);
+    assert!(!s8.bunches[0].header.flags.b_reliable);
+    let ts_decoded = ActorBunchCodec::decode_bunch(&s8.bunches[0], pc_cache, None)
+        .expect("r_fServerTimeStamp heartbeat must decode with 0 leftover bits");
+    assert!(ts_decoded.items.iter().any(|it| matches!(
+        it,
+        ReplicatedItem::Property { name, value: NetValue::Float(v), .. }
+            if name == "r_fServerTimeStamp" && *v >= 96.0
     )));
 
     server_handle.shutdown().await.unwrap();
