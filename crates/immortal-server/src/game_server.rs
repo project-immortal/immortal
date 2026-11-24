@@ -12,7 +12,7 @@
 use crate::replication::ReplicationSession;
 use anyhow::{anyhow, Result};
 use immortal_net::{
-    current_time_millis, parse_cpack_udp, Bunch, CPackUdpPacket, ControlChannelHandshake,
+    current_time_millis, parse_cpack_udp, sha256, Bunch, CPackUdpPacket, ControlChannelHandshake,
     ControlMessage, DedicatedControlFrame, HandshakePhase, HelloRecvReply, PingRecv, Ue3Packet,
     ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX, DEFAULT_GAME_CLASS, DEFAULT_GAME_PORT,
     DEFAULT_HMAC_KEY, DEFAULT_MAX_PACKET, DEFAULT_MAX_PACKET_BITS, DEFAULT_NET_SPEED,
@@ -36,6 +36,10 @@ pub enum SessionPhase {
     HelloCompleted,
     HandshakeCompleted,
     MapLoaded,
+    /// Post-`NMT_Join (0x09)` state. Per Claim 16 / `UNK-UDP-004`, real `UActorChannel`
+    /// replication is held/gated (simulated placeholder only when explicitly enabled in
+    /// `SessionConfig::enable_simulated_replication`) until unencrypted Flight 036 / Oracle
+    /// captures resolve `UActorChannel::ReceivedBunch`.
     Replicating,
 }
 
@@ -109,6 +113,20 @@ impl ClientSession {
     }
 }
 
+/// Dedicated-server (`?exudp>=1`) session handshake & replication policy parameters.
+#[derive(Debug, Clone, Default)]
+pub struct SessionConfig {
+    /// Optional 6-byte server cookie override for deterministic tests.
+    /// When `None`, a fresh cookie is derived dynamically per session via SHA-256.
+    pub server_cookie_override: Option<[u8; 6]>,
+    /// Optional 24-byte challenge override for deterministic tests.
+    /// When `None`, a fresh challenge is derived dynamically per session via SHA-256.
+    pub challenge_override: Option<[u8; 24]>,
+    /// Gates simulated placeholder `ReplicationPayload` emission in `SessionPhase::Replicating`.
+    /// Defaults to `false` (Claim 16 / `UNK-UDP-004` hold invariant).
+    pub enable_simulated_replication: bool,
+}
+
 /// Game Server configuration parameters.
 #[derive(Debug, Clone)]
 pub struct GameServerConfig {
@@ -117,6 +135,7 @@ pub struct GameServerConfig {
     pub game_class: String,
     pub hmac_key: Vec<u8>,
     pub net_speed: u32,
+    pub session: SessionConfig,
 }
 
 impl Default for GameServerConfig {
@@ -127,6 +146,7 @@ impl Default for GameServerConfig {
             game_class: DEFAULT_GAME_CLASS.to_string(),
             hmac_key: DEFAULT_HMAC_KEY.to_vec(),
             net_speed: DEFAULT_NET_SPEED,
+            session: SessionConfig::default(),
         }
     }
 }
@@ -260,8 +280,18 @@ impl GameServer {
                         debug!("Ingested dedicated unsequenced ClientHello (570B) from {}", src);
                         let mut client_cookie = [0u8; 5];
                         client_cookie.copy_from_slice(&connection_nonce[0..5]);
-                        // Established 6-byte session token barrier (Claim 18)
-                        let server_cookie = [0x78, 0x7E, 0x10, 0x7B, 0x9A, 0x8F];
+                        let (derived_cookie, derived_challenge) =
+                            derive_dedicated_session_material(session.session_id, src, &connection_nonce);
+                        let server_cookie = self
+                            .config
+                            .session
+                            .server_cookie_override
+                            .unwrap_or(derived_cookie);
+                        let challenge = self
+                            .config
+                            .session
+                            .challenge_override
+                            .unwrap_or(derived_challenge);
                         session.session_token = Some(server_cookie);
                         session.phase = SessionPhase::HelloCompleted;
                         let reply = DedicatedControlFrame::ServerChallenge {
@@ -269,7 +299,7 @@ impl GameServer {
                             handshake_flag: 0x5D,
                             client_cookie,
                             server_cookie,
-                            challenge: [0xAA; 24],
+                            challenge,
                         };
                         return Ok(vec![reply.encode()]);
                     }
@@ -399,8 +429,8 @@ impl GameServer {
         self.process_ue3_pcom_packet(pkt, src).await
     }
 
-    /// Processes a decoded `Ue3Packet` atomically across all bunches: stages handshake
-    /// and reliable-sequence transitions and commits only after every bunch succeeds.
+    /// Processes a decoded `Ue3Packet` atomically across all bunches: stages handshake,
+    /// `map_loaded`, and reliable-sequence transitions and commits only after every bunch succeeds.
     async fn process_ue3_pcom_packet(
         &self,
         pkt: Ue3Packet,
@@ -408,13 +438,6 @@ impl GameServer {
     ) -> Result<Vec<Vec<u8>>> {
         let mut sessions = self.sessions.write().await;
         let session = get_or_insert_session(&mut sessions, src, &self.config);
-        session.pcom_prefix = pkt.pcom_prefix.clone();
-        if let Some(token) = pkt.pcom_prefix.session_token() {
-            session.session_token = Some(*token);
-        }
-        if matches!(pkt.pcom_prefix, PcomPrefix::DedicatedSequenced { .. }) {
-            session.is_dedicated = true;
-        }
 
         debug!(
             "🎮 Ingested UE3 PComNetConn pkt from {} (pkt_id={}, acks={:?}, bunches={})",
@@ -426,11 +449,13 @@ impl GameServer {
 
         // Suppress ACK-of-ACK storms on pure ACK packets
         if pkt.bunches.is_empty() && !pkt.acks.is_empty() {
+            apply_pcom_prefix_metadata(session, &pkt.pcom_prefix);
             return Ok(Vec::new());
         }
 
         // Bare keepalive (no bunches, no ACKs): return standalone ACK
         if pkt.bunches.is_empty() {
+            apply_pcom_prefix_metadata(session, &pkt.pcom_prefix);
             let prefix = if session.is_dedicated {
                 let seq = session.next_dedicated_seq();
                 let token = if seq == 1 { session.session_token } else { None };
@@ -450,6 +475,8 @@ impl GameServer {
 
         let mut staged_handshake = session.handshake.clone();
         let mut staged_in_reliable = session.in_reliable_ctrl;
+        let mut staged_map_loaded = session.map_loaded;
+        let mut staged_replication = session.replication.clone();
         let mut staged_reply_msgs: Vec<ControlMessage> = Vec::new();
         let mut staged_reply_actor_bunches: Vec<Bunch> = Vec::new();
         let mut suppress_ack = false;
@@ -490,13 +517,13 @@ impl GameServer {
                     for msg in &messages {
                         debug!("Ingested Channel 0 ControlMessage from {}: {:?}", src, msg);
                         if let ControlMessage::MapLoaded = msg {
-                            session.map_loaded = true;
-                            session.phase = SessionPhase::Replicating;
-                            info!("🗺️ Client {} loaded map (NMT_MapLoaded 0x2A) — queuing initial actor replication bunches", src);
-                            if !session.replication.channel_opened {
-                                let actor_bunches = session.replication.initial_replication_bunches();
-                                staged_reply_actor_bunches.extend(actor_bunches);
-                            }
+                            // Claim 16 / UNK-UDP-004 hold invariant: record map_loaded atomically
+                            // and await NMT_Join (0x09); never emit invented ReplicationPayload bytes on 0x2A.
+                            staged_map_loaded = true;
+                            info!(
+                                "🗺️ Client {} loaded map (NMT_MapLoaded 0x2A) — awaiting NMT_Join / holding Actor Ch 3",
+                                src
+                            );
                         }
                         let replies = staged_handshake.handle_control_message(msg)?;
                         staged_reply_msgs.extend(replies);
@@ -513,7 +540,10 @@ impl GameServer {
                         bunch.data.len(),
                         src
                     );
-                    staged_reply_actor_bunches.push(session.replication.stream_baseline_delta(0.016));
+                    if self.config.session.enable_simulated_replication {
+                        staged_reply_actor_bunches
+                            .push(staged_replication.stream_baseline_delta(0.016));
+                    }
                 }
                 other_ch => {
                     debug!(
@@ -537,9 +567,13 @@ impl GameServer {
             );
         }
 
+        // Atomic commit point: all bunches decoded and validated without error.
+        apply_pcom_prefix_metadata(session, &pkt.pcom_prefix);
         let prev_phase = session.handshake.phase;
         session.handshake = staged_handshake;
         session.in_reliable_ctrl = staged_in_reliable;
+        session.map_loaded = staged_map_loaded;
+        session.replication = staged_replication;
 
         if session.handshake.phase != prev_phase {
             match session.handshake.phase {
@@ -552,13 +586,26 @@ impl GameServer {
                 }
                 HandshakePhase::Joined => {
                     session.phase = SessionPhase::Replicating;
-                    info!(
-                        "🎉 Client {} sent NMT_Join — entering Replicating phase",
-                        src
-                    );
+                    if self.config.session.enable_simulated_replication
+                        && !session.replication.channel_opened
+                    {
+                        info!(
+                            "🎉 Client {} sent NMT_Join — entering simulated Replicating phase",
+                            src
+                        );
+                        staged_reply_actor_bunches
+                            .extend(session.replication.initial_replication_bunches());
+                    } else {
+                        info!(
+                            "🎉 Client {} sent NMT_Join — entering Replicating phase (Actor Ch 3 held pending UNK-UDP-004)",
+                            src
+                        );
+                    }
                 }
                 _ => {}
             }
+        } else if staged_map_loaded && session.phase != SessionPhase::Replicating {
+            session.phase = SessionPhase::MapLoaded;
         }
 
         let mut reply_bunches = Vec::with_capacity(staged_reply_msgs.len() + staged_reply_actor_bunches.len());
@@ -757,6 +804,36 @@ fn pack_ue3_replies(
 fn rand_session_id() -> u32 {
     let now = current_time_millis();
     (now & 0xFFFFFFFF) as u32
+}
+
+fn apply_pcom_prefix_metadata(session: &mut ClientSession, prefix: &PcomPrefix) {
+    session.pcom_prefix = prefix.clone();
+    if let Some(token) = prefix.session_token() {
+        session.session_token = Some(*token);
+    }
+    if matches!(prefix, PcomPrefix::DedicatedSequenced { .. }) {
+        session.is_dedicated = true;
+    }
+}
+
+/// Derives per-session cookie (6 bytes) and challenge (24 bytes) dynamically via SHA-256
+/// instead of using hardcoded CAP-03 capture bytes (`PSL-INV-012`).
+fn derive_dedicated_session_material(
+    session_id: u32,
+    src: SocketAddr,
+    connection_nonce: &[u8; 6],
+) -> ([u8; 6], [u8; 24]) {
+    let mut seed = Vec::with_capacity(32);
+    seed.extend_from_slice(&session_id.to_le_bytes());
+    seed.extend_from_slice(&src.port().to_le_bytes());
+    seed.extend_from_slice(connection_nonce);
+    seed.extend_from_slice(&current_time_millis().to_le_bytes());
+    let digest = sha256(&seed);
+    let mut server_cookie = [0u8; 6];
+    let mut challenge = [0u8; 24];
+    server_cookie.copy_from_slice(&digest[0..6]);
+    challenge.copy_from_slice(&digest[6..30]);
+    (server_cookie, challenge)
 }
 
 #[cfg(test)]
@@ -1473,10 +1550,51 @@ mod tests {
         let encoded = pkt.encode().unwrap();
 
         let replies = server.handle_datagram(&encoded, src).await.unwrap();
-        assert!(!replies.is_empty());
+        assert_eq!(replies.len(), 1);
+        let reply_pkt = Ue3Packet::decode(&replies[0]).unwrap();
+        assert_eq!(reply_pkt.acks, vec![0]);
+        assert!(
+            reply_pkt.bunches.is_empty(),
+            "Claim 16 hold invariant: NMT_MapLoaded (0x2A) must NOT emit ReplicationPayload bunches"
+        );
 
         let sessions = server.sessions.read().await;
         let session = sessions.get(&src).expect("Session should exist");
         assert!(session.map_loaded);
+        assert_eq!(session.phase, SessionPhase::MapLoaded);
+        assert!(!session.replication.channel_opened);
+    }
+
+    #[tokio::test]
+    async fn test_pcom_map_loaded_mid_packet_error_is_atomic() {
+        let server = GameServer::bind("127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
+        let src: SocketAddr = "127.0.0.1:54330".parse().unwrap();
+        let prefix: [u8; PCOM_PREFIX_LEN] = [0x00, 0x0C, 0x22, 0x33, 0x44, 0x55];
+
+        // Bunch 0: valid NMT_MapLoaded (seq=1), Bunch 1: invalid HandshakeResponse CRC (seq=2)
+        let mut pkt = Ue3Packet::new(prefix, 0);
+        pkt.bunches
+            .push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
+        pkt.bunches.push(Bunch::control(
+            2,
+            ControlMessage::HandshakeResponse {
+                crc_response: ue3_handshake_crc(immortal_net::DEFAULT_HANDSHAKE_CHALLENGE) ^ 0x1,
+            }
+            .encode(),
+        ));
+
+        let res = server.handle_datagram(&pkt.encode().unwrap(), src).await;
+        assert!(res.is_err());
+
+        let sessions = server.sessions.read().await;
+        let session = sessions.get(&src).expect("Session should exist");
+        assert!(
+            !session.map_loaded,
+            "map_loaded must roll back on mid-packet error"
+        );
+        assert_eq!(session.phase, SessionPhase::Connected);
+        assert_eq!(session.in_reliable_ctrl, 0);
     }
 }

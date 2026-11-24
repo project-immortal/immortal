@@ -5,18 +5,37 @@
 
 //! # Immortal Server Library
 //! Cleanroom game server implementation, UE3 Channel 0 bunch handshake engine,
+//! server-authoritative combat/physics foundations (`ADOPT-02`, `ADOPT-03`),
 //! and Fernando pawn actor replication.
 
+pub mod combat;
 pub mod game_server;
+pub mod physics;
 pub mod replication;
 
+pub use combat::{
+    apply_immortal_aura_clamp, evaluate_charge_sweep, evaluate_fireball_sweep,
+    evaluate_flame_lance_cone, fireball_pierce_damage, normalize_head_to_cylinder,
+    ChargeSweepResult, CylinderHitbox, HeadHitbox, HitResult, ShieldBarrier,
+    ShieldInterceptResult, TargetHitbox, CHARGE_DAMAGE, CHARGE_SPEED_UU_PER_SEC,
+    FIREBALL_PIERCE_BONUS_RATIO, FIREBALL_RADIUS_UU, FIREBALL_VELOCITY_UU_PER_SEC,
+    FLAME_LANCE_HALF_ANGLE_DEG, FLAME_LANCE_RANGE_UU, FLAME_LANCE_TICK_DAMAGE,
+    FLAME_LANCE_TICK_INTERVAL_SEC, HEAD_BONE_NAME, IMMORTAL_AURA_RADIUS_UU,
+    IMMORTAL_DURATION_SEC, IMMORTAL_MIN_HEALTH_FLOOR, SHIELD_HEIGHT_UU, SHIELD_MAX_HP,
+    SHIELD_WIDTH_UU,
+};
 pub use game_server::{
-    ClientSession, GameServer, GameServerConfig, GameServerHandle, SessionPhase, MAX_SESSIONS,
+    ClientSession, GameServer, GameServerConfig, GameServerHandle, SessionConfig, SessionPhase,
+    MAX_SESSIONS,
+};
+pub use physics::{
+    evaluate_surface_interaction, resolve_surface_velocity, SurfaceInteraction,
+    STEEP_SURFACE_COS_45, VERTICAL_WALL_NORMAL_Z_EPS,
 };
 pub use replication::{
     BotActor, DeviceActor, PawnActor, PlayerControllerActor, ReplicationPayload,
-    ReplicationSession, Rotator, Vector3, DEVICE_FERNANDO_FLAME_LANCE, FERNANDO_BASE_HEALTH,
-    FERNANDO_CHAMPION_ID, FERNANDO_DEFAULT_TEAM, FERNANDO_PAWN_CLASS, FERNANDO_SPAWN_X,
-    FERNANDO_SPAWN_Y, FERNANDO_SPAWN_Z, REP_OP_DESTROY_ACTOR, REP_OP_OPEN_CHANNEL,
-    REP_OP_SPAWN_ACTOR, REP_OP_UPDATE_TRANSFORM,
+    ReplicationSession, Rotator, Vector3, DEVICE_FERNANDO_FLAME_LANCE, EVIE_DEFAULT_TEAM,
+    FERNANDO_BASE_HEALTH, FERNANDO_CHAMPION_ID, FERNANDO_DEFAULT_TEAM, FERNANDO_PAWN_CLASS,
+    FERNANDO_SPAWN_X, FERNANDO_SPAWN_Y, FERNANDO_SPAWN_Z, REP_OP_DESTROY_ACTOR,
+    REP_OP_OPEN_CHANNEL, REP_OP_SPAWN_ACTOR, REP_OP_UPDATE_TRANSFORM,
 };

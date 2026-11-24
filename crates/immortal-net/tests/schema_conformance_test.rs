@@ -33,6 +33,7 @@ fn test_all_mcts_token_constants_match_engine_schema() {
     // Token ID -> (Expected Name, Expected Type ID, Expected Group Header Mask)
     let expectations: &[(u16, &str, u8, u16)] = &[
         (MCTS_TOKEN_PLAYER_ID, "PLAYER_ID", 9, 0x4000), // Type 9 (INT64)
+        (MCTS_TOKEN_ACCOUNT_ID, "ACCOUNT_ID", 9, 0x4000), // Type 9 (INT64)
         (MCTS_TOKEN_BOT_ID, "BOT_ID", 5, 0x3000),       // Type 5 (INT32)
         (MCTS_TOKEN_QUEUE_STATUS, "DATA_SET", 13, 0x6000), // Type 13 (ROWSET)
         (MCTS_TOKEN_CHAMPION_ROSTER, "DATA_SET_BOTS", 13, 0x6000), // Type 13 (ROWSET)
