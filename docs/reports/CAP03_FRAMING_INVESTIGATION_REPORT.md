@@ -41,8 +41,8 @@
 4. **UActorChannel Carving & Log Cross-Referencing**:
    - Timing correlation between `CAP-03_custom_baseline_20261119_Launch.log` and the packet stream reveals exact milestones:
      - **T=0.00s (Frame 14596)**: `Browse: 0.0.0.0:9113/...exudp=2...`
-     - **T=1.47s (Packet #39, S->C Seq 18)**: `[0191.31] DevNet: Welcomed by server (Level: sg_jaguarfalls_rework_p, Game: TgGame.TgGame_Paladins_Siege_Ranked)` -> Opcode `0x01` (`NMT_Welcome`).
-     - **T=3.54s (Packet #56, S->C Seq 28)**: `[0193.33] Log: LoadMap: 0.0.0.0:9113/sg_jaguarfalls_rework_p...` -> Opcode `0x2A` (`NMT_MapLoaded`).
+     - **T=1.47s (Packet #39, S->C Seq 18)**: `[0191.31] DevNet: Welcomed by server (Level: sg_jaguarfalls_rework_p, Game: TgGame.TgGame_Paladins_Siege_Ranked)` (log-correlated timestamp; `0x0001` payload is encrypted under `?exudp=2` / `UNK-CRYPTO-001`, so `NMT_Welcome` is not directly decoded from CAP-03 wire bytes).
+     - **T=3.54s (Packet #56, S->C Seq 28)**: `[0193.33] Log: LoadMap: 0.0.0.0:9113/sg_jaguarfalls_rework_p...` (log-correlated S->C packet timing only; `NMT_MapLoaded (0x2A)` is strictly C->S per `0x140b55f20` and cannot be decoded from encrypted CAP-03 `0x0001` frames).
      - **T=5.78s - 5.84s (Packets #524–#531, Server Seq 51–53)**:
        - `[0195.74] DevNet: TgPlayerController_1 setplayer TgLocalPlayer_0`
        - Packet #524 (Frame 15141, S->C Seq 51, Len 247): Server opens Channel 3 (`UActorChannel`, `CHTYPE_Actor = 2`, `bOpen = 1, bReliable = 1, ChIndex = 3, ChSequence = 1`), replicating `TgPlayerController_1` and binding local player possession.
@@ -100,12 +100,10 @@
 
 Cross-referencing Server Seq 1..58 with `CAP-03_custom_baseline_20261119_Launch.log`:
 
-1. **Welcomed & Level Commitment**:
-   - Server Seq 18 (Packet #39, Len 38): Channel 0 bunch emits `NMT_Welcome (0x01)`.
-   - Client logs: `[0191.31] DevNet: Welcomed by server (Level: sg_jaguarfalls_rework_p, Game: TgGame.TgGame_Paladins_Siege_Ranked)`.
-2. **MapLoaded Trigger**:
-   - Server Seq 28 (Packet #56, Len 47): Client sends `NMT_MapLoaded (0x2A)`.
-   - Client logs: `[0193.33] Log: LoadMap: 0.0.0.0:9113/sg_jaguarfalls_rework_p...`.
+1. **Welcomed & Level Commitment (Log-Correlated)**:
+   - S->C Seq 18 (Packet #39, Len 38) coincides with `[0191.31] DevNet: Welcomed by server (Level: sg_jaguarfalls_rework_p, Game: TgGame.TgGame_Paladins_Siege_Ranked)` *(note: `?exudp=2` `0x0001` payload bytes are encrypted under `UNK-CRYPTO-001`, not plaintext-decoded)*.
+2. **MapLoaded Window (Log-Correlated — Correction)**:
+   - S->C Seq 28 (Packet #56, Len 47) is a server-to-client packet coinciding with `[0193.33] Log: LoadMap: 0.0.0.0:9113/sg_jaguarfalls_rework_p...` *(earlier draft mislabeled S->C Seq 28 Frame 14659 as `NMT_MapLoaded`; `NMT_MapLoaded (0x2A)` is strictly Client -> Server per `0x140b55f20`, and CAP-03 sequenced payloads remain encrypted under `UNK-CRYPTO-001`)*.
 3. **UActorChannel Opening & Possession (Server Seq 51, Packet #524)**:
    - Client logs: `[0195.74] DevNet: TgPlayerController_1 setplayer TgLocalPlayer_0`.
    - Channel: `ChIndex = 3` (`ACTOR_CHANNEL_INDEX = 3`).

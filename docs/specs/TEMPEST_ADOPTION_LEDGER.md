@@ -28,17 +28,17 @@ To ensure zero copyleft contamination between Tempest (GPL-3.0) / docs (All Righ
 
 | Item ID | Title | Target Subsystem | Target Milestone | Priority | Feasibility | Cleanroom Obligation |
 | :--- | :--- | :--- | :---: | :---: | :---: | :---: |
-| **ADOPT-01** | Server-Authoritative Collision Extractor | `crates/immortal-extract` | M5 & M6 | Critical | High | `OBL-COL-001` |
-| **ADOPT-02** | Dual-Stage Hitbox Model | `crates/immortal-server` | M5 | High | High | `OBL-COMBAT-001` |
-| **ADOPT-03** | Rooftop & Heavy Wall Correction | `crates/immortal-server` | M5 & M6 | Medium | High | `OBL-PHYS-001` |
+| **ADOPT-01** | Server-Authoritative Collision Extractor | `crates/immortal-extract` | M6 | Critical | High | `OBL-COL-001` |
+| **ADOPT-02** | Dual-Stage Hitbox Model | `crates/immortal-server` | M6 | High | High | `OBL-COMBAT-001` |
+| **ADOPT-03** | Rooftop & Heavy Wall Correction | `crates/immortal-server` | M6 | Medium | High | `OBL-PHYS-001` |
 | **ADOPT-04** | Havok AI 2016.1 NavMesh Parser & $A^*$ | `crates/immortal-extract` / `server` | M6 | Critical | High | `OBL-NAV-001` |
 | **ADOPT-05** | Pure-Rust Wwise Vorbis Encoder & SoundBank Builder | `crates/immortal-extract` | M7 | High | High | `OBL-AUDIO-001` |
 | **ADOPT-06** | Package SHA-1 Verification Detour | `tools/immortal-hook` | M7 | Medium | High | `OBL-HOOK-001` |
 | **ADOPT-07** | Dynamic TAntiCheatArray TLS XOR Decryption | `tools/immortal-hook` | M7 | High | High | `OBL-HOOK-002` |
 | **ADOPT-08** | Minimalist Statically-Linked Zig Injector | `tools/immortal-inject` | M7 | Medium | High | `OBL-INJECT-001` |
-| **ADOPT-09** | Headless Retail Dedicated Server Oracle | `.dirtyroom/oracle/` | M2 & M3 | Critical | High | `OBL-ORACLE-001` |
-| **ADOPT-10** | CMarshal 4-Cache Integer Batching Engine | `crates/immortal-net` | M2 | Critical | High | `OBL-MCTS-004` |
-| **ADOPT-11** | Full Engine Token Resolution & FNV-1 Dispatch | `crates/immortal-net` | M2 | Critical | High | `OBL-MCTS-005` |
+| **ADOPT-09** | Headless Retail Dedicated Server Oracle | `.dirtyroom/oracle/` | M6 | Critical | High | `OBL-ORACLE-001` |
+| **ADOPT-10** | CMarshal 4-Cache Integer Batching Engine | `crates/immortal-net` | M2 (Upgrade -> M6) | Critical | High | `OBL-MCTS-004` |
+| **ADOPT-11** | Full Engine Token Resolution & FNV-1 Dispatch | `crates/immortal-net` | M2 (Upgrade -> M6) | Critical | High | `OBL-MCTS-005` |
 | **ADOPT-12** | Object-Keyed Differential Package Patching | `crates/immortal-extract` | M7 | Low | Medium | `OBL-UPK-002` |
 
 ---
@@ -52,7 +52,7 @@ To ensure zero copyleft contamination between Tempest (GPL-3.0) / docs (All Righ
 - **Item ID**: `ADOPT-01`
 - **Subsystem**: Physics & Collision Extraction
 - **Target Crate**: `crates/immortal-extract/src/collision.rs`
-- **Target Milestones**: Milestone 5 (Movement & Fernando Combat) & Milestone 6 (Bot AI)
+- **Target Milestones**: Milestone 6 (World SAT Collision & Combat Authority)
 - **Priority**: Critical
 - **Feasibility**: High (pure data parsing and linear algebra)
 - **Cleanroom Obligation**: `OBL-COL-001`
@@ -90,7 +90,7 @@ Project Immortal will implement a cleanroom extractor in `immortal-extract` to e
   3. Validate hull closure: $\forall v \in \text{vertices}, \forall (A, B, C, D) \in \text{planes}: Av_x + Bv_y + Cv_z + D \le \epsilon$.
 
 #### Verification Method & Acceptance Criteria
-- Unit test in `crates/immortal-extract` deserializing a fixture of `BrushAggGeom` convex hulls from `StoneKeep_P.upk`.
+- Unit test in `crates/immortal-extract` deserializing a fixture of `BrushAggGeom` convex hulls from `SG_StoneKeep_P.upk` (and `Shootingrange_Collision.upk` / `SG_JaguarFalls_Rework_P.upk`).
 - Assert raycast intersection against a known wall plane matches retail hit coordinate within $\pm 0.1\text{ UU}$.
 - Pass `cargo test -p immortal-extract`.
 
@@ -101,7 +101,7 @@ Project Immortal will implement a cleanroom extractor in `immortal-extract` to e
 - **Item ID**: `ADOPT-02`
 - **Subsystem**: Combat & Damage Calculation
 - **Target Crate**: `crates/immortal-server/src/combat.rs`
-- **Target Milestone**: Milestone 5 (Movement & Fernando Combat)
+- **Target Milestone**: Milestone 6 (Combat Authority & Fernando Kit)
 - **Priority**: High
 - **Feasibility**: High
 - **Cleanroom Obligation**: `OBL-COMBAT-001`
@@ -138,7 +138,7 @@ In retail Paladins, this creates "hat meta" discrepancies: large cosmetics (e.g.
 - **Item ID**: `ADOPT-03`
 - **Subsystem**: Server Movement & Physics Simulation
 - **Target Crate**: `crates/immortal-server/src/physics.rs`
-- **Target Milestones**: Milestone 5 & Milestone 6
+- **Target Milestones**: Milestone 6 (Combat Authority & World Physics)
 - **Priority**: Medium
 - **Feasibility**: High
 - **Cleanroom Obligation**: `OBL-PHYS-001`
@@ -204,7 +204,7 @@ By implementing a cleanroom reader for `TAG0` containers and applying the invari
   $$P_{\text{Unreal}} = P_{\text{Havok}} \times 16.0$$
 
 #### Verification Method & Acceptance Criteria
-- Test extracting `TAG0` from `StoneKeep_P.upk` bulk data.
+- Test extracting `TAG0` from `SG_StoneKeep_P.upk` bulk data.
 - Verify vertex coordinates match expected map extents ($X, Y \in [-15000, 15000]$ UU, $Z \in [-2000, 5000]$ UU).
 - Execute $A^*$ query between team spawn points; assert continuous valid path across face adjacency.
 
@@ -345,29 +345,29 @@ A tiny, standalone injector ($<50\text{ KB}$) compiled with Zig for Windows and 
 
 - **Item ID**: `ADOPT-09`
 - **Subsystem**: Differential Testing & Ground Truth Verification
-- **Target Path**: `.dirtyroom/oracle/`
-- **Target Milestones**: Milestone 2 (MCTS Gateway) & Milestone 3 (Game Server Handshake)
+- **Target Path**: `.dirtyroom/oracle/` (invoked via `./agyis oracle` & `scripts/dirtyroom/patch_server_binary.py`)
+- **Target Milestones**: Milestone 6 (Retail Oracle Differential Testing)
 - **Priority**: Critical
 - **Feasibility**: High
 - **Cleanroom Obligation**: `OBL-ORACLE-001`
 
 #### Architectural Description
-A containerized Docker service running the retail Windows Paladins dedicated server under headless Wine on Linux. Used strictly in dirty-room differential testing to validate Project Immortal's packet bunch framing, ACK sequencing, and replication bitstreams.
+A headless Wine runner executing the retail 64-bit Windows Paladins dedicated server (`ShippingPC-ChaosGame-Server.exe`) on Linux (`unset DISPLAY`). Used strictly in dirty-room differential testing to validate Project Immortal's packet bunch framing, ACK sequencing, `?exudp=2` cipher behavior, and replication bitstreams.
 
 #### Cleanroom Specification Contract
 - **Inputs**:
   - Cooked Paladins game server files and match launch parameters.
 - **Outputs**:
-  - Running game server listening on UDP port 7000; emits pcap trace of replies.
+  - Running game server listening on UDP port 7000; emits `Launch.log` and pcap trace of replies.
 - **Environment Configuration**:
-  - Base image: `debian:trixie-slim` with `wine32:i386`.
+  - Runtime: Wine64 (or containerized Linux + Wine64 for 64-bit `ShippingPC-ChaosGame.exe`).
   - Display: `unset DISPLAY` (null/tty driver).
   - OpenSSL fix: `OPENSSL_ia32cap="~0x20000000"`.
-  - Flags: `-seekfreeloadingpcconsole -pid=402 -eac-nop-loaded -COOKFORDEMO`.
+  - Flags: `server <MapName> -seekfreeloadingpcconsole -pid=402 -eac-nop-loaded -unattended -nullrhi`.
 
 #### Verification Method & Acceptance Criteria
-- Container builds and starts via `docker compose -f .dirtyroom/oracle/docker-compose.yml up`.
-- Send `CPACK_HELLO` UDP packet to port 7000; assert `SPACK_HELLO` response received within $100\text{ms}$.
+- Binary patched cleanly via `python3 scripts/dirtyroom/patch_server_binary.py` into quarantined `.dirtyroom/oracle/runtime/Binaries/Win64/ShippingPC-ChaosGame-Server.exe` (`DYNAMIC_BASE == 0`).
+- `agyis oracle test --map SG_JaguarFalls_Rework_P --timeout 35` passes all 6 milestones (`Assembly Loaded Version:`, `NetMode is now 1`, `Bringing World ... up for play`, and UDP port `7000` bound).
 
 ---
 

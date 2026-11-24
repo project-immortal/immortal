@@ -7,13 +7,23 @@
 ---
 
 # Specifications
-- [Living Engineering Roadmap](specs/roadmap.md)
-- [Cleanroom Reconstruction Policy](specs/cleanroom_policy.md)
-- [Cleanroom Obligation Ledger](specs/cleanroom_ledger.md)
-- [Technical Roadblocks & De-risking](specs/technical_roadblocks.md)
-- [G1: UPK & Asset Extraction Pipeline](specs/g1_asset_pipeline.md)
-- [G2: Server Protocol & UE3 Bunches](specs/g2_server_protocol.md)
+- [Living Engineering Roadmap](specs/ROADMAP.md)
+- [Cleanroom Reconstruction Policy](specs/CLEANROOM_POLICY.md)
+- [Cleanroom Obligation Ledger](specs/CLEANROOM_LEDGER.md)
+- [Technical Roadblocks & De-risking](specs/TECHNICAL_ROADBLOCKS.md)
+- [G1: UPK & Asset Extraction Pipeline](specs/G1_ASSET_PIPELINE.md)
+- [G2: Server Protocol & UE3 Bunches](specs/G2_SERVER_PROTOCOL.md)
 - [MCTS Gazebo Lifecycle & Map Instance Protocol](specs/mcts_gazebo_lifecycle.md)
+- [MCTS Inventory & Session Template](specs/MCTS_INVENTORY_TEMPLATE.md)
+- [Retail Network Capture Plan](specs/RETAIL_CAPTURE_PLAN.md)
+- [Tempest Cleanroom Adoption Ledger](specs/TEMPEST_ADOPTION_LEDGER.md)
+
+---
+
+# Forensic & Architectural Reports
+- [CAP-03 Framing Investigation Report](reports/CAP03_FRAMING_INVESTIGATION_REPORT.md)
+- [Flight 036 Static REA Reconnaissance Report](reports/FLIGHT036_STATIC_RECONNAISSANCE_REPORT.md)
+- [Tempest Comparative Architectural Report](reports/TEMPEST_COMPARATIVE_ARCHITECTURAL_REPORT.md)
 
 ---
 
@@ -25,9 +35,9 @@
 ---
 
 # Developer Runbooks & Contribution
-- [The Critical Mass Horizon & Community Fan-Out](dev/critical_mass_plan.md)
-- [Workstation Setup Runbook](dev/cockpit_setup.md)
-- [Dirty-Room Reverse Engineering Pipeline](dev/dirtyroom_guide.md)
-- [Shooting Range Developer Runbook](dev/shooting_range.md)
-- [Agentic Cleanroom Contribution Guide](dev/contributing_agentic.md)
-- [Modular Champion Integration Guide](dev/champion_guide.md)
+- [The Critical Mass Horizon & Community Fan-Out](dev/CRITICAL_MASS_PLAN.md)
+- [Workstation Setup Runbook](dev/COCKPIT_SETUP.md)
+- [Dirty-Room Reverse Engineering Pipeline](dev/DIRTYROOM_GUIDE.md)
+- [Shooting Range Developer Runbook](dev/SHOOTING_RANGE.md)
+- [Agentic Cleanroom Contribution Guide](dev/CONTRIBUTING_AGENTIC.md)
+- [Modular Champion Integration Guide](dev/CHAMPION_GUIDE.md)

@@ -31,20 +31,19 @@ Project Immortal connects to the unmodified *Paladins: Champions of the Realm* r
                         │
                         ▼ (2) UDP :7777 [PComNetConn Game Server]
   ┌─────────────────────────────────────────────────────┐
-  │ - 6 zero bytes prefix [0,0,0,0,0,0] (or UNK-UDP-001)│
-  │ - Client Seq, Control Flags (0x40 ACK, 0x80 bunch)  │
-  │ - Server Sequence Monotonic Increment               │
-  │ - Channel 0 Handshake (NMT_Hello, NMT_NetSpeed)     │
+  │ - 6-byte PComNetConn prefix [0x00, token[0..5]]     │
+  │ - 14-bit PacketId, ACKs, & LSB-first UE3 FInBunch   │
+  │ - 7-stage Control Channel 0 handshake -> NMT_Welcome│
   │ - NMT_Welcome Level URL Travel:                     │
-  │   Shootingrange_P?game=TgGame...&Team=0             │
-  │ - Trailing BitReader Termination Marker (0x01)      │
+  │   Shootingrange_P / TgGame_Paladins_ShootingRange   │
+  │ - Trailing stop-bit termination marker              │
   └─────────────────────┬───────────────────────────────┘
                         │
                         ▼ (3) Level Travel & Walkability
   ┌─────────────────────────────────────────────────────┐
   │ - Client loads Shootingrange_P.upk package          │
-  │ - Actor Channel 2 Fernando (TgPawn_Knight) spawns   │
-  │ - Safe player pavilion spawn (Team=0 Order)         │
+  │ - NMT_MapLoaded (0x2A) -> NMT_Join (0x09)           │
+  │ - Actor Channel 3+ Fernando spawn (UNK-UDP-004 open)│
   └─────────────────────────────────────────────────────┘
 ```
 
@@ -114,16 +113,17 @@ Run the automated flight harness to execute end-to-end verification against the 
 agyis flight --target range --timeout 120
 ```
 
-Verified Flight 033 progression and remaining gate:
+Verified Flight 035 progression and remaining gate:
 1. **TCP Port 9000 Connection (Verified)**:
    - Daemon logs `Accepted MCTS connection from 127.0.0.1:<port>` and handles `0x07FE` (`2046`-byte) post-login chunk framing (`field0 == 0`).
    - Gateway delivers `OnLoginResponse`, `OnQueryServers` (`0xaf434825`), `MATCH_STATUS` State 10, `MAP_INSTANCE_ASSIGNED` (`0x15c61937` with Table `1583` & Token `2287`), `LaunchMapInstance` (`0x4bee2ed8`), and `ChangeMap` (`0x847de68b`).
    - Retail client logs `Match composition cached [96E3D70]` and `ReceiveChangeMap: mapGameId 1615`.
-2. **UDP Port 7777 Handshake (Blocked on `UNK-UDP-001`)**:
-   - Live client UDP `7777` packets now arrive at `immortal-server`, carrying non-zero bytes in `data[1..6]` (e.g., `[00, 8a, ce, 31, c6, f6, 00, 80, ...]`).
-   - Until `UNK-UDP-001` header parsing is resolved, `NMT_Welcome` (`Shootingrange_P?...&Team=0`) cannot fire and `BROWSE_RANGE` remains pending.
-3. **In-Game 3D Viewport (Target Gate)**:
-   - Once `UNK-UDP-001` is resolved, the client transitions to `Shootingrange_P`, spawns Fernando upright on the circular stone pavilion, and accepts WASD movement and mouselook.
+2. **UDP Port 7777 Handshake & Map Travel (Verified in Flight 035)**:
+   - `UNK-UDP-001`, `UNK-UDP-002`, and `UNK-UDP-005` are resolved (`Claim 15` & `Claim 16`).
+   - The 7-stage Channel 0 handshake completes in `24 ms` through `NMT_Welcome` (`Shootingrange_P`, `TgGame.TgGame_Paladins_ShootingRange`), and the client logs `LoadMap: 0.0.0.0:7777/Shootingrange_P` -> `Bringing World shootingrange_p.TheWorld up for play`.
+3. **In-Game 3D Viewport & Possession (Blocked on `UNK-UDP-004` / Flight 036)**:
+   - Post-`Bringing World`, the client sends `0x2A` (`NMT_MapLoaded`) followed by `NMT_Join (0x09)`.
+   - Live 3D viewport rendering and Fernando pawn control await Flight 036 capture/implementation of bit-packed `UActorChannel` (`ChIndex >= 3`) replication (`UNK-UDP-004`).
 
 ---
 

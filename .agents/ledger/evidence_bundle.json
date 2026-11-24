@@ -1,9 +1,100 @@
 [
   {
-    "evidence_id": "EVID-UPK-HEADER-001",
-    "subject": "ChaosGame/CookedPCConsole UPK Header Magic",
-    "provider": "rea_binary_probe",
-    "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "source_path": "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole"
+    "evidence_id": "EV-BIN-001",
+    "subject": "Paladins 8.1.5839.0 ShippingPC-ChaosGame.exe",
+    "provider": "host_sha256_ghidra",
+    "digest": "0c51d381dfe9ecbc1f571ab36603478626375704f4e4e40482524a1adafd6f75",
+    "source_path": "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/Binaries/Win64/ShippingPC-ChaosGame.exe"
+  },
+  {
+    "evidence_id": "EV-BIN-002",
+    "subject": "Paladins MctsInterface.dll",
+    "provider": "host_sha256_ghidra",
+    "digest": "90ce02b7b82012ffd564e426d9b4e84d189c998dc4e6018efb9ad7e506a79a33",
+    "source_path": "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/Binaries/Win64/MctsInterface.dll"
+  },
+  {
+    "evidence_id": "EV-BIN-003",
+    "subject": "Paladins vivoxsdk_x64.dll",
+    "provider": "host_sha256_ghidra",
+    "digest": "1c4ad378fb8cf26261adcd609c2092421af306336ea890f161517e72dd5b4341",
+    "source_path": "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/Binaries/Win64/vivoxsdk_x64.dll"
+  },
+  {
+    "evidence_id": "EV-NET-003",
+    "subject": "CAP-01 Bot Siege Dedicated UDP + MCTS Capture",
+    "provider": "nflog42_cgroup_capture",
+    "digest": "4f21c120e39c74dedc7803a781b8bc24a7a0998d76cb204538f4738cf39deb5d",
+    "source_path": ".dirtyroom/pcaps/CAP-01_bot_siege_20261119.pcapng"
+  },
+  {
+    "evidence_id": "EV-LOG-004",
+    "subject": "CAP-01 Bot Siege Paired Launch Log",
+    "provider": "retail_client_log",
+    "digest": "16376a1dd649d32e9c906e04d90cf7165998dffec6c8cc437f156537889c2463",
+    "source_path": ".dirtyroom/pcaps/CAP-01_bot_siege_20261119_Launch.log"
+  },
+  {
+    "evidence_id": "EV-NET-004",
+    "subject": "CAP-00 Shooting Range Isolated Trace",
+    "provider": "nflog42_cgroup_capture",
+    "digest": "9b3b78b0f3b813ac206bf49efc7d672092c9ae1238aa225cfe1ae681fcf4ee13",
+    "source_path": ".dirtyroom/pcaps/CAP-00_shooting_range_20261119.pcapng"
+  },
+  {
+    "evidence_id": "EV-LOG-005",
+    "subject": "CAP-00 Shooting Range Paired Launch Log",
+    "provider": "retail_client_log",
+    "digest": "58009f201e56b821f57b297b4f59846bfe32187d960715e7dcbc4bca62bc02bb",
+    "source_path": ".dirtyroom/pcaps/CAP-00_shooting_range_20261119_Launch.log"
+  },
+  {
+    "evidence_id": "EV-NET-005",
+    "subject": "CAP-03 Custom Baseline Dedicated UDP + MCTS Capture",
+    "provider": "nflog42_cgroup_capture",
+    "digest": "02a5fa92d0e7332e0e7a4ac26349366d6c20cab6e3e036e74351e6c055c92696",
+    "source_path": ".dirtyroom/pcaps/CAP-03_custom_baseline_20261119.pcapng"
+  },
+  {
+    "evidence_id": "EV-LOG-006",
+    "subject": "CAP-03 Custom Baseline Paired Launch Log",
+    "provider": "retail_client_log",
+    "digest": "a1c6c179ebba83e094cd5c0da4250fd1292dc51c1ea99957c71a7ca5eba3b567",
+    "source_path": ".dirtyroom/pcaps/CAP-03_custom_baseline_20261119_Launch.log"
+  },
+  {
+    "evidence_id": "EV-UPK-001",
+    "subject": "FERNANDO_ASSETS_SF.upk",
+    "provider": "host_sha256_upk",
+    "digest": "b88f00055a79301e3a3ff32a2a4e4eee04ae65d9af772f60386bcc50a8b7c688",
+    "source_path": "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole/FERNANDO_ASSETS_SF.upk"
+  },
+  {
+    "evidence_id": "EV-UPK-002",
+    "subject": "Shootingrange_P.upk",
+    "provider": "host_sha256_upk",
+    "digest": "63e57d993bbfd855ce2a8408e49a0317c7982d10b3e5fb56949bebb61d3646fd",
+    "source_path": "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole/Shootingrange_P.upk"
+  },
+  {
+    "evidence_id": "EV-UPK-003",
+    "subject": "Shootingrange_Collision.upk",
+    "provider": "host_sha256_upk",
+    "digest": "0e48e35d3789b0e8b830d647b25290965fb5f8f70d2525a8b71c1c5875e4d993",
+    "source_path": "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole/Shootingrange_Collision.upk"
+  },
+  {
+    "evidence_id": "EV-UPK-004",
+    "subject": "SG_JaguarFalls_Rework_P.upk",
+    "provider": "host_sha256_upk",
+    "digest": "86388bb2dd551ef35e8c25704f5db71ac46d18306317fa80b8a4f01daa8927f2",
+    "source_path": "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole/SG_JaguarFalls_Rework_P.upk"
+  },
+  {
+    "evidence_id": "EV-UPK-005",
+    "subject": "SG_StoneKeep_P.upk",
+    "provider": "host_sha256_upk",
+    "digest": "8da88b0e6956b20de7f874fce3aab5373b36f3e8473f9dbbf6f66db630914376",
+    "source_path": "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole/SG_StoneKeep_P.upk"
   }
 ]

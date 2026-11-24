@@ -16,5 +16,5 @@ crates/
    - Gateway returns valid session ticket, player GUID, and match routing to `127.0.0.1:7777`.
 2. **Game Server UDP Bunch Protocol**:
    - Connection established over UDP port `7777`.
-   - Control Channel 0 exchanges `NMT_Hello`, `NMT_NetSpeed`, and `NMT_Welcome`.
-   - Actor Channel 2 spawns PlayerController and replicates Fernando transform.
+   - Control Channel 0 exchanges `NMT_HandshakeStart`..`NMT_Welcome`.
+   - Actor Channel 3+ (`CHTYPE_Actor = 2`, `ChIndex >= 3`) is reserved for `PlayerController` and `TgPawn_Fernando` replication (`UNK-UDP-004`, open).

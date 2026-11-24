@@ -60,8 +60,8 @@ flowchart LR
 
 1. **Deterministic 3D Sandbox Boot**:
    Any engineer or community member can execute `cargo run` and launch the retail client directly into `Shootingrange_P` on UDP 7777 without crashes or manual memory patching.
-2. **Stabilized Actor & Ability Trait Scaffold**:
-   Cleanroom Rust traits are stabilized in `crates/immortal-server`:
+2. **Stabilized Actor & Ability Trait Scaffold (Planned)**:
+   Once stabilized in `crates/immortal-server` (and future `crates/immortal-champions/` modules):
    - `pub trait ChampionDefinition`
    - `pub trait AbilityHandler`
    - `pub trait ProjectileLogic`
@@ -78,7 +78,7 @@ Once Critical Mass is unlocked, work divides cleanly across four independent, hi
 ### Track 1: The Modular Champion Factory ⚔️
 *Paladins* features **~59 Champions** spanning four distinct roles: Front Line, Damage, Support, and Flank.
 
-Each champion is encapsulated as an isolated submodule under `crates/immortal-champions/`:
+Each champion is planned as an isolated submodule under a future `crates/immortal-champions/` crate (not yet created in workspace):
 ```text
 crates/immortal-champions/
 ├── fernando/     <-- Golden reference implementation
@@ -125,7 +125,7 @@ When Milestone 4 concludes and Critical Mass is unlocked:
    - Each template includes the champion's class ID, primary device hashes, ability animation names, and base stats.
    - Engineers self-assign by claiming the champion issue (e.g. `[Champion]: Implement Drogoz (ID: 2246)`).
 2. **Standardized Champion Integration Guide**:
-   - Every contributor follows [`docs/dev/champion_guide.md`](champion_guide.md) to author, extract, wire, and test their champion hermetically.
+   - Every contributor follows [`docs/dev/CHAMPION_GUIDE.md`](CHAMPION_GUIDE.md) to author, extract, wire, and test their champion hermetically.
 3. **Immortal Community Hackathons & Playtests**:
    - Community hackathons where pairs of engineers spend dedicated pairing sessions building and testing champion kits in local shooting range duels.
    - Regular community playtest milestones running on local Docker instances of `immortal-server`.
@@ -138,8 +138,10 @@ When Milestone 4 concludes and Critical Mass is unlocked:
 | :---: | :--- | :---: | :--- |
 | **M0** | Cleanroom Tooling & Binary Intelligence | **Done** | Complete |
 | **M1** | MCTS Auth & 3D Main Menu Unfreeze | **Done** | Complete |
-| **M2** | Map Instance Orchestration & Sandbox Travel | **Verification Gate** | MCTS `0x15c61937` / `ChangeMap 1615` / `0x07FE` verified (Flight 033) |
-| **M3** | UDP 7777 Protocol Handshake Driver | **Active** | Live UDP `7777` arriving; blocked on `UNK-UDP-001` (`data[1..6]`) |
-| **M4** | **Authoritative Simulation & Fernando (Critical Mass)** | **Scheduled** | **CRITICAL MASS GATE** |
+| **M2** | Map Instance Orchestration & Sandbox Travel | **Done** | MCTS `0x15c61937` / `ChangeMap 1615` / `0x07FE` + `LoadMap` verified (Flight 035) |
+| **M3** | UDP 7777 Protocol Handshake Driver | **Done** | `UNK-UDP-001/002/005` resolved; 7-stage handshake -> `NMT_Welcome` (`24 ms`) verified |
+| **M4** | Retail Captures & Protocol Forensics | **Done** | `CAP-00`, `CAP-01`, `CAP-03` quarantined; `0x2A` & 10-byte prefix proven |
+| **M5** | Dedicated-Server Codec & Actor Replication | **Partial** | Blocked on `UNK-UDP-004` (`UActorChannel` bit-packing) & `UNK-CRYPTO-001` (`?exudp=2`) |
+| **M6** | **Combat Authority, World SAT Collision & Retail Oracle** | **Active** | **CRITICAL MASS GATE** (`ADOPT-01..03`, `ADOPT-09`) |
 
-We are currently completing Milestone 2/3 verification via `agyis flight --target range --timeout 120`: MCTS `0x15c61937` + Table `1583` + `ReceiveChangeMap: mapGameId 1615` are verified and live UDP `7777` packets arrive, leaving `UNK-UDP-001` (`data[1..6]` `PComNetConn` framing) as the final gate before `Shootingrange_P` boots and Fernando materializes.
+We have completed M0–M4 (`NMT_Welcome` -> `LoadMap` verified in Flight 035) and are resolving M5 (`UNK-UDP-004` / `UNK-CRYPTO-001`) alongside M6 foundations (`ADOPT-01..03`, `ADOPT-09`) so Fernando spawns and fights live in `Shootingrange_P`.
