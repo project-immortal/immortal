@@ -9,19 +9,20 @@
 //! (`0x1A -> 0x1B -> 0x1C -> 0x1D -> 0x20 -> 0x1F(0) -> 0x00 -> 0x03 -> 0x04/0x05 -> 0x01 -> 0x09`),
 //! bounded session management (`MAX_SESSIONS`), and legacy `CPackUdp` dispatch.
 
-use crate::replication::ReplicationSession;
+use crate::replication::{ActorReplicationSchemas, ReplicationSession};
 use anyhow::{anyhow, Result};
+use immortal_extract::netcache::PackageMapManifest;
 use immortal_net::{
     current_time_millis, parse_cpack_udp, sha256, Bunch, CPackUdpPacket, ControlChannelHandshake,
     ControlMessage, DedicatedControlFrame, HandshakePhase, HelloRecvReply, PingRecv, Ue3Packet,
-    ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX, DEFAULT_GAME_CLASS, DEFAULT_GAME_PORT,
-    DEFAULT_HMAC_KEY, DEFAULT_MAX_PACKET, DEFAULT_MAX_PACKET_BITS, DEFAULT_NET_SPEED,
-    DEFAULT_SHOOTING_RANGE_LEVEL, EXUDP_MAX_PACKET_BITS, HELLO_MIN_LEN, HELLO_PAYLOAD_OFFSET,
-    MAX_CHSEQUENCE, MAX_PACKETID, PCOM_PREFIX_LEN, PcomPrefix,
+    ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX, DEFAULT_GAME_PORT, DEFAULT_HMAC_KEY,
+    DEFAULT_MAX_PACKET, DEFAULT_MAX_PACKET_BITS, DEFAULT_NET_SPEED, EXUDP_MAX_PACKET_BITS,
+    HELLO_MIN_LEN, HELLO_PAYLOAD_OFFSET, MAX_CHSEQUENCE, MAX_PACKETID, PCOM_PREFIX_LEN, PcomPrefix,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 use tokio::net::UdpSocket;
 use tokio::sync::{broadcast, RwLock};
@@ -30,16 +31,28 @@ use tracing::{debug, error, info, warn};
 /// Upper capacity bound for tracked UDP client sessions (`PSL-INV-011 §4`).
 pub const MAX_SESSIONS: usize = 1024;
 
+/// Default local Paladins `CookedPCConsole` directory auto-detected when present.
+pub const DEFAULT_PALADINS_UPK_DIR: &str =
+    "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole";
+
+/// Environment variable overriding `GameServerConfig::default().upk_dir`.
+pub const ENV_IMMORTAL_UPK_DIR: &str = "IMMORTAL_UPK_DIR";
+
+/// Default Shooting Range level name emitted in `NMT_Welcome (0x01)` (`#40`).
+pub const DEFAULT_WELCOME_LEVEL: &str = "shootingrange_p";
+
+/// Default game class emitted in `NMT_Welcome (0x01)` (`#40`).
+pub const DEFAULT_WELCOME_GAME_CLASS: &str = "TgGame.TgGame_Paladins";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionPhase {
     Connected,
     HelloCompleted,
     HandshakeCompleted,
     MapLoaded,
-    /// Post-`NMT_Join (0x09)` state. Per Claim 16 / `UNK-UDP-004`, real `UActorChannel`
-    /// replication is held/gated (simulated placeholder only when explicitly enabled in
-    /// `SessionConfig::enable_simulated_replication`) until unencrypted Flight 036 / Oracle
-    /// captures resolve `UActorChannel::ReceivedBunch`.
+    /// Post-`NMT_Join (0x09)` state. Authentic `UActorChannel` open bunches (`ch=3, 4, 80, 81`)
+    /// are emitted via `ActorBunchCodec` once `NMT_Have` + `NMT_MapLoaded` + `NMT_Join` arrive
+    /// (unless `SessionConfig::enable_simulated_replication` is set for legacy synthetic mode).
     Replicating,
 }
 
@@ -56,6 +69,8 @@ pub struct ClientSession {
     pub is_dedicated: bool,
     pub dedicated_server_seq: u32,
     pub session_token: Option<[u8; 6]>,
+    pub client_unique_id: u64,
+    pub acked_package_guids: HashSet<[u32; 4]>,
     pub handshake: ControlChannelHandshake,
     pub replication: ReplicationSession,
     pub last_seen: Instant,
@@ -81,6 +96,8 @@ impl ClientSession {
             is_dedicated: false,
             dedicated_server_seq: 1,
             session_token: None,
+            client_unique_id: 0,
+            acked_package_guids: HashSet::new(),
             handshake: ControlChannelHandshake::new(
                 Some(level_url),
                 Some(game_class),
@@ -89,6 +106,11 @@ impl ClientSession {
             replication: ReplicationSession::new(),
             last_seen: Instant::now(),
         }
+    }
+
+    /// Returns `true` when every entry in `manifest` has been acknowledged via `0x08 NMT_Have`.
+    pub fn has_all_required_packages(&self, manifest: &PackageMapManifest) -> bool {
+        has_all_required_packages(manifest, &self.acked_package_guids)
     }
 
     /// Allocates the next 0-based 14-bit UE3 server `PacketId` modulo `MAX_PACKETID`.
@@ -135,6 +157,7 @@ pub struct GameServerConfig {
     pub game_class: String,
     pub hmac_key: Vec<u8>,
     pub net_speed: u32,
+    pub upk_dir: Option<PathBuf>,
     pub session: SessionConfig,
 }
 
@@ -142,10 +165,11 @@ impl Default for GameServerConfig {
     fn default() -> Self {
         Self {
             bind_addr: SocketAddr::from(([0, 0, 0, 0], DEFAULT_GAME_PORT)),
-            level_url: DEFAULT_SHOOTING_RANGE_LEVEL.to_string(),
-            game_class: DEFAULT_GAME_CLASS.to_string(),
+            level_url: DEFAULT_WELCOME_LEVEL.to_string(),
+            game_class: DEFAULT_WELCOME_GAME_CLASS.to_string(),
             hmac_key: DEFAULT_HMAC_KEY.to_vec(),
             net_speed: DEFAULT_NET_SPEED,
+            upk_dir: detect_default_upk_dir(),
             session: SessionConfig::default(),
         }
     }
@@ -176,6 +200,7 @@ impl GameServerHandle {
 pub struct GameServer {
     socket: Arc<UdpSocket>,
     config: Arc<GameServerConfig>,
+    schemas: Arc<ActorReplicationSchemas>,
     sessions: Arc<RwLock<HashMap<SocketAddr, ClientSession>>>,
 }
 
@@ -189,11 +214,18 @@ impl GameServer {
     }
 
     pub async fn bind_with_config(config: GameServerConfig) -> Result<Self> {
+        let schemas = resolve_schemas(config.upk_dir.as_deref())?;
         let socket = UdpSocket::bind(config.bind_addr).await?;
-        info!("🎮 Game Server UDP bound to {}", socket.local_addr()?);
+        info!(
+            "🎮 Game Server UDP bound to {} (schemas: {}, packages: {})",
+            socket.local_addr()?,
+            if schemas.from_real_upk { "real UPK" } else { "hermetic" },
+            schemas.manifest.entries.len()
+        );
         Ok(Self {
             socket: Arc::new(socket),
             config: Arc::new(config),
+            schemas,
             sessions: Arc::new(RwLock::new(HashMap::new())),
         })
     }
@@ -202,9 +234,15 @@ impl GameServer {
         self.socket.local_addr().map_err(Into::into)
     }
 
+    /// Returns the active `ActorReplicationSchemas` (package manifest and `ClassNetCacheView`s).
+    pub fn schemas(&self) -> &ActorReplicationSchemas {
+        &self.schemas
+    }
+
     /// Spawns the server as a background Tokio task.
     pub fn start(config: GameServerConfig) -> Result<GameServerHandle> {
         let (shutdown_tx, mut shutdown_rx) = broadcast::channel(1);
+        let schemas = resolve_schemas(config.upk_dir.as_deref())?;
         let config_clone = config.clone();
 
         let std_socket = std::net::UdpSocket::bind(config.bind_addr)?;
@@ -216,6 +254,7 @@ impl GameServer {
             let server = GameServer {
                 socket: Arc::new(socket),
                 config: Arc::new(config_clone),
+                schemas,
                 sessions: Arc::new(RwLock::new(HashMap::new())),
             };
 
@@ -476,6 +515,8 @@ impl GameServer {
         let mut staged_handshake = session.handshake.clone();
         let mut staged_in_reliable = session.in_reliable_ctrl;
         let mut staged_map_loaded = session.map_loaded;
+        let mut staged_unique_id = session.client_unique_id;
+        let mut staged_acked_guids = session.acked_package_guids.clone();
         let mut staged_replication = session.replication.clone();
         let mut staged_reply_msgs: Vec<ControlMessage> = Vec::new();
         let mut staged_reply_actor_bunches: Vec<Bunch> = Vec::new();
@@ -516,14 +557,35 @@ impl GameServer {
                     let messages = ControlMessage::decode_all(&bunch.data, bunch.num_bits)?;
                     for msg in &messages {
                         debug!("Ingested Channel 0 ControlMessage from {}: {:?}", src, msg);
-                        if let ControlMessage::MapLoaded = msg {
-                            // Claim 16 / UNK-UDP-004 hold invariant: record map_loaded atomically
-                            // and await NMT_Join (0x09); never emit invented ReplicationPayload bytes on 0x2A.
-                            staged_map_loaded = true;
-                            info!(
-                                "🗺️ Client {} loaded map (NMT_MapLoaded 0x2A) — awaiting NMT_Join / holding Actor Ch 3",
-                                src
-                            );
+                        match msg {
+                            ControlMessage::Login { url, unique_id, .. } => {
+                                staged_unique_id = *unique_id;
+                                if let Some(name) = extract_url_param(url, "Name") {
+                                    staged_replication.player_name = name.to_string();
+                                }
+                                let _ = staged_handshake.handle_control_message(msg)?;
+                                staged_reply_msgs.extend(build_login_welcome_sequence(
+                                    &self.schemas.manifest,
+                                    &self.config.level_url,
+                                    &self.config.game_class,
+                                ));
+                                continue;
+                            }
+                            ControlMessage::Have { guid, generation } => {
+                                debug!(
+                                    "📦 Client {} acknowledged package {:?} (gen={}) via NMT_Have",
+                                    src, guid, generation
+                                );
+                                staged_acked_guids.insert(*guid);
+                            }
+                            ControlMessage::MapLoaded => {
+                                staged_map_loaded = true;
+                                info!(
+                                    "🗺️ Client {} loaded map (NMT_MapLoaded 0x2A)",
+                                    src
+                                );
+                            }
+                            _ => {}
                         }
                         let replies = staged_handshake.handle_control_message(msg)?;
                         staged_reply_msgs.extend(replies);
@@ -567,12 +629,48 @@ impl GameServer {
             );
         }
 
-        // Atomic commit point: all bunches decoded and validated without error.
+        // Prepare initial UActorChannel bunches before atomic commit if all prerequisites are satisfied.
+        if staged_handshake.phase == HandshakePhase::Joined {
+            if self.config.session.enable_simulated_replication {
+                if !staged_replication.channel_opened {
+                    info!(
+                        "🎉 Client {} sent NMT_Join — entering simulated Replicating phase",
+                        src
+                    );
+                    staged_reply_actor_bunches
+                        .extend(staged_replication.initial_replication_bunches());
+                }
+            } else if staged_map_loaded
+                && has_all_required_packages(&self.schemas.manifest, &staged_acked_guids)
+                && !staged_replication.real_channels_opened
+            {
+                info!(
+                    "🎉 Client {} satisfied NMT_Have ({}/{}) + NMT_MapLoaded + NMT_Join — emitting UActorChannel opens (ch=3, 4, 80, 81)",
+                    src,
+                    staged_acked_guids.len(),
+                    self.schemas.manifest.entries.len()
+                );
+                staged_reply_actor_bunches
+                    .extend(staged_replication.open_real_actor_channels(&self.schemas)?);
+            } else if !staged_replication.real_channels_opened {
+                debug!(
+                    "Client {} joined — waiting for prerequisites (map_loaded={}, acked={}/{})",
+                    src,
+                    staged_map_loaded,
+                    staged_acked_guids.len(),
+                    self.schemas.manifest.entries.len()
+                );
+            }
+        }
+
+        // Atomic commit point: all bunches decoded, validated, and actor opens prepared without error.
         apply_pcom_prefix_metadata(session, &pkt.pcom_prefix);
         let prev_phase = session.handshake.phase;
         session.handshake = staged_handshake;
         session.in_reliable_ctrl = staged_in_reliable;
         session.map_loaded = staged_map_loaded;
+        session.client_unique_id = staged_unique_id;
+        session.acked_package_guids = staged_acked_guids;
         session.replication = staged_replication;
 
         if session.handshake.phase != prev_phase {
@@ -580,27 +678,15 @@ impl GameServer {
                 HandshakePhase::Welcomed => {
                     session.phase = SessionPhase::HandshakeCompleted;
                     info!(
-                        "🎉 Welcomed client {} (Level: {}, Game: {})",
-                        src, session.handshake.level_name, session.handshake.game_name
+                        "🎉 Welcomed client {} (UniqueId: {}, Level: {}, Game: {})",
+                        src,
+                        session.client_unique_id,
+                        session.handshake.level_name,
+                        session.handshake.game_name
                     );
                 }
                 HandshakePhase::Joined => {
                     session.phase = SessionPhase::Replicating;
-                    if self.config.session.enable_simulated_replication
-                        && !session.replication.channel_opened
-                    {
-                        info!(
-                            "🎉 Client {} sent NMT_Join — entering simulated Replicating phase",
-                            src
-                        );
-                        staged_reply_actor_bunches
-                            .extend(session.replication.initial_replication_bunches());
-                    } else {
-                        info!(
-                            "🎉 Client {} sent NMT_Join — entering Replicating phase (Actor Ch 3 held pending UNK-UDP-004)",
-                            src
-                        );
-                    }
                 }
                 _ => {}
             }
@@ -801,6 +887,101 @@ fn pack_ue3_replies(
     Ok(encoded_packets)
 }
 
+fn detect_default_upk_dir() -> Option<PathBuf> {
+    if let Some(env_dir) = std::env::var_os(ENV_IMMORTAL_UPK_DIR) {
+        if !env_dir.is_empty() {
+            let p = PathBuf::from(env_dir);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+    let default_path = Path::new(DEFAULT_PALADINS_UPK_DIR);
+    if default_path.join("TgGame.upk").exists() {
+        Some(default_path.to_path_buf())
+    } else {
+        None
+    }
+}
+
+static DEFAULT_UPK_SCHEMAS_CACHE: OnceLock<std::result::Result<Arc<ActorReplicationSchemas>, String>> =
+    OnceLock::new();
+
+fn resolve_schemas(upk_dir: Option<&Path>) -> Result<Arc<ActorReplicationSchemas>> {
+    match upk_dir {
+        Some(dir) if dir == Path::new(DEFAULT_PALADINS_UPK_DIR) => {
+            let cached = DEFAULT_UPK_SCHEMAS_CACHE.get_or_init(|| {
+                ActorReplicationSchemas::from_upk_dir(dir)
+                    .map(Arc::new)
+                    .map_err(|e| e.to_string())
+            });
+            cached
+                .as_ref()
+                .map(Arc::clone)
+                .map_err(|msg| anyhow!("Failed to load default UPK schemas: {msg}"))
+        }
+        Some(dir) => Ok(Arc::new(ActorReplicationSchemas::from_upk_dir(dir)?)),
+        None => Ok(Arc::new(ActorReplicationSchemas::hermetic())),
+    }
+}
+
+fn guid_bytes_to_u32s(guid: [u8; 16]) -> [u32; 4] {
+    [
+        u32::from_le_bytes(guid[0..4].try_into().expect("4 bytes")),
+        u32::from_le_bytes(guid[4..8].try_into().expect("4 bytes")),
+        u32::from_le_bytes(guid[8..12].try_into().expect("4 bytes")),
+        u32::from_le_bytes(guid[12..16].try_into().expect("4 bytes")),
+    ]
+}
+
+fn has_all_required_packages(
+    manifest: &PackageMapManifest,
+    acked_guids: &HashSet<[u32; 4]>,
+) -> bool {
+    !manifest.entries.is_empty()
+        && manifest
+            .entries
+            .iter()
+            .all(|entry| acked_guids.contains(&guid_bytes_to_u32s(entry.guid)))
+}
+
+fn extract_url_param<'a>(url: &'a str, key: &str) -> Option<&'a str> {
+    for part in url.split('?').skip(1) {
+        if let Some((k, v)) = part.split_once('=') {
+            if k.eq_ignore_ascii_case(key) && !v.is_empty() {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+fn build_login_welcome_sequence(
+    manifest: &PackageMapManifest,
+    level_url: &str,
+    game_class: &str,
+) -> Vec<ControlMessage> {
+    let mut out = Vec::with_capacity(manifest.entries.len() + 2);
+    for entry in &manifest.entries {
+        out.push(ControlMessage::UsesOpt {
+            guid: guid_bytes_to_u32s(entry.guid),
+            package_name: entry.package_name.clone(),
+            package_flags: entry.package_flags,
+            cached_ext_index: -1,
+        });
+    }
+    out.push(ControlMessage::DownloadMgr {
+        class_name: "Engine.ChannelDownload".to_string(),
+        params: "Enabled".to_string(),
+        compression: 0,
+    });
+    out.push(ControlMessage::Welcome {
+        level_name: level_url.to_string(),
+        game_name: game_class.to_string(),
+    });
+    out
+}
+
 fn rand_session_id() -> u32 {
     let now = current_time_millis();
     (now & 0xFFFFFFFF) as u32
@@ -954,7 +1135,8 @@ mod tests {
             }
         );
 
-        // Step 8 + 9 -> 10: Packed NMT_Netspeed (0x04) + NMT_Login (0x05, 2x u64) in ONE datagram -> bare NMT_Welcome (0x01)
+        // Step 8 + 9 -> 10: Packed NMT_Netspeed (0x04) + NMT_Login (0x05, UniqueId=0) ->
+        // NMT_UsesOpt (9 minimal packages) + NMT_DownloadMgr + NMT_Welcome("shootingrange_p", "TgGame.TgGame_Paladins")
         let mut c4 = Ue3Packet::new(prefix, 4);
         c4.acks.push(3);
         c4.bunches.push(Bunch::control(
@@ -965,9 +1147,9 @@ mod tests {
             6,
             ControlMessage::Login {
                 client_response: "0".to_string(),
-                url: "Shootingrange_P?Name=Player?Team=0?game=TgGame.TgGame_Paladins_ShootingRange?GameState=OGS_NoSession?GameMode=0".to_string(),
-                unique_id: 8_302_401,
-                portal_id: 0x0186_0000_8246_2A8F,
+                url: "Shootingrange_P?Name=Player?Team=0?game=TgGame.TgGame_Paladins?GameState=OGS_NoSession?GameMode=0".to_string(),
+                unique_id: 0,
+                portal_id: 0,
             }
             .encode(),
         ));
@@ -975,27 +1157,46 @@ mod tests {
             .handle_datagram(&c4.encode().unwrap(), client_addr)
             .await
             .unwrap();
-        assert_eq!(r4.len(), 1);
-        let s4 = Ue3Packet::decode(&r4[0]).unwrap();
-        assert_eq!(s4.pcom_prefix, prefix);
-        assert_eq!(s4.packet_id, 4);
-        assert_eq!(s4.acks, vec![4]);
-        // Must contain ONLY NMT_Welcome (zero premature Actor bunches!)
-        assert_eq!(s4.bunches.len(), 1);
-        assert!(!s4.bunches[0].header.flags.b_open);
-        assert_eq!(s4.bunches[0].header.ch_index, CONTROL_CHANNEL_INDEX);
-        assert_eq!(s4.bunches[0].header.ch_sequence, 5);
+        assert!(!r4.is_empty());
+        let mut welcome_msgs = Vec::new();
+        for (pkt_idx, raw) in r4.iter().enumerate() {
+            let pkt = Ue3Packet::decode(raw).unwrap();
+            assert_eq!(pkt.pcom_prefix, prefix);
+            assert_eq!(pkt.packet_id, 4 + pkt_idx as u16);
+            if pkt_idx == 0 {
+                assert_eq!(pkt.acks, vec![4]);
+            }
+            for b in &pkt.bunches {
+                assert!(!b.header.flags.b_open);
+                assert_eq!(b.header.ch_index, CONTROL_CHANNEL_INDEX);
+                welcome_msgs.extend(ControlMessage::decode_all(&b.data, b.num_bits).unwrap());
+            }
+        }
+        let expected_pkg_count = server.schemas().manifest.entries.len();
+        assert_eq!(welcome_msgs.len(), expected_pkg_count + 2);
+        for msg in &welcome_msgs[..expected_pkg_count] {
+            assert!(matches!(msg, ControlMessage::UsesOpt { .. }));
+        }
         assert_eq!(
-            ControlMessage::decode(&s4.bunches[0].data).unwrap(),
+            welcome_msgs[expected_pkg_count],
+            ControlMessage::DownloadMgr {
+                class_name: "Engine.ChannelDownload".to_string(),
+                params: "Enabled".to_string(),
+                compression: 0,
+            }
+        );
+        assert_eq!(
+            welcome_msgs[expected_pkg_count + 1],
             ControlMessage::Welcome {
-                level_name: DEFAULT_SHOOTING_RANGE_LEVEL.to_string(),
-                game_name: DEFAULT_GAME_CLASS.to_string(),
+                level_name: DEFAULT_WELCOME_LEVEL.to_string(),
+                game_name: DEFAULT_WELCOME_GAME_CLASS.to_string(),
             }
         );
 
-        // Step 11: NMT_Join (0x09) -> ACK only, transitions cleanly to SessionPhase::Replicating (holds Actor Ch!)
+        // Step 11: NMT_Join (0x09) without NMT_Have / NMT_MapLoaded -> ACK only (waits for NMT_Have + NMT_MapLoaded)
+        let last_srv_pkt_id = 4 + r4.len() as u16 - 1;
         let mut c5 = Ue3Packet::new(prefix, 5);
-        c5.acks.push(4);
+        c5.acks.push(last_srv_pkt_id);
         c5.bunches
             .push(Bunch::control(7, ControlMessage::Join.encode()));
         let r5 = server
@@ -1004,11 +1205,10 @@ mod tests {
             .unwrap();
         assert_eq!(r5.len(), 1);
         let s5 = Ue3Packet::decode(&r5[0]).unwrap();
-        assert_eq!(s5.packet_id, 5);
         assert_eq!(s5.acks, vec![5]);
         assert!(
             s5.bunches.is_empty(),
-            "Actor Channel bunches must be deferred to UNK-UDP-004 after NMT_Join"
+            "UActorChannel opens must await NMT_Have + NMT_MapLoaded"
         );
 
         let sessions = server.sessions.read().await;
@@ -1226,8 +1426,8 @@ mod tests {
         assert_eq!(
             ControlMessage::decode(&w_bunch.data).unwrap(),
             ControlMessage::Welcome {
-                level_name: DEFAULT_SHOOTING_RANGE_LEVEL.to_string(),
-                game_name: DEFAULT_GAME_CLASS.to_string(),
+                level_name: DEFAULT_WELCOME_LEVEL.to_string(),
+                game_name: DEFAULT_WELCOME_GAME_CLASS.to_string(),
             }
         );
 
@@ -1504,8 +1704,8 @@ mod tests {
         let mut session = ClientSession::new(
             addr,
             1,
-            DEFAULT_SHOOTING_RANGE_LEVEL,
-            DEFAULT_GAME_CLASS,
+            DEFAULT_WELCOME_LEVEL,
+            DEFAULT_WELCOME_GAME_CLASS,
             DEFAULT_NET_SPEED,
         );
         session.pcom_prefix = [0x00, 0x0C, 0x10, 0x20, 0x30, 0x40].into();

@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 immortal-core = { path = "../immortal-core" }
+immortal-extract = { path = "../immortal-extract" }
 immortal-net = { path = "../immortal-net" }
 tokio.workspace = true
 tracing.workspace = true

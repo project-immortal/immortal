@@ -107,6 +107,7 @@ dependencies = [
  "anyhow",
  "byteorder",
  "immortal-core",
+ "immortal-extract",
  "immortal-net",
  "serde",
  "tokio",
