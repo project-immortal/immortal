@@ -27,7 +27,8 @@ pub const FERNANDO_SPAWN_Y: f32 = 0.0;
 pub const FERNANDO_SPAWN_Z: f32 = 100.0;
 pub const FERNANDO_BASE_HEALTH: f32 = 4600.0;
 pub const DEVICE_FERNANDO_FLAME_LANCE: u32 = 10774;
-pub const FERNANDO_DEFAULT_TEAM: u8 = 1;
+/// Order (friendly player team) per `G2_SERVER_PROTOCOL.md` (`Team=0`).
+pub const FERNANDO_DEFAULT_TEAM: u8 = 0;
 
 pub const EVIE_CHAMPION_ID: u32 = 1030;
 pub const EVIE_PAWN_CLASS: &str = "TgPawn_Evie";
@@ -36,7 +37,8 @@ pub const EVIE_SPAWN_X: f32 = 500.0;
 pub const EVIE_SPAWN_Y: f32 = 500.0;
 pub const EVIE_SPAWN_Z: f32 = 100.0;
 pub const EVIE_BASE_HEALTH: f32 = 1800.0;
-pub const EVIE_DEFAULT_TEAM: u8 = 2;
+/// Chaos (enemy bot team) per `G2_SERVER_PROTOCOL.md` (`Team=1`).
+pub const EVIE_DEFAULT_TEAM: u8 = 1;
 
 pub const PLAYER_CONTROLLER_CLASS: &str = "TgPlayerController";
 pub const LOCAL_PLAYER_NAME: &str = "TgLocalPlayer_0";
@@ -248,6 +250,7 @@ pub struct ReplicationSession {
     pub weapon_spawned: bool,
     pub bot_spawned: bool,
     pub actor_sequence: u32,
+    pub bot_sequence: u32,
 }
 
 impl Default for ReplicationSession {
@@ -269,13 +272,21 @@ impl ReplicationSession {
             weapon_spawned: false,
             bot_spawned: false,
             actor_sequence: 1,
+            bot_sequence: 1,
         }
     }
 
-    /// Allocates the next 10-bit UE3 Actor Channel reliable `ChSequence` modulo `MAX_CHSEQUENCE`.
+    /// Allocates the next 10-bit UE3 Actor Channel 3 reliable `ChSequence` modulo `MAX_CHSEQUENCE`.
     pub fn next_actor_seq(&mut self) -> u32 {
         let seq = self.actor_sequence;
         self.actor_sequence = (self.actor_sequence + 1) % MAX_CHSEQUENCE;
+        seq
+    }
+
+    /// Allocates the next 10-bit UE3 Actor Channel 4 (bot) reliable `ChSequence` modulo `MAX_CHSEQUENCE`.
+    pub fn next_bot_seq(&mut self) -> u32 {
+        let seq = self.bot_sequence;
+        self.bot_sequence = (self.bot_sequence + 1) % MAX_CHSEQUENCE;
         seq
     }
 
@@ -309,7 +320,7 @@ impl ReplicationSession {
     }
 
     /// Spawns and replicates Fernando pawn (`TgPawn_Fernando`, `ChampionId::Fernando = 1026`)
-    /// with Weapon Device ID 10774 (`DEVICE_FERNANDO_FLAME_LANCE`) and Team 1
+    /// with Weapon Device ID 10774 (`DEVICE_FERNANDO_FLAME_LANCE`) and Team 0 (Order)
     /// at spawn coordinates `(0.0, 0.0, 100.0)`.
     pub fn spawn_fernando(&mut self) -> Bunch {
         self.pawn_spawned = true;
@@ -340,8 +351,10 @@ impl ReplicationSession {
         Bunch::actor(seq, false, payload.encode())
     }
 
-    /// Replicates bot opponent: `TgBot_Evie_0` / `TgPawn_Evie_0` (on Channel 4 with `bOpen = true`).
+    /// Replicates bot opponent: `TgBot_Evie_0` / `TgPawn_Evie_0` on Channel 4.
+    /// Sets `bOpen = true` only on the first call and increments Channel 4 `ChSequence` monotonically.
     pub fn spawn_bot_opponent(&mut self) -> Bunch {
+        let is_open = !self.bot_spawned;
         self.bot_spawned = true;
         let payload = ReplicationPayload::SpawnBot {
             bot_id: self.bot_opponent.bot_id,
@@ -353,25 +366,27 @@ impl ReplicationSession {
             health: self.bot_opponent.health,
         };
         let data = payload.encode();
+        let seq = self.next_bot_seq();
         Bunch::new(
             BunchHeader {
                 ch_index: 4,
                 ch_type: Ue3ChannelType::Actor,
                 flags: BunchFlags {
-                    b_open: true,
+                    b_open: is_open,
                     b_close: false,
                     b_reliable: true,
                     b_partial: false,
                 },
-                ch_sequence: 1,
+                ch_sequence: seq,
             },
             data,
         )
     }
 
-    /// Queues all initial replication bunches upon client map loading (`NMT_MapLoaded 0x2A`):
-    /// Channel 3 open, controller possession, Fernando pawn spawn, Flame Lance weapon spawn,
-    /// Evie bot opponent spawn, and baseline movement transform delta.
+    /// Simulated/placeholder initial replication bunches (legacy/synthetic harness only).
+    /// Note (`Claim 16` / `UNK-UDP-004`): Authentic `PComNetConn` UDP 7777 sessions MUST NOT
+    /// emit these invented `ReplicationPayload` bytes on `NMT_MapLoaded (0x2A)` or `NMT_Join (0x09)`
+    /// until `UNK-UDP-004` (`UActorChannel` bitstream) is verified from unencrypted Flight 036 / Oracle captures.
     pub fn initial_replication_bunches(&mut self) -> Vec<Bunch> {
         vec![
             self.open_channel_3(),
@@ -725,7 +740,7 @@ mod tests {
         assert_eq!(FERNANDO_SPAWN_Z, 100.0);
         assert_eq!(FERNANDO_BASE_HEALTH, 4600.0);
         assert_eq!(DEVICE_FERNANDO_FLAME_LANCE, 10774);
-        assert_eq!(FERNANDO_DEFAULT_TEAM, 1);
+        assert_eq!(FERNANDO_DEFAULT_TEAM, 0);
         assert_eq!(DEVICE_FERNANDO_INHAND, "TgDevice_FernandoInhand_0");
     }
 
@@ -735,7 +750,7 @@ mod tests {
         assert_eq!(EVIE_PAWN_CLASS, "TgPawn_Evie");
         assert_eq!(EVIE_BOT_CLASS, "TgBot_Evie");
         assert_eq!(EVIE_BASE_HEALTH, 1800.0);
-        assert_eq!(EVIE_DEFAULT_TEAM, 2);
+        assert_eq!(EVIE_DEFAULT_TEAM, 1);
         assert_eq!(BOT_EVIE_NAME, "TgBot_Evie_0");
         assert_eq!(PAWN_EVIE_NAME, "TgPawn_Evie_0");
     }
@@ -821,7 +836,7 @@ mod tests {
                 assert_eq!(actor_id, 100);
                 assert_eq!(champion_id, ChampionId::Fernando);
                 assert_eq!(weapon_device_id, 10774);
-                assert_eq!(team, 1);
+                assert_eq!(team, 0);
                 assert_eq!(class_name, "TgPawn_Fernando");
                 assert_eq!(location.x, 0.0);
                 assert_eq!(location.y, 0.0);
@@ -872,12 +887,17 @@ mod tests {
                 assert_eq!(bot_name, "TgBot_Evie_0");
                 assert_eq!(pawn_name, "TgPawn_Evie_0");
                 assert_eq!(champion_id, ChampionId::Evie);
-                assert_eq!(team, 2);
+                assert_eq!(team, 1);
                 assert_eq!(location.x, 500.0);
                 assert_eq!(health, 1800.0);
             }
             other => panic!("Expected SpawnBot, got {:?}", other),
         }
+
+        let bot_bunch_2 = session.spawn_bot_opponent();
+        assert_eq!(bot_bunch_2.header.ch_index, 4);
+        assert!(!bot_bunch_2.header.flags.b_open);
+        assert_eq!(bot_bunch_2.header.ch_sequence, 2);
     }
 
     #[test]

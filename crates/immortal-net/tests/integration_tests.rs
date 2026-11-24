@@ -1210,7 +1210,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
         1
     ); // agyis: no-mutant (1 row)
 
-    // Row 0: 2 fields (Tokens 11 and 682)
+    // Row 0: 2 fields (Tokens 11 and 26)
     assert_eq!(
         u16::from_le_bytes([invite_frame_payload[49], invite_frame_payload[50]]),
         2
@@ -1233,7 +1233,7 @@ async fn test_auth_gateway_live_mcts_two_step_exchange() {
     ); // agyis: no-mutant
     assert_eq!(
         u16::from_le_bytes([invite_frame_payload[55], invite_frame_payload[56]]),
-        682
+        26
     ); // agyis: no-mutant
     assert_eq!(
         u32::from_le_bytes([

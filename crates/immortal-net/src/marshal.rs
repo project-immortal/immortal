@@ -240,7 +240,7 @@ impl CMarshalMessage {
                     let char_count = cursor.read_u32::<LittleEndian>()? as usize;
                     let remaining_bytes =
                         (cursor.get_ref().len() as u64).saturating_sub(cursor.position()) as usize;
-                    if char_count * 2 > remaining_bytes || char_count > 65535 {
+                    if char_count > 65535 || char_count * 2 > remaining_bytes {
                         return Err(NetError::Marshal(format!(
                             "Invalid char_count {} (remaining bytes {})",
                             char_count, remaining_bytes
@@ -417,6 +417,23 @@ impl LoginRequest {
 }
 
 /// Champion Roster Entry in `Token 100` (`ChampionRoster`)
+fn validate_rowset_count(
+    label: &str,
+    count: usize,
+    remaining_bytes: usize,
+    entry_size: usize,
+) -> Result<(), NetError> {
+    let max_entries = remaining_bytes / entry_size;
+    if count > max_entries {
+        return Err(NetError::Marshal(format!(
+            "{} rowset count {} exceeds remaining payload capacity ({} bytes, max {} entries)",
+            label, count, remaining_bytes, max_entries
+        )));
+    }
+    Ok(())
+}
+
+/// Champion Roster Entry in `Token 100` (`ChampionRoster`)
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ChampionRosterEntry {
     pub champion_id: u32,
@@ -462,6 +479,7 @@ impl ChampionRosterEntry {
             ));
         }
         let count = data.read_u32::<LittleEndian>()? as usize;
+        validate_rowset_count("ChampionRoster", count, data.len(), 5)?;
         let mut entries = Vec::with_capacity(count);
         for _ in 0..count {
             if data.len() < 5 {
@@ -543,6 +561,7 @@ impl DeviceEntry {
             ));
         }
         let count = data.read_u32::<LittleEndian>()? as usize;
+        validate_rowset_count("WeaponDevices", count, data.len(), 8)?;
         let mut entries = Vec::with_capacity(count);
         for _ in 0..count {
             if data.len() < 8 {
@@ -627,6 +646,7 @@ impl DeckEntry {
             ));
         }
         let count = data.read_u32::<LittleEndian>()? as usize;
+        validate_rowset_count("DeckLoadouts", count, data.len(), 8)?;
         let mut entries = Vec::with_capacity(count);
         for _ in 0..count {
             if data.len() < 8 {
@@ -1107,5 +1127,41 @@ mod tests {
         assert!(ChampionRosterEntry::from_bytes(&[1, 2, 3]).is_err());
         assert!(DeviceEntry::from_bytes(&[1, 2, 3, 4]).is_err());
         assert!(DeckEntry::from_bytes(&[1, 2, 3, 4]).is_err());
+    }
+
+    #[test]
+    fn test_rowset_malicious_u32_max_length_rejected_without_oom() {
+        let mut evil_header = Vec::with_capacity(12);
+        evil_header.extend_from_slice(&u32::MAX.to_le_bytes());
+        evil_header.extend_from_slice(&[0xAA; 8]);
+
+        assert!(matches!(
+            ChampionRosterEntry::decode_row_set(&evil_header),
+            Err(NetError::Marshal(_))
+        ));
+        assert!(matches!(
+            DeviceEntry::decode_row_set(&evil_header),
+            Err(NetError::Marshal(_))
+        ));
+        assert!(matches!(
+            DeckEntry::decode_row_set(&evil_header),
+            Err(NetError::Marshal(_))
+        ));
+
+        let oversized_for_payload = 3u32.to_le_bytes();
+        let mut small_payload = Vec::from(oversized_for_payload);
+        small_payload.extend_from_slice(&[0u8; 8]);
+        assert!(matches!(
+            ChampionRosterEntry::decode_row_set(&small_payload),
+            Err(NetError::Marshal(_))
+        ));
+        assert!(matches!(
+            DeviceEntry::decode_row_set(&small_payload),
+            Err(NetError::Marshal(_))
+        ));
+        assert!(matches!(
+            DeckEntry::decode_row_set(&small_payload),
+            Err(NetError::Marshal(_))
+        ));
     }
 }

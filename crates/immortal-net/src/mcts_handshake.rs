@@ -433,8 +433,9 @@ pub const MCTS_FUNCTION_ID_MATCH_INVITATION: u32 = 0x423b389a;
 /// Reverse engineered from `MctsInterface.dll: FUN_1800ec640`.
 pub const MCTS_TOKEN_INVITED_MEMBERS: u16 = 1619;
 
-/// Authentic Token ID for Account ID (682, 0x02aa).
-pub const MCTS_TOKEN_ACCOUNT_ID: u16 = 682;
+/// Authentic Token ID for Account ID (26, 0x001a).
+/// Verified against `MctsInterface.dll` 3,731-field schema (`ACCOUNT_ID = 26`).
+pub const MCTS_TOKEN_ACCOUNT_ID: u16 = 26;
 
 /// Authentic Token ID for Player ID (11, 0x000b).
 /// Reverse engineered from `MctsInterface.dll: FUN_1800ec640 / CMarshalEntry::GetField((CTgNetId*)&local_3a0)`.
@@ -527,7 +528,7 @@ pub fn create_mcts_map_transition_frame(
 ///   - Row total fields: 2u16
 ///   - Row Group 0x3000 (2 fields, hdr 0x3002):
 ///     - Token 11 (0x000b, MCTS_TOKEN_PLAYER_ID) = account_id
-///     - Token 682 (0x02aa, MCTS_TOKEN_ACCOUNT_ID) = account_id
+///     - Token 26 (0x001a, MCTS_TOKEN_ACCOUNT_ID) = account_id
 /// - TCP Framing:
 ///   - Length: payload length (u16 little-endian)
 ///   - Wire flags: `0x0000` (u16 little-endian)
@@ -579,7 +580,7 @@ pub fn create_mcts_match_invitation_frame(
     let row_grp4_hdr: u16 = 0x3000 | 2;
     payload.extend_from_slice(&row_grp4_hdr.to_le_bytes());
     payload.extend_from_slice(&MCTS_TOKEN_PLAYER_ID.to_le_bytes()); // Token 11: MCTS_TOKEN_PLAYER_ID
-    payload.extend_from_slice(&MCTS_TOKEN_ACCOUNT_ID.to_le_bytes()); // Token 682: MCTS_TOKEN_ACCOUNT_ID
+    payload.extend_from_slice(&MCTS_TOKEN_ACCOUNT_ID.to_le_bytes()); // Token 26: MCTS_TOKEN_ACCOUNT_ID
     payload.extend_from_slice(&account_id.to_le_bytes());
     payload.extend_from_slice(&account_id.to_le_bytes());
 
@@ -2125,21 +2126,21 @@ mod tests {
         let row_count = u16::from_le_bytes([payload[47], payload[48]]); // agyis: no-mutant
         assert_eq!(row_count, 1); // agyis: no-mutant
 
-        // Row 0: 2 fields (Tokens 11 and 682)
+        // Row 0: 2 fields (Tokens 11 and 26)
         let row_fields = u16::from_le_bytes([payload[49], payload[50]]); // agyis: no-mutant
         assert_eq!(row_fields, 2); // agyis: no-mutant
         let row_grp4 = u16::from_le_bytes([payload[51], payload[52]]); // agyis: no-mutant
         assert_eq!(row_grp4, 0x3002); // agyis: no-mutant
         let row_tok11 = u16::from_le_bytes([payload[53], payload[54]]); // agyis: no-mutant
-        let row_tok682 = u16::from_le_bytes([payload[55], payload[56]]); // agyis: no-mutant
+        let row_tok26 = u16::from_le_bytes([payload[55], payload[56]]); // agyis: no-mutant
         assert_eq!(row_tok11, MCTS_TOKEN_PLAYER_ID); // agyis: no-mutant
         assert_eq!(row_tok11, 11); // agyis: no-mutant
-        assert_eq!(row_tok682, MCTS_TOKEN_ACCOUNT_ID); // agyis: no-mutant
-        assert_eq!(row_tok682, 682); // agyis: no-mutant
+        assert_eq!(row_tok26, MCTS_TOKEN_ACCOUNT_ID); // agyis: no-mutant
+        assert_eq!(row_tok26, 26); // agyis: no-mutant
         let row_val11 = u32::from_le_bytes([payload[57], payload[58], payload[59], payload[60]]); // agyis: no-mutant
-        let row_val682 = u32::from_le_bytes([payload[61], payload[62], payload[63], payload[64]]); // agyis: no-mutant
+        let row_val26 = u32::from_le_bytes([payload[61], payload[62], payload[63], payload[64]]); // agyis: no-mutant
         assert_eq!(row_val11, 8302401); // agyis: no-mutant
-        assert_eq!(row_val682, 8302401); // agyis: no-mutant
+        assert_eq!(row_val26, 8302401); // agyis: no-mutant
     }
 
     #[test]

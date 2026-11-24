@@ -3,17 +3,18 @@
 // Corporate Stewardship & Infrastructure: Purrfect Software Limited (PSL)
 // Governed by: ICARO-42/b Ordinance (Company-Supported Personal IP Framework)
 
-//! # UNK-PROP-001 Cleanroom Extraction: Deck Allocations & In-Game Item Purchases
+//! # CAP-03 Framing, Launch.log Correlation & Shannon Entropy Audit (`UNK-CRYPTO-001` / `UNK-PROP-001`)
 //!
-//! Demonstrates cleanroom parsing and forensic correlation of `CAP-03` (`EV-NET-005` / `EV-LOG-006`):
-//! - Dedicated-server 10-byte transport framing deconstruction (`[01 00 00 00] [seq: 4B] [subflags: 2B]`).
-//! - 4-stage unsequenced handshake (`subflags = 0x0010`): 570B Hello, 46B Server Challenge, 1440B PMTU, 46B Finish.
-//! - Seq 1 6-byte session token synchronization barrier (`78 7e 10 7b 9a 8f`).
-//! - Channel 0 control events (`NMT_Welcome 0x01`, `NMT_MapLoaded 0x2A`).
-//! - Channel 3 (`CHTYPE_Actor = 2`) actor replication sequence (Server Seq 51–60, Packets #524–#560).
-//! - Fernando Deck Equip event at `[0225.57]` (Deck ID `16381`, Talent: Formidable / `TgDevice_DoubleCharge`).
-//! - Item Shop purchase events at `[0249.85]` and `[0547.10]` (Device ID `11059`, 4 item purchases).
-//! - Strict compliance with `PSL-INV-012` (Anti-Guess, Absolute Truth & Zero-Facade Invariant).
+//! Performs honest transport-level inspection and log correlation on `CAP-03` (`EV-NET-005` / `EV-LOG-006`):
+//! - Parses cleartext 10-byte outer framing (`[01 00 00 00] [seq: 4B] [subflags: 2B]`) and
+//!   4-stage unsequenced handshake (`subflags = 0x0010`: 570B Hello, 46B ServerChallenge, 1440B PMTU, 46B Finish).
+//! - Extracts the cleartext Seq 1 6-byte session token prefix (`payload[10..16]`).
+//! - Computes Shannon entropy over sequenced `0x0001` payloads (`~7.55 bits/byte` on full-size frames),
+//!   confirming the `?exudp=2` session cipher boundary (`UNK-CRYPTO-001`).
+//! - **PSL-INV-012 Truth Boundary**: This tool does **NOT** decrypt or deserialize UE3 bunches from
+//!   sequenced CAP-03 frames. `UNK-PROP-001` (wire-level deck/item property decoding) remains OPEN;
+//!   all Deck/Item identifiers shown below are externally correlated from `CAP-03_Launch.log` and
+//!   binary VAs, NOT parsed from encrypted UDP payloads.
 
 use immortal_net::bunch::{
     DedicatedControlFrame, SUBFLAG_SEQUENCED, SUBFLAG_UNSEQUENCED,
@@ -312,8 +313,8 @@ fn locate_capture_file() -> PathBuf {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("================================================================================");
-    println!("🛡️  PROJECT IMMORTAL: CLEANROOM EXTRACTION (UNK-PROP-001)");
-    println!("    Fernando Card Deck Allocations & In-Game Item Purchases (CAP-03 / EV-NET-005)");
+    println!("🛡️  PROJECT IMMORTAL: CAP-03 LAUNCH.LOG CORRELATION & ENTROPY AUDIT");
+    println!("    Cipher Boundary: UNK-CRYPTO-001 (?exudp=2) | Property Status: UNK-PROP-001 OPEN");
     println!("    Governing Standard: PSL-INV-012 (Anti-Guess, Absolute Truth & Zero-Facade)");
     println!("================================================================================\n");
 
@@ -439,35 +440,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Some((fnum, pnum, ts)) = welcome_frame {
-        println!("  • NMT_Welcome (Server Seq 18): Pkt #{} (Frame {}) at ts={:.3}s (Matched to Level sg_jaguarfalls_rework_p)", pnum, fnum, ts);
+        println!(
+            "  • S->C Seq 18 (encrypted 0x0001): Pkt #{} (Frame {}) at ts={:.3}s [correlates with map load window; payload encrypted]",
+            pnum, fnum, ts
+        );
     }
     if let Some((fnum, pnum, ts)) = map_loaded_frame {
-        println!("  • NMT_MapLoaded (Server Seq 28): Pkt #{} (Frame {}) at ts={:.3}s (Map load completion barrier)", pnum, fnum, ts);
+        println!(
+            "  • S->C Seq 28 (encrypted 0x0001): Pkt #{} (Frame {}) at ts={:.3}s [encrypted server datagram; NOT NMT_MapLoaded]",
+            pnum, fnum, ts
+        );
     }
     println!();
 
-    // 2. Initial Actor Channel Replication (Server Seq 51–60, Packets #524–#560)
-    println!("--- [PHASE 2: ACTOR CHANNEL 3 REPLICATION (PACKETS #524–#560)] ---");
+    // 2. Encrypted Sequenced Gameplay Stream & Entropy Audit (Server Seq 51–60, Packets #524–#560)
+    println!("--- [PHASE 2: SEQUENCED 0x0001 STREAM & SHANNON ENTROPY AUDIT (PACKETS #524–#560)] ---");
+    println!("  • PSL-INV-012 Notice: Sequenced 0x0001 payloads in CAP-03 are encrypted by ?exudp=2 (UNK-CRYPTO-001).");
+    println!("    Decoder unmapped / infrastructure not yet ready — cannot extract UE3 bunches from capture.");
     if let Some((fnum, pnum, ref pkt)) = actor_channel_open_pkt {
         let seq = u32::from_le_bytes(pkt.payload[4..8].try_into().unwrap());
         let entropy = calculate_shannon_entropy(&pkt.payload[10..]);
-        println!("  • Packet #{:<5} Frame {:<5} | S->C Seq {:<3} | Len {:<4} B | Shannon Entropy: {:.4} bits/byte", pnum, fnum, seq, pkt.payload.len(), entropy);
-        println!("    ├─ Ground Truth Binding: TgPlayerController_1 setplayer TgLocalPlayer_0 [Launch.log line 1740, 0195.74s]");
-        println!("    ├─ Channel Topology: ChIndex = 3 (CHTYPE_Actor = 2, bOpen = 1, bReliable = 1, ChSequence = 1)");
+        println!("  • Packet #{:<5} Frame {:<5} | S->C Seq {:<3} | Len {:<4} B | Payload Entropy: {:.4} bits/byte (cipher)", pnum, fnum, seq, pkt.payload.len(), entropy);
+        println!("    ├─ External Launch.log correlation: [0195.74] TgPlayerController_1 setplayer TgLocalPlayer_0");
         println!("    └─ Wire Prefix Hex: [{}]", pkt.payload.iter().take(16).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
     }
 
     if let Some((fnum, pnum, ref pkt)) = pawn_spawn_pkt {
         let seq = u32::from_le_bytes(pkt.payload[4..8].try_into().unwrap());
-        println!("  • Packet #{:<5} Frame {:<5} | S->C Seq {:<3} | Len {:<4} B | TgPawn_Fernando_0 Spawning (HP 4600.0, Team 1)", pnum, fnum, seq, pkt.payload.len());
+        let entropy = calculate_shannon_entropy(&pkt.payload[10..]);
+        println!("  • Packet #{:<5} Frame {:<5} | S->C Seq {:<3} | Len {:<4} B | Payload Entropy: {:.4} bits/byte (encrypted; unparsed)", pnum, fnum, seq, pkt.payload.len(), entropy);
     }
 
     if let Some((fnum, pnum, ref pkt)) = weapon_spawn_pkt {
         let seq = u32::from_le_bytes(pkt.payload[4..8].try_into().unwrap());
-        println!("  • Packet #{:<5} Frame {:<5} | S->C Seq {:<3} | Len {:<4} B | TgDevice_FernandoInhand_0 (Flame Lance 10774) & TgBot_Evie_0 (HP 1800.0)", pnum, fnum, seq, pkt.payload.len());
+        let entropy = calculate_shannon_entropy(&pkt.payload[10..]);
+        println!("  • Packet #{:<5} Frame {:<5} | S->C Seq {:<3} | Len {:<4} B | Payload Entropy: {:.4} bits/byte (encrypted; unparsed)", pnum, fnum, seq, pkt.payload.len(), entropy);
     }
 
-    println!("  • Replication Sequence Audit (Packets #524–#560):");
+    println!("  • Sequenced Frame Header Summary (Packets #524–#560):");
     let mut seq51_60_count = 0usize;
     for (idx, pkt) in packets.iter().enumerate() {
         let pnum = idx + 1;
@@ -485,104 +495,94 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     pkt.payload.iter().take(12).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ")
                 );
             } else if seq51_60_count == 9 {
-                println!("    ... (Packets #532–#559 audited across Server Seq 54–73 and Client Seq 464–471) ...");
+                println!("    ... (Packets #532–#559 outer prefixes audited across Server Seq 54–73 and Client Seq 464–471) ...");
             }
         }
     }
     println!();
 
-    // 3. Cleanroom Extraction of UNK-PROP-001: Fernando Card Deck Allocations
-    println!("--- [PHASE 3: UNK-PROP-001 — FERNANDO CARD DECK ALLOCATION EXTRACTION] ---");
-    println!("  • Correlated Retail Log Evidence (CAP-03_custom_baseline_20261119_Launch.log):");
+    // 3. Launch.log Timestamp Correlation & Entropy Verification: Card Deck Event (UNK-PROP-001 OPEN)
+    println!("--- [PHASE 3: LAUNCH.LOG CORRELATION — CARD DECK WINDOW (UNK-PROP-001 OPEN)] ---");
+    println!("  • External Retail Log Reference (CAP-03_custom_baseline_20261119_Launch.log):");
     println!("    [0225.57] Log: UUIHudDecks::OnEquip 16381");
     println!("    [0225.73] Log: ATgPawn::ReceiveInventoryData called");
-    println!("  • Native Reverse Engineering Authority (ShippingPC-ChaosGame.exe):");
-    println!("    ├─ Procedure 0x1415caaf0: UUIHudDecks::OnEquip(int32 DeckID = 16381)");
-    println!("    ├─ Procedure 0x140e75ab0: ATgRepInfo_PlayerexecLoadCardDeck(FFrame&, void*)");
-    println!("    ├─ FName Symbol 0x144445ab8: ServerRequestDeckAndTalent");
-    println!("    └─ Replicated Target: TgPlayerReplicationInfo::m_CardDeck / TgRepInfo_Player");
+    println!("  • External Binary RE Reference (ShippingPC-ChaosGame.exe):");
+    println!("    ├─ Procedure 0x1415caaf0: UUIHudDecks::OnEquip");
+    println!("    ├─ Procedure 0x140e75ab0: ATgRepInfo_PlayerexecLoadCardDeck");
+    println!("    └─ FName Symbol 0x144445ab8: ServerRequestDeckAndTalent");
+    println!("  • Wire Status: CANNOT deserialize deck/talent properties from capture (encrypted by UNK-CRYPTO-001).");
     println!();
 
     if let Some((pnum, ref pkt)) = deck_equip_packet {
         let seq = u32::from_le_bytes(pkt.payload[4..8].try_into().unwrap());
-        println!("  • Wire Evidence: Deck Equip Trigger Datagram:");
+        let entropy = calculate_shannon_entropy(&pkt.payload[10..]);
+        println!("  • Correlated Encrypted Datagram in Window (Frame {}):", pkt.frame_number);
         println!("    ├─ Packet Index:  Pkt #{} (Frame {})", pnum, pkt.frame_number);
-        println!("    ├─ Direction:     Client -> Server (192.168.68.153:50427 -> 20.33.35.9:9113)");
-        println!("    ├─ Sequence:      Client Monotonic Seq = {}", seq);
-        println!("    ├─ Timestamp:     ts = {:.3}s (Matched to Launch.log [0225.57])", pkt.timestamp_sec);
-        println!("    ├─ Wire Length:   {} Bytes", pkt.payload.len());
-        println!("    └─ Raw Payload:   [{}]", pkt.payload.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
+        println!("    ├─ Direction:     Client -> Server ({}:{} -> {}:{})", pkt.src_ip, pkt.src_port, pkt.dst_ip, pkt.dst_port);
+        println!("    ├─ Outer Seq:     Client Monotonic Seq = {}", seq);
+        println!("    ├─ Timestamp:     ts = {:.3}s (time-window correlated to Launch.log [0225.57])", pkt.timestamp_sec);
+        println!("    ├─ Wire Length:   {} Bytes | Cipher Entropy: {:.4} bits/byte", pkt.payload.len(), entropy);
+        println!("    └─ Ciphertext:    [{}]", pkt.payload.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
     }
-
-    println!("  • Extracted Deck & Talent Specifications:");
-    println!("    ├─ Champion:           Fernando (ID 1026)");
-    println!("    ├─ Active Talent:      Formidable (TgDevice_DoubleCharge) [Grants 2 consecutive charges to Charge]");
-    println!("    ├─ Equipped Deck ID:   16381");
-    println!("    ├─ Total Loadout Cap:  15 Points (governed by CARD_TIER_MAX=5, CARD_TIER_MIN=1, MAX_POINTS=15)");
-    println!("    └─ Replicated Cards:   5 Cards bound in TgPlayerReplicationInfo::m_CardDeck [Tokens 2802..2806]");
     println!();
 
-    // 4. Cleanroom Extraction of UNK-PROP-001: In-Game Item Purchases
-    println!("--- [PHASE 4: UNK-PROP-001 — IN-GAME ITEM PURCHASES EXTRACTION] ---");
-    println!("  • Correlated Retail Log Evidence:");
+    // 4. Launch.log Timestamp Correlation & Entropy Verification: Item Purchase Windows (UNK-PROP-001 OPEN)
+    println!("--- [PHASE 4: LAUNCH.LOG CORRELATION — ITEM PURCHASE WINDOWS (UNK-PROP-001 OPEN)] ---");
+    println!("  • External Retail Log Reference:");
     println!("    [0249.85] Log: Soft Init of PropID 4 on DeviceID 11059 for FireModeID 10445 -- Setting to 0.00");
     println!("    [0249.85] Log: ATgPawn::ReceiveInventoryData called");
     println!("    [0547.10] Log: ATgPawn::ReceiveInventoryData called");
-    println!("  • Native Reverse Engineering Authority (ShippingPC-ChaosGame.exe):");
-    println!("    ├─ Procedure 0x140e712c0: ATgPlayerControllerexecServerPurchaseItem(int32 ItemID, int32 DeviceID, int32 Tier)");
-    println!("    ├─ Item Shop Device ID: 11059 (Paladins Burn Card / Item Store Device)");
-    println!("    └─ Replicated Target:   ATgPawn::ReceiveInventoryData / PropID 4 (4 Purchased Item Slots)");
+    println!("  • External Binary RE Reference (ShippingPC-ChaosGame.exe):");
+    println!("    └─ Procedure 0x140e712c0: ATgPlayerControllerexecServerPurchaseItem");
+    println!("  • Wire Status: CANNOT deserialize item/property fields from capture (encrypted by UNK-CRYPTO-001).");
     println!();
 
     if let Some((pnum, ref pkt)) = item_buy1_packet {
         let seq = u32::from_le_bytes(pkt.payload[4..8].try_into().unwrap());
-        println!("  • Wire Evidence: Round 1 Item Purchase RPC (Client -> Server):");
+        let entropy = calculate_shannon_entropy(&pkt.payload[10..]);
+        println!("  • Correlated Encrypted Datagram in Round 1 Window (C->S):");
         println!("    ├─ Packet Index:  Pkt #{} (Frame {})", pnum, pkt.frame_number);
-        println!("    ├─ Sequence:      Client Monotonic Seq = {}", seq);
-        println!("    ├─ Timestamp:     ts = {:.3}s (Matched to Launch.log [0249.85])", pkt.timestamp_sec);
-        println!("    ├─ Wire Length:   {} Bytes", pkt.payload.len());
-        println!("    └─ Raw Payload:   [{}]", pkt.payload.iter().take(24).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
+        println!("    ├─ Outer Seq:     Client Monotonic Seq = {}", seq);
+        println!("    ├─ Timestamp:     ts = {:.3}s (time-window correlated to Launch.log [0249.85])", pkt.timestamp_sec);
+        println!("    ├─ Wire Length:   {} Bytes | Cipher Entropy: {:.4} bits/byte", pkt.payload.len(), entropy);
+        println!("    └─ Prefix+Cipher: [{}]", pkt.payload.iter().take(24).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
     }
 
     if let Some((pnum, ref pkt)) = item_buy1_resp_packet {
         let seq = u32::from_le_bytes(pkt.payload[4..8].try_into().unwrap());
-        println!("  • Wire Evidence: Round 1 Server Inventory Data Replication Burst (Server -> Client):");
+        let entropy = calculate_shannon_entropy(&pkt.payload[10..]);
+        println!("  • Correlated Encrypted Datagram in Round 1 Window (S->C):");
         println!("    ├─ Packet Index:  Pkt #{} (Frame {})", pnum, pkt.frame_number);
-        println!("    ├─ Sequence:      Server Monotonic Seq = {}", seq);
+        println!("    ├─ Outer Seq:     Server Monotonic Seq = {}", seq);
         println!("    ├─ Timestamp:     ts = {:.3}s", pkt.timestamp_sec);
-        println!("    ├─ Wire Length:   {} Bytes (Inventory Replication Payload)", pkt.payload.len());
-        println!("    └─ Raw Payload:   [{}]", pkt.payload.iter().take(24).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
+        println!("    ├─ Wire Length:   {} Bytes | Cipher Entropy: {:.4} bits/byte", pkt.payload.len(), entropy);
+        println!("    └─ Prefix+Cipher: [{}]", pkt.payload.iter().take(24).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
     }
 
     if let Some((pnum, ref pkt)) = item_buy2_packet {
         let seq = u32::from_le_bytes(pkt.payload[4..8].try_into().unwrap());
-        println!("  • Wire Evidence: Round 2 Item Purchase Server Replication (Server -> Client):");
+        let entropy = calculate_shannon_entropy(&pkt.payload[10..]);
+        println!("  • Correlated Encrypted Datagram in Round 2 Window (S->C):");
         println!("    ├─ Packet Index:  Pkt #{} (Frame {})", pnum, pkt.frame_number);
-        println!("    ├─ Sequence:      Server Monotonic Seq = {}", seq);
-        println!("    ├─ Timestamp:     ts = {:.3}s (Matched to Launch.log [0547.10])", pkt.timestamp_sec);
-        println!("    ├─ Wire Length:   {} Bytes (Additional Item Acquisition)", pkt.payload.len());
-        println!("    └─ Raw Payload:   [{}]", pkt.payload.iter().take(24).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
+        println!("    ├─ Outer Seq:     Server Monotonic Seq = {}", seq);
+        println!("    ├─ Timestamp:     ts = {:.3}s (time-window correlated to Launch.log [0547.10])", pkt.timestamp_sec);
+        println!("    ├─ Wire Length:   {} Bytes | Cipher Entropy: {:.4} bits/byte", pkt.payload.len(), entropy);
+        println!("    └─ Prefix+Cipher: [{}]", pkt.payload.iter().take(24).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
     }
-
-    println!("  • Extracted Item Purchase Specifications:");
-    println!("    ├─ Target Device:      DeviceID 11059 (Burn Card Item Shop Device)");
-    println!("    ├─ Total Items:        4 Item Purchases across Match Lifecycle (PropID 4)");
-    println!("    ├─ Client RPC Opcode:  ServerPurchaseItem (Procedure 0x140e712c0)");
-    println!("    └─ Invariant Status:   Verified Authentic by paired binary disassembly & retail execution trace");
     println!();
 
     // 5. PSL-INV-012 Verification & Cryptographic Boundary Declaration
-    println!("--- [PHASE 5: PSL-INV-012 ABSOLUTE TRUTH AUDIT & BITSTREAM BOUNDARY] ---");
-    println!("  • PSL-INV-012 Compliance Assertion:");
-    println!("    - All extracted field mappings (Deck ID 16381, Talent Formidable, Item Shop Device 11059, PropID 4)");
-    println!("      are grounded strictly in authentic retail logs, binary disassembly, and capture frames.");
-    println!("    - Bitstream Payloads for Server Seq 51+ and Client Seq 1774/3087 carry a Shannon entropy of ~7.55 bits/byte,");
-    println!("      governed by the dedicated-server session stream cipher derived during the 46-byte unsequenced handshake.");
-    println!("    - Zero synthetic or plausible facades fabricated; all findings verified against reproducible evidence.");
+    println!("--- [PHASE 5: PSL-INV-012 ABSOLUTE TRUTH AUDIT & CRYPTO BOUNDARY] ---");
+    println!("  • Honest Infrastructure Declaration:");
+    println!("    - Unsequenced 0x0010 handshake headers and 10-byte outer prefixes are parsed from CAP-03.");
+    println!("    - Sequenced 0x0001 payloads carry high-entropy ciphertext (~7.55 bits/byte on large frames),");
+    println!("      encrypted by the ?exudp=2 session cipher (UNK-CRYPTO-001).");
+    println!("    - Decoder unmapped / infrastructure not yet ready — this tool does NOT decrypt or");
+    println!("      deserialize UE3 bunches, and UNK-PROP-001 remains OPEN pending UNK-CRYPTO-001.");
     println!();
 
     println!("================================================================================");
-    println!("✅ UNK-PROP-001 CLEANROOM EXTRACTION COMPLETE (Exit Code 0)");
+    println!("✅ CAP-03 CORRELATION & ENTROPY VERIFICATION COMPLETE (UNK-PROP-001 STILL OPEN)");
     println!("================================================================================");
 
     Ok(())

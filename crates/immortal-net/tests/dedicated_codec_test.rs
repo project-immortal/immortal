@@ -210,83 +210,65 @@ fn test_unsequenced_control_frame_rejection_and_parsing() {
 }
 
 #[test]
-fn test_cap03_frame_14612_seq1_session_token_and_framing() {
+fn test_cap03_frame_14612_seq1_outer_prefix_decoded_payload_encrypted() {
     assert_eq!(CAP03_FRAME_14612_SEQ1.len(), 44);
 
-    // Verify 10-byte prefix: magic=1, seq=1, subflag=0x0001
+    // Only the 10-byte outer prefix + Seq 1 6-byte session token are cleartext.
     assert_eq!(&CAP03_FRAME_14612_SEQ1[..4], &[0x01, 0x00, 0x00, 0x00]);
     assert_eq!(&CAP03_FRAME_14612_SEQ1[4..8], &[0x01, 0x00, 0x00, 0x00]);
     assert_eq!(&CAP03_FRAME_14612_SEQ1[8..10], &[0x00, 0x01]);
 
-    // Verify 6-byte session token
     let expected_token = [0x78, 0x7E, 0x10, 0x7B, 0x9A, 0x8F];
     assert_eq!(&CAP03_FRAME_14612_SEQ1[10..16], &expected_token);
 
-    // Decoding with EXUDP_MAX_PACKET_BITS verifies framing deconstruction
-    let res = Ue3Packet::decode_with_max_bits(CAP03_FRAME_14612_SEQ1, EXUDP_MAX_PACKET_BITS);
-    // The prefix must be correctly parsed even if bunch bitstream requires specific session state
-    match res {
-        Ok(pkt) => {
-            assert_eq!(pkt.pcom_prefix.sequence(), Some(1));
-            assert_eq!(pkt.pcom_prefix.session_token(), Some(&expected_token));
-        }
-        Err(e) => {
-            // If bitstream parse underflows on raw synthetic/gameplay bits, verify it's a bunch error
-            // and NOT a prefix/packet-too-small error!
-            match e {
-                NetError::BunchError(_) | NetError::InvalidUdpPacket(_) => {}
-                other => panic!("Unexpected error on Frame 14612: {:?}", other),
-            }
-        }
-    }
+    let prefix = PcomPrefix::dedicated_sequenced(1, Some(expected_token));
+    assert_eq!(prefix.to_bytes().as_slice(), &CAP03_FRAME_14612_SEQ1[..16]);
+
+    // PSL-INV-012: Sequenced 0x0001 payloads in CAP-03 are encrypted (?exudp=2 / UNK-CRYPTO-001)
+    // and MUST NOT pretend to decode into UE3 bunches.
+    let err = Ue3Packet::decode_with_max_bits(CAP03_FRAME_14612_SEQ1, EXUDP_MAX_PACKET_BITS)
+        .expect_err("CAP-03 Frame 14612 sequenced payload is encrypted (UNK-CRYPTO-001)");
+    assert!(
+        matches!(err, NetError::BunchError(_)),
+        "Expected BunchError on encrypted Frame 14612 payload, got {:?}",
+        err
+    );
 }
 
 #[test]
-fn test_cap03_frame_14639_seq18_welcome_framing() {
+fn test_cap03_frame_14639_seq18_outer_prefix_decoded_payload_encrypted() {
     assert_eq!(CAP03_FRAME_14639_SEQ18.len(), 38);
 
-    // Verify 10-byte prefix: magic=1, seq=18 (0x12), subflag=0x0001
+    // Only the 10-byte outer prefix is cleartext: magic=1, seq=18 (0x12), subflag=0x0001.
     assert_eq!(&CAP03_FRAME_14639_SEQ18[..4], &[0x01, 0x00, 0x00, 0x00]);
     assert_eq!(&CAP03_FRAME_14639_SEQ18[4..8], &[0x12, 0x00, 0x00, 0x00]);
     assert_eq!(&CAP03_FRAME_14639_SEQ18[8..10], &[0x00, 0x01]);
 
-    // Since seq=18 > 1, no session token is present; UE3 payload starts at offset 10
-    let res = Ue3Packet::decode_with_max_bits(CAP03_FRAME_14639_SEQ18, EXUDP_MAX_PACKET_BITS);
-    match res {
-        Ok(pkt) => {
-            assert_eq!(pkt.pcom_prefix.sequence(), Some(18));
-            assert_eq!(pkt.pcom_prefix.session_token(), None);
-        }
-        Err(e) => {
-            match e {
-                NetError::BunchError(_) | NetError::InvalidUdpPacket(_) => {}
-                other => panic!("Unexpected error on Frame 14639: {:?}", other),
-            }
-        }
-    }
+    // PSL-INV-012: Sequenced 0x0001 payloads in CAP-03 are encrypted (UNK-CRYPTO-001).
+    let err = Ue3Packet::decode_with_max_bits(CAP03_FRAME_14639_SEQ18, EXUDP_MAX_PACKET_BITS)
+        .expect_err("CAP-03 Frame 14639 sequenced payload is encrypted (UNK-CRYPTO-001)");
+    assert!(
+        matches!(err, NetError::BunchError(_)),
+        "Expected BunchError on encrypted Frame 14639 payload, got {:?}",
+        err
+    );
 }
 
 #[test]
-fn test_cap03_frame_15141_seq51_player_controller_framing() {
+fn test_cap03_frame_15141_seq51_outer_prefix_decoded_payload_encrypted() {
     assert_eq!(CAP03_FRAME_15141_SEQ51.len(), 247);
 
-    // Verify 10-byte prefix: magic=1, seq=51 (0x33), subflag=0x0001
+    // Only the 10-byte outer prefix is cleartext: magic=1, seq=51 (0x33), subflag=0x0001.
     assert_eq!(&CAP03_FRAME_15141_SEQ51[..4], &[0x01, 0x00, 0x00, 0x00]);
     assert_eq!(&CAP03_FRAME_15141_SEQ51[4..8], &[0x33, 0x00, 0x00, 0x00]);
     assert_eq!(&CAP03_FRAME_15141_SEQ51[8..10], &[0x00, 0x01]);
 
-    // Seq 51 > 1: payload starts at offset 10
-    let res = Ue3Packet::decode_with_max_bits(CAP03_FRAME_15141_SEQ51, MAX_ALLOWED_PACKET_BITS);
-    match res {
-        Ok(pkt) => {
-            assert_eq!(pkt.pcom_prefix.sequence(), Some(51));
-            assert_eq!(pkt.pcom_prefix.session_token(), None);
-        }
-        Err(e) => {
-            match e {
-                NetError::BunchError(_) | NetError::InvalidUdpPacket(_) => {}
-                other => panic!("Unexpected error on Frame 15141: {:?}", other),
-            }
-        }
-    }
+    // PSL-INV-012: Sequenced 0x0001 payloads in CAP-03 are encrypted (UNK-CRYPTO-001).
+    let err = Ue3Packet::decode_with_max_bits(CAP03_FRAME_15141_SEQ51, MAX_ALLOWED_PACKET_BITS)
+        .expect_err("CAP-03 Frame 15141 sequenced payload is encrypted (UNK-CRYPTO-001)");
+    assert!(
+        matches!(err, NetError::InvalidUdpPacket(_)),
+        "Expected InvalidUdpPacket on encrypted Frame 15141 payload, got {:?}",
+        err
+    );
 }

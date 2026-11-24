@@ -522,7 +522,12 @@ pub const NMT_HANDSHAKE_COMPLETE: u8 = 0x1D;
 pub const NMT_REDIRECT: u8 = 0x1E;
 pub const NMT_CLIENT_AUTH_REQUEST: u8 = 0x1F;
 pub const NMT_SERVER_AUTH_REQUEST: u8 = 0x20;
+pub const NMT_MARSHAL_PACKAGE: u8 = 0x27;
+pub const NMT_PLAY_TIME: u8 = 0x29;
 pub const NMT_MAP_LOADED: u8 = 0x2A;
+pub const NMT_TIME_LAPSE: u8 = 0x2B;
+pub const NMT_USES_OPT: u8 = 0x2C;
+pub const NMT_USES_OPT_EX: u8 = 0x2D;
 
 /// UE3 Channel Type Indexing (`UChannel::ChannelClasses[8]`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1067,6 +1072,19 @@ pub enum ControlMessage {
     },
     /// `NMT_Failure (0x06)`: S -> C (`ErrorMsg`).
     Failure { reason: String },
+    /// `NMT_Uses (0x07)`: C <-> S (`FGuid`, `PackageName`, `Extension`, `URL`, `PackageFlags`, `RemoteGeneration`, `LocalPackageName`, `bLoadingFromCache`).
+    Uses {
+        guid: [u32; 4],
+        package_name: String,
+        extension: String,
+        url: String,
+        package_flags: u32,
+        remote_generation: u32,
+        local_package_name: String,
+        loading_from_cache: u8,
+    },
+    /// `NMT_Have (0x08)`: C -> S (`FGuid`, `Generation`).
+    Have { guid: [u32; 4], generation: i32 },
     /// `NMT_Join (0x09)`: C -> S (0 bytes).
     Join,
     /// `NMT_ActorChannelFailure (0x10)`: C -> S (`ChIndex`).
@@ -1091,8 +1109,32 @@ pub enum ControlMessage {
     },
     /// `NMT_ServerAuthRequest (0x20)`: C -> S (0 bytes).
     ServerAuthRequest,
+    /// `NMT_MarshalPackage (0x27)`: C <-> S (`total_size` 19-bit on first chunk, `chunk_size` 9-bit + raw `CMarshal` bytes).
+    MarshalPackage {
+        total_size: Option<u32>,
+        chunk: Vec<u8>,
+    },
+    /// `NMT_PlayTime (0x29)`: C <-> S (`u32`).
+    PlayTime { play_time: u32 },
     /// `NMT_MapLoaded (0x2A)`: C -> S (0 bytes). Client notification that local map load has finished.
     MapLoaded,
+    /// `NMT_TimeLapse (0x2B)`: C <-> S (`u32`, `u32`).
+    TimeLapse { param_a: u32, param_b: u32 },
+    /// `NMT_UsesOpt (0x2C)`: S -> C (`FGuid`, `PackageName`, `PackageFlags`, `CachedExtIndex`).
+    UsesOpt {
+        guid: [u32; 4],
+        package_name: String,
+        package_flags: u32,
+        cached_ext_index: i32,
+    },
+    /// `NMT_UsesOptEx (0x2D)`: S -> C (`FGuid`, `PackageName`, `PackageFlags`, `GenOrFlags`, `ExtensionOrParent`).
+    UsesOptEx {
+        guid: [u32; 4],
+        package_name: String,
+        package_flags: u32,
+        gen_or_flags: i32,
+        extension_or_parent: String,
+    },
 }
 
 impl ControlMessage {
@@ -1108,9 +1150,16 @@ impl ControlMessage {
         }
     }
 
-    /// Serializes control message into bunch payload bytes.
-    pub fn encode(&self) -> Vec<u8> {
+    /// Serializes control message into bunch payload bytes and returns `(bytes, exact_num_bits)`.
+    pub fn try_encode_bits(&self) -> Result<(Vec<u8>, usize), NetError> {
         let mut w = BitWriter::new();
+        self.encode_into(&mut w)?;
+        let num_bits = w.num_bits();
+        Ok((w.into_bytes(), num_bits))
+    }
+
+    /// Serializes control message into an existing `BitWriter` without trailing byte padding.
+    pub fn encode_into(&self, w: &mut BitWriter) -> Result<(), NetError> {
         match self {
             Self::Hello {
                 min_net_ver,
@@ -1166,6 +1215,35 @@ impl ControlMessage {
                 w.write_u8(NMT_FAILURE);
                 w.write_fstring(reason);
             }
+            Self::Uses {
+                guid,
+                package_name,
+                extension,
+                url,
+                package_flags,
+                remote_generation,
+                local_package_name,
+                loading_from_cache,
+            } => {
+                w.write_u8(NMT_USES);
+                for &part in guid {
+                    w.write_u32(part);
+                }
+                w.write_fstring(package_name);
+                w.write_fstring(extension);
+                w.write_fstring(url);
+                w.write_u32(*package_flags);
+                w.write_u32(*remote_generation);
+                w.write_fstring(local_package_name);
+                w.write_u8(*loading_from_cache);
+            }
+            Self::Have { guid, generation } => {
+                w.write_u8(NMT_HAVE);
+                for &part in guid {
+                    w.write_u32(part);
+                }
+                w.write_i32(*generation);
+            }
             Self::Join => {
                 w.write_u8(NMT_JOIN);
             }
@@ -1209,11 +1287,66 @@ impl ControlMessage {
             Self::ServerAuthRequest => {
                 w.write_u8(NMT_SERVER_AUTH_REQUEST);
             }
+            Self::MarshalPackage { total_size, chunk } => {
+                w.write_u8(NMT_MARSHAL_PACKAGE);
+                if let Some(total) = total_size {
+                    w.write_int(*total, 0x80000)?;
+                }
+                w.write_int(chunk.len() as u32, 0x200)?;
+                w.write_bytes(chunk);
+            }
+            Self::PlayTime { play_time } => {
+                w.write_u8(NMT_PLAY_TIME);
+                w.write_u32(*play_time);
+            }
             Self::MapLoaded => {
                 w.write_u8(NMT_MAP_LOADED);
             }
+            Self::TimeLapse { param_a, param_b } => {
+                w.write_u8(NMT_TIME_LAPSE);
+                w.write_u32(*param_a);
+                w.write_u32(*param_b);
+            }
+            Self::UsesOpt {
+                guid,
+                package_name,
+                package_flags,
+                cached_ext_index,
+            } => {
+                w.write_u8(NMT_USES_OPT);
+                for &part in guid {
+                    w.write_u32(part);
+                }
+                w.write_fstring(package_name);
+                w.write_u32(*package_flags);
+                w.write_i32(*cached_ext_index);
+            }
+            Self::UsesOptEx {
+                guid,
+                package_name,
+                package_flags,
+                gen_or_flags,
+                extension_or_parent,
+            } => {
+                w.write_u8(NMT_USES_OPT_EX);
+                for &part in guid {
+                    w.write_u32(part);
+                }
+                w.write_fstring(package_name);
+                w.write_u32(*package_flags);
+                w.write_i32(*gen_or_flags);
+                w.write_fstring(extension_or_parent);
+            }
         }
-        w.into_bytes()
+        Ok(())
+    }
+
+    /// Serializes control message into bunch payload bytes.
+    pub fn encode(&self) -> Vec<u8> {
+        let (bytes, _) = self
+            .try_encode_bits()
+            .expect("ControlMessage payload exceeds UE3 SerializeInt bounds");
+        bytes
     }
 
     /// Returns the wire opcode for this control message.
@@ -1226,6 +1359,8 @@ impl ControlMessage {
             Self::NetSpeed { .. } => NMT_NETSPEED,
             Self::Login { .. } => NMT_LOGIN,
             Self::Failure { .. } => NMT_FAILURE,
+            Self::Uses { .. } => NMT_USES,
+            Self::Have { .. } => NMT_HAVE,
             Self::Join => NMT_JOIN,
             Self::ActorChannelFailure { .. } => NMT_ACTOR_CHANNEL_FAILURE,
             Self::HandshakeStart { .. } => NMT_HANDSHAKE_START,
@@ -1235,8 +1370,28 @@ impl ControlMessage {
             Self::Redirect { .. } => NMT_REDIRECT,
             Self::ClientAuthRequest { .. } => NMT_CLIENT_AUTH_REQUEST,
             Self::ServerAuthRequest => NMT_SERVER_AUTH_REQUEST,
+            Self::MarshalPackage { .. } => NMT_MARSHAL_PACKAGE,
+            Self::PlayTime { .. } => NMT_PLAY_TIME,
             Self::MapLoaded => NMT_MAP_LOADED,
+            Self::TimeLapse { .. } => NMT_TIME_LAPSE,
+            Self::UsesOpt { .. } => NMT_USES_OPT,
+            Self::UsesOptEx { .. } => NMT_USES_OPT_EX,
         }
+    }
+
+    /// Decodes a `NMT_MarshalPackage (0x27)` message with explicit reassembly state.
+    pub fn decode_marshal_package_with_state(
+        reader: &mut BitReader<'_>,
+        is_start: bool,
+    ) -> Result<Self, NetError> {
+        let total_size = if is_start {
+            Some(reader.read_int(0x80000)?)
+        } else {
+            None
+        };
+        let chunk_size = reader.read_int(0x200)? as usize;
+        let chunk = reader.read_bytes(chunk_size)?;
+        Ok(Self::MarshalPackage { total_size, chunk })
     }
 
     fn decode_from_reader(reader: &mut BitReader<'_>) -> Result<Self, NetError> {
@@ -1296,6 +1451,41 @@ impl ControlMessage {
                 let reason = reader.read_fstring()?;
                 Ok(Self::Failure { reason })
             }
+            NMT_USES => {
+                let guid = [
+                    reader.read_u32()?,
+                    reader.read_u32()?,
+                    reader.read_u32()?,
+                    reader.read_u32()?,
+                ];
+                let package_name = reader.read_fstring()?;
+                let extension = reader.read_fstring()?;
+                let url = reader.read_fstring()?;
+                let package_flags = reader.read_u32()?;
+                let remote_generation = reader.read_u32()?;
+                let local_package_name = reader.read_fstring()?;
+                let loading_from_cache = reader.read_u8()?;
+                Ok(Self::Uses {
+                    guid,
+                    package_name,
+                    extension,
+                    url,
+                    package_flags,
+                    remote_generation,
+                    local_package_name,
+                    loading_from_cache,
+                })
+            }
+            NMT_HAVE => {
+                let guid = [
+                    reader.read_u32()?,
+                    reader.read_u32()?,
+                    reader.read_u32()?,
+                    reader.read_u32()?,
+                ];
+                let generation = reader.read_i32()?;
+                Ok(Self::Have { guid, generation })
+            }
             NMT_JOIN => Ok(Self::Join),
             NMT_ACTOR_CHANNEL_FAILURE => {
                 let ch_index = reader.read_i32()?;
@@ -1333,7 +1523,81 @@ impl ControlMessage {
                 })
             }
             NMT_SERVER_AUTH_REQUEST => Ok(Self::ServerAuthRequest),
+            NMT_MARSHAL_PACKAGE => {
+                let rem = reader.bits_left();
+                if rem >= 28 && (rem % 8) == 4 {
+                    Self::decode_marshal_package_with_state(reader, true)
+                } else if rem >= 9 && (rem % 8) == 1 {
+                    Self::decode_marshal_package_with_state(reader, false)
+                } else {
+                    // Byte-padded standalone payload fallback: probe start vs continuation chunk
+                    let mut probe_start = reader.clone();
+                    if rem >= 32 {
+                        if let Ok(Self::MarshalPackage { total_size, chunk }) =
+                            Self::decode_marshal_package_with_state(&mut probe_start, true)
+                        {
+                            if probe_start.bits_left() == 4 {
+                                let _ = probe_start.read_bits(4)?;
+                                *reader = probe_start;
+                                return Ok(Self::MarshalPackage { total_size, chunk });
+                            }
+                        }
+                    }
+                    let mut probe_cont = reader.clone();
+                    let msg = Self::decode_marshal_package_with_state(&mut probe_cont, false)?;
+                    if probe_cont.bits_left() == 7 {
+                        let _ = probe_cont.read_bits(7)?;
+                    }
+                    *reader = probe_cont;
+                    Ok(msg)
+                }
+            }
+            NMT_PLAY_TIME => {
+                let play_time = reader.read_u32()?;
+                Ok(Self::PlayTime { play_time })
+            }
             NMT_MAP_LOADED => Ok(Self::MapLoaded),
+            NMT_TIME_LAPSE => {
+                let param_a = reader.read_u32()?;
+                let param_b = reader.read_u32()?;
+                Ok(Self::TimeLapse { param_a, param_b })
+            }
+            NMT_USES_OPT => {
+                let guid = [
+                    reader.read_u32()?,
+                    reader.read_u32()?,
+                    reader.read_u32()?,
+                    reader.read_u32()?,
+                ];
+                let package_name = reader.read_fstring()?;
+                let package_flags = reader.read_u32()?;
+                let cached_ext_index = reader.read_i32()?;
+                Ok(Self::UsesOpt {
+                    guid,
+                    package_name,
+                    package_flags,
+                    cached_ext_index,
+                })
+            }
+            NMT_USES_OPT_EX => {
+                let guid = [
+                    reader.read_u32()?,
+                    reader.read_u32()?,
+                    reader.read_u32()?,
+                    reader.read_u32()?,
+                ];
+                let package_name = reader.read_fstring()?;
+                let package_flags = reader.read_u32()?;
+                let gen_or_flags = reader.read_i32()?;
+                let extension_or_parent = reader.read_fstring()?;
+                Ok(Self::UsesOptEx {
+                    guid,
+                    package_name,
+                    package_flags,
+                    gen_or_flags,
+                    extension_or_parent,
+                })
+            }
             other => Err(NetError::InvalidUdpPacket(format!(
                 "Unknown Control Message opcode 0x{:02x}",
                 other
@@ -1923,5 +2187,87 @@ mod tests {
         assert_eq!(dec_seq2.acks, vec![100]);
         assert_eq!(dec_seq2.bunches.len(), 1);
         assert_eq!(dec_seq2.encode_pcom(EXUDP_MAX_PACKET_BITS).unwrap(), enc_seq2);
+    }
+
+    #[test]
+    fn test_extended_control_messages_roundtrip() {
+        let messages = [
+            ControlMessage::Uses {
+                guid: [0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FF00],
+                package_name: "Shootingrange_P".to_string(),
+                extension: "upk".to_string(),
+                url: "Shootingrange_P?Name=Player".to_string(),
+                package_flags: 0x0000_0001,
+                remote_generation: 3,
+                local_package_name: "Shootingrange_P".to_string(),
+                loading_from_cache: 1,
+            },
+            ControlMessage::Have {
+                guid: [0xAABB_CCDD, 0x1234_5678, 0x9ABC_DEF0, 0x0F1E_2D3C],
+                generation: 42,
+            },
+            ControlMessage::MarshalPackage {
+                total_size: Some(920),
+                chunk: vec![0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02],
+            },
+            ControlMessage::MarshalPackage {
+                total_size: None,
+                chunk: vec![0xCA, 0xFE, 0xBA, 0xBE],
+            },
+            ControlMessage::PlayTime { play_time: 123456 },
+            ControlMessage::TimeLapse {
+                param_a: 1000,
+                param_b: 2000,
+            },
+            ControlMessage::UsesOpt {
+                guid: [1, 2, 3, 4],
+                package_name: "TgClient".to_string(),
+                package_flags: 0x40,
+                cached_ext_index: -1,
+            },
+            ControlMessage::UsesOptEx {
+                guid: [5, 6, 7, 8],
+                package_name: "Startup".to_string(),
+                package_flags: 0x80,
+                gen_or_flags: 7,
+                extension_or_parent: "upk".to_string(),
+            },
+        ];
+
+        for (idx, msg) in messages.iter().enumerate() {
+            let encoded = msg.encode();
+            assert_eq!(encoded[0], msg.opcode());
+            let decoded = ControlMessage::decode(&encoded).unwrap_or_else(|e| {
+                panic!("Failed standalone decode for msg #{} ({:?}): {:?}", idx, msg, e)
+            });
+            assert_eq!(&decoded, msg, "Standalone roundtrip mismatch for msg #{}", idx);
+
+            // Bit-exact Ue3Packet / Bunch roundtrip
+            let (raw_bits, num_bits) = msg.try_encode_bits().unwrap();
+            let mut pkt = Ue3Packet::new(SYNTHETIC_PREFIX, idx as u16);
+            pkt.bunches.push(Bunch::with_bits(
+                BunchHeader {
+                    ch_index: CONTROL_CHANNEL_INDEX,
+                    ch_type: Ue3ChannelType::Control,
+                    flags: BunchFlags {
+                        b_open: false,
+                        b_close: false,
+                        b_reliable: true,
+                        b_partial: false,
+                    },
+                    ch_sequence: (idx as u32) + 1,
+                },
+                num_bits,
+                raw_bits,
+            ));
+            let wire = pkt.encode().unwrap();
+            let dec_pkt = Ue3Packet::decode(&wire).unwrap();
+            let dec_msgs = ControlMessage::decode_all(
+                &dec_pkt.bunches[0].data,
+                dec_pkt.bunches[0].num_bits,
+            )
+            .unwrap();
+            assert_eq!(dec_msgs, vec![msg.clone()]);
+        }
     }
 }
