@@ -63,9 +63,23 @@ def cmd_click(args):
         target_y = int(y)
 
     btn_hex = button_to_hex(getattr(args, "button", 1), state="click")
-    run_ydotool("mousemove", "--absolute", str(target_x), str(target_y))
+    res_move = run_ydotool("mousemove", "--absolute", str(target_x), str(target_y))
+    if res_move.returncode != 0:
+        print(
+            f"[!] Error: ydotool mousemove failed (code: {res_move.returncode}): "
+            f"{res_move.stderr.strip() or 'is ydotoold running?'}",
+            file=sys.stderr,
+        )
+        return 1
     time.sleep(0.02)
-    run_ydotool("click", btn_hex)
+    res_click = run_ydotool("click", btn_hex)
+    if res_click.returncode != 0:
+        print(
+            f"[!] Error: ydotool click failed (code: {res_click.returncode}): "
+            f"{res_click.stderr.strip() or 'is ydotoold running?'}",
+            file=sys.stderr,
+        )
+        return 1
     print(f"[*] Clicked at ({target_x}, {target_y}) [button: {btn_hex}]")
     return 0
 
@@ -96,11 +110,32 @@ def cmd_console(args):
         subprocess.run(["xdotool", "windowactivate", "--sync", str(win["window_id"])], check=False)
         time.sleep(0.1)
 
-    send_key("F10")
+    res_f10 = send_key("F10")
+    if res_f10.returncode != 0:
+        print(
+            f"[!] Error: Failed to send F10 via ydotool (code: {res_f10.returncode}): "
+            f"{res_f10.stderr.strip() or 'is ydotoold running?'}",
+            file=sys.stderr,
+        )
+        return 1
     time.sleep(0.1)
-    run_ydotool("type", "--", args.command)
+    res_type = run_ydotool("type", "--", args.command)
+    if res_type.returncode != 0:
+        print(
+            f"[!] Error: Failed to type console command via ydotool (code: {res_type.returncode}): "
+            f"{res_type.stderr.strip() or 'is ydotoold running?'}",
+            file=sys.stderr,
+        )
+        return 1
     time.sleep(0.05)
-    send_key("Return")
+    res_ret = send_key("Return")
+    if res_ret.returncode != 0:
+        print(
+            f"[!] Error: Failed to send Return via ydotool (code: {res_ret.returncode}): "
+            f"{res_ret.stderr.strip() or 'is ydotoold running?'}",
+            file=sys.stderr,
+        )
+        return 1
     print(f"[*] Dispatched console command: '{args.command}'")
     return 0
 
@@ -139,7 +174,10 @@ def main():
     p_cons.add_argument("--window-name", default="Paladins", help="Target window name")
 
     args = parser.parse_args()
-    if not args.input_cmd or args.input_cmd == "window":
+    if not args.input_cmd:
+        parser.print_help()
+        return 0
+    if args.input_cmd == "window":
         return cmd_window(args)
     if args.input_cmd == "click":
         return cmd_click(args)

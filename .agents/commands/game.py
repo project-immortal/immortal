@@ -11,7 +11,7 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lib.common import DIRTYROOM_ROOT, REPO_ROOT, kill_game_and_server
+from lib.common import DIRTYROOM_ROOT, REPO_ROOT, find_game_and_server_processes, kill_game_and_server
 
 
 def main():
@@ -30,17 +30,11 @@ def main():
 
     action = args.action
     if action == "status":
-        proc = subprocess.run(
-            ["pgrep", "-a", "-f", "ShippingPC-ChaosGame.exe|immortal-server"],
-            text=True,
-            stdout=subprocess.PIPE,
-        )
-        lines = [l for l in proc.stdout.splitlines() if "immortal-server" in l or "ShippingPC-ChaosGame.exe" in l]
-        lines = [l for l in lines if "pgrep" not in l]
-        if lines:
+        matches = find_game_and_server_processes()
+        if matches:
             print("[*] Running game/server processes:")
-            for l in lines:
-                print(f"  {l}")
+            for m in matches:
+                print(f"  {m['pid']} {m['cmdline']}")
         else:
             print("[*] No Paladins client or Immortal server processes running.")
         return 0
@@ -74,14 +68,14 @@ def main():
                     server_log.parent.mkdir(parents=True, exist_ok=True)
                     senv = os.environ.copy()
                     senv["RUST_LOG"] = "info,immortal_net=debug,immortal_server=debug"
-                    slog = open(server_log, "a")
-                    subprocess.Popen(
-                        [str(server_bin)],
-                        env=senv,
-                        stdout=slog,
-                        stderr=subprocess.STDOUT,
-                        start_new_session=True,
-                    )
+                    with open(server_log, "a") as slog:
+                        subprocess.Popen(
+                            [str(server_bin)],
+                            env=senv,
+                            stdout=slog,
+                            stderr=subprocess.STDOUT,
+                            start_new_session=True,
+                        )
                     print(f"[*] immortal-server daemon started (logging to {server_log}).")
                     time.sleep(0.5)
                 else:
@@ -129,8 +123,8 @@ def main():
         ])
         log_path = DIRTYROOM_ROOT / "logs" / "client.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_file = open(log_path, "w")
-        subprocess.Popen(cmd_args, env=env, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
+        with open(log_path, "w") as log_file:
+            subprocess.Popen(cmd_args, env=env, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
         print(f"[*] Paladins client process dispatched (logging to {log_path}).")
         return 0
 
