@@ -1,6 +1,6 @@
 {
   "status": "verified",
-  "evidence_hash": "af2a6776a08b8adb36b3ce53a4c24f0b230f600123926b2bb9f75b3f948f005e",
+  "evidence_hash": "837292ca7a9d363885ee008b8d149fbfd4eb9b4cec1925712699a4090f03eb3b",
   "obligations": [
     {
       "id": "OBL-G1-001",
@@ -94,7 +94,7 @@
     },
     {
       "id": "OBL-UDP-004",
-      "status": "open"
+      "status": "in_progress"
     },
     {
       "id": "OBL-PROP-001",
@@ -102,7 +102,7 @@
     },
     {
       "id": "UNK-CRYPTO-001",
-      "status": "open"
+      "status": "archived"
     },
     {
       "id": "OBL-NAV-001",

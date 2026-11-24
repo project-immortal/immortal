@@ -25,7 +25,11 @@ pub const PCOM_PREFIX_LEN: usize = 6;
 /// Outer 10-byte prefix length for Paladins dedicated extended UDP (`?exudp>=1`).
 pub const DEDICATED_PREFIX_LEN: usize = 10;
 
-/// Length of the initial 6-byte session token present exclusively on Seq 1.
+/// Length of the 6-byte outer `PComNetConn` prefix encrypted inside Seq 1 `?exudp=2`
+/// payloads (`UNK-CRYPTO-001`). Both TX and RX `Salsa20` instances in `CCryptopp::GenSession`
+/// reuse the identical 32-byte key and 8-byte IV, causing `C->S` and `S->C` Seq 1 frames of
+/// equal length to expose identical keystream over the 6 zero bytes (`0x00 * 6 ^ Salsa20`),
+/// rather than carrying a plaintext session token barrier. Retained for wire-layout compat.
 pub const SESSION_TOKEN_LEN: usize = 6;
 
 /// Dedicated transport subflag for sequenced gameplay datagrams (`[0x00, 0x01]`).
@@ -36,9 +40,10 @@ pub const SUBFLAG_UNSEQUENCED: u16 = 0x0010;
 
 /// Outer packet prefix stripped by UE3 network connection layers.
 /// In Paladins standalone UDP transport, this is a 6-byte prefix (`PCOM_PREFIX_LEN`).
-/// In Paladins dedicated-server captures, this is a 10-byte prefix:
-/// `[magic: 4B] [sequence: 4B LE] [subflags: 2B BE]`, optionally followed by
-/// a 6-byte session token on Seq 1.
+/// In Paladins dedicated-server captures (`?exudp>=1`), this is a 10-byte prefix:
+/// `[magic: 4B] [sequence: 4B LE] [subflags: 2B BE]`. In `?exudp=2` (`UNK-CRYPTO-001`),
+/// Seq 1 additionally carries 6 encrypted `PComNetConn` prefix bytes inside the Salsa20
+/// payload (`session_token` field retained for backward compatibility; not a plaintext token).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcomPrefix {
     /// Standalone UDP 7777 framing (6 bytes: 4-byte sequence LE + 2-byte subflag BE).
@@ -46,7 +51,8 @@ pub enum PcomPrefix {
         sequence: u32,
         subflag: u16,
     },
-    /// Dedicated server sequenced gameplay datagram (10 bytes, or 16 bytes on Seq 1 with session token).
+    /// Dedicated server sequenced gameplay datagram (10 bytes, or 16 bytes on Seq 1 with
+    /// the 6-byte `?exudp=2` encrypted `PComNetConn` prefix slot).
     DedicatedSequenced {
         sequence: u32,
         subflag: u16,
@@ -68,7 +74,8 @@ impl PcomPrefix {
         Self::Standalone { sequence, subflag }
     }
 
-    /// Creates a dedicated sequenced prefix.
+    /// Creates a dedicated sequenced prefix (`session_token` holds the optional 6-byte
+    /// `?exudp=2` encrypted `PComNetConn` prefix slot on Seq 1; see `UNK-CRYPTO-001`).
     #[inline]
     pub fn dedicated_sequenced(sequence: u32, session_token: Option<[u8; 6]>) -> Self {
         Self::DedicatedSequenced {
@@ -106,7 +113,8 @@ impl PcomPrefix {
         }
     }
 
-    /// Returns the optional 6-byte session token if present.
+    /// Returns the optional 6-byte Seq 1 `?exudp=2` encrypted `PComNetConn` prefix slot
+    /// (`UNK-CRYPTO-001`, historically labeled `session_token`).
     #[inline]
     pub fn session_token(&self) -> Option<&[u8; 6]> {
         match self {
@@ -514,6 +522,7 @@ pub const NMT_USES: u8 = 0x07;
 pub const NMT_HAVE: u8 = 0x08;
 pub const NMT_JOIN: u8 = 0x09;
 pub const NMT_JOIN_SPLIT: u8 = 0x0A;
+pub const NMT_DOWNLOAD_MGR: u8 = 0x0B;
 pub const NMT_ACTOR_CHANNEL_FAILURE: u8 = 0x10;
 pub const NMT_HANDSHAKE_START: u8 = 0x1A;
 pub const NMT_HANDSHAKE_CHALLENGE: u8 = 0x1B;
@@ -935,6 +944,8 @@ impl Ue3Packet {
                         actual: datagram.len(),
                     });
                 }
+                // UNK-CRYPTO-001: In ?exudp=2 Seq 1 captures, bytes 10..16 are the 6 zero bytes
+                // of PComNetConn XORed with TX/RX-reused Salsa20 keystream (not a plaintext token).
                 let mut token = [0u8; 6];
                 token.copy_from_slice(&datagram[10..16]);
                 (
@@ -1037,6 +1048,112 @@ impl Ue3Packet {
 // Channel 0 Control Messages (`FNetControlMessageInfo::Names`)
 // ============================================================================
 
+/// Standalone wire payload struct for `NMT_Uses (0x07)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NmtUses {
+    pub guid: [u32; 4],
+    pub package_name: String,
+    pub extension: String,
+    pub url: String,
+    pub package_flags: u32,
+    pub remote_generation: u32,
+    pub local_package_name: String,
+    pub loading_from_cache: u8,
+}
+
+impl From<NmtUses> for ControlMessage {
+    fn from(v: NmtUses) -> Self {
+        Self::Uses {
+            guid: v.guid,
+            package_name: v.package_name,
+            extension: v.extension,
+            url: v.url,
+            package_flags: v.package_flags,
+            remote_generation: v.remote_generation,
+            local_package_name: v.local_package_name,
+            loading_from_cache: v.loading_from_cache,
+        }
+    }
+}
+
+/// Standalone wire payload struct for `NMT_Have (0x08)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NmtHave {
+    pub guid: [u32; 4],
+    pub generation: i32,
+}
+
+impl From<NmtHave> for ControlMessage {
+    fn from(v: NmtHave) -> Self {
+        Self::Have {
+            guid: v.guid,
+            generation: v.generation,
+        }
+    }
+}
+
+/// Standalone wire payload struct for `NMT_DownloadMgr (0x0B)`.
+/// Note: `compression` is serialized as UE3 `UBOOL` (`u32`, 4 bytes LE), verified against
+/// live retail Oracle capture bytes (`0x00000000` before `0x01 NMT_Welcome`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NmtDownloadMgr {
+    pub class_name: String,
+    pub params: String,
+    pub compression: u32,
+}
+
+impl From<NmtDownloadMgr> for ControlMessage {
+    fn from(v: NmtDownloadMgr) -> Self {
+        Self::DownloadMgr {
+            class_name: v.class_name,
+            params: v.params,
+            compression: v.compression,
+        }
+    }
+}
+
+/// Standalone wire payload struct for `NMT_UsesOpt (0x2C)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NmtUsesOpt {
+    pub guid: [u32; 4],
+    pub package_name: String,
+    pub package_flags: u32,
+    pub cached_ext_index: i32,
+}
+
+impl From<NmtUsesOpt> for ControlMessage {
+    fn from(v: NmtUsesOpt) -> Self {
+        Self::UsesOpt {
+            guid: v.guid,
+            package_name: v.package_name,
+            package_flags: v.package_flags,
+            cached_ext_index: v.cached_ext_index,
+        }
+    }
+}
+
+/// Standalone wire payload struct for `NMT_UsesOptEx (0x2D)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NmtUsesOptEx {
+    pub guid: [u32; 4],
+    pub package_name: String,
+    pub package_flags: u32,
+    pub gen_or_flags: i32,
+    pub extension_or_parent: String,
+}
+
+impl From<NmtUsesOptEx> for ControlMessage {
+    fn from(v: NmtUsesOptEx) -> Self {
+        Self::UsesOptEx {
+            guid: v.guid,
+            package_name: v.package_name,
+            package_flags: v.package_flags,
+            gen_or_flags: v.gen_or_flags,
+            extension_or_parent: v.extension_or_parent,
+        }
+    }
+}
+
 /// Cleanroom representation of verified UE3 / Paladins Control Channel messages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ControlMessage {
@@ -1087,6 +1204,12 @@ pub enum ControlMessage {
     Have { guid: [u32; 4], generation: i32 },
     /// `NMT_Join (0x09)`: C -> S (0 bytes).
     Join,
+    /// `NMT_DownloadMgr (0x0B)`: S -> C (`ClassName`, `Params`, `Compression: UBOOL/u32`).
+    DownloadMgr {
+        class_name: String,
+        params: String,
+        compression: u32,
+    },
     /// `NMT_ActorChannelFailure (0x10)`: C -> S (`ChIndex`).
     ActorChannelFailure { ch_index: i32 },
     /// `NMT_HandshakeStart (0x1A)`: C -> S (`PlatformFlag`, `0x40` on Win64).
@@ -1247,6 +1370,16 @@ impl ControlMessage {
             Self::Join => {
                 w.write_u8(NMT_JOIN);
             }
+            Self::DownloadMgr {
+                class_name,
+                params,
+                compression,
+            } => {
+                w.write_u8(NMT_DOWNLOAD_MGR);
+                w.write_fstring(class_name);
+                w.write_fstring(params);
+                w.write_u32(*compression);
+            }
             Self::ActorChannelFailure { ch_index } => {
                 w.write_u8(NMT_ACTOR_CHANNEL_FAILURE);
                 w.write_i32(*ch_index);
@@ -1362,6 +1495,7 @@ impl ControlMessage {
             Self::Uses { .. } => NMT_USES,
             Self::Have { .. } => NMT_HAVE,
             Self::Join => NMT_JOIN,
+            Self::DownloadMgr { .. } => NMT_DOWNLOAD_MGR,
             Self::ActorChannelFailure { .. } => NMT_ACTOR_CHANNEL_FAILURE,
             Self::HandshakeStart { .. } => NMT_HANDSHAKE_START,
             Self::HandshakeChallenge { .. } => NMT_HANDSHAKE_CHALLENGE,
@@ -1487,6 +1621,16 @@ impl ControlMessage {
                 Ok(Self::Have { guid, generation })
             }
             NMT_JOIN => Ok(Self::Join),
+            NMT_DOWNLOAD_MGR => {
+                let class_name = reader.read_fstring()?;
+                let params = reader.read_fstring()?;
+                let compression = reader.read_u32()?;
+                Ok(Self::DownloadMgr {
+                    class_name,
+                    params,
+                    compression,
+                })
+            }
             NMT_ACTOR_CHANNEL_FAILURE => {
                 let ch_index = reader.read_i32()?;
                 Ok(Self::ActorChannelFailure { ch_index })
@@ -2192,7 +2336,7 @@ mod tests {
     #[test]
     fn test_extended_control_messages_roundtrip() {
         let messages = [
-            ControlMessage::Uses {
+            ControlMessage::from(NmtUses {
                 guid: [0x1122_3344, 0x5566_7788, 0x99AA_BBCC, 0xDDEE_FF00],
                 package_name: "Shootingrange_P".to_string(),
                 extension: "upk".to_string(),
@@ -2201,11 +2345,16 @@ mod tests {
                 remote_generation: 3,
                 local_package_name: "Shootingrange_P".to_string(),
                 loading_from_cache: 1,
-            },
-            ControlMessage::Have {
+            }),
+            ControlMessage::from(NmtHave {
                 guid: [0xAABB_CCDD, 0x1234_5678, 0x9ABC_DEF0, 0x0F1E_2D3C],
                 generation: 42,
-            },
+            }),
+            ControlMessage::from(NmtDownloadMgr {
+                class_name: "Engine.ChannelDownload".to_string(),
+                params: "Enabled".to_string(),
+                compression: 0,
+            }),
             ControlMessage::MarshalPackage {
                 total_size: Some(920),
                 chunk: vec![0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02],
@@ -2219,19 +2368,19 @@ mod tests {
                 param_a: 1000,
                 param_b: 2000,
             },
-            ControlMessage::UsesOpt {
+            ControlMessage::from(NmtUsesOpt {
                 guid: [1, 2, 3, 4],
                 package_name: "TgClient".to_string(),
                 package_flags: 0x40,
                 cached_ext_index: -1,
-            },
-            ControlMessage::UsesOptEx {
+            }),
+            ControlMessage::from(NmtUsesOptEx {
                 guid: [5, 6, 7, 8],
                 package_name: "Startup".to_string(),
                 package_flags: 0x80,
                 gen_or_flags: 7,
                 extension_or_parent: "upk".to_string(),
-            },
+            }),
         ];
 
         for (idx, msg) in messages.iter().enumerate() {

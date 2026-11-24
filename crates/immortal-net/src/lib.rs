@@ -7,6 +7,7 @@
 //! Cleanroom Unreal Engine 3 bit-packed bunch protocol parser, control channel state
 //! machine, and MCTS auth gateway protocol definitions.
 
+pub mod actor_channel;
 pub mod bitstream;
 pub mod bunch;
 pub mod error;
@@ -16,6 +17,13 @@ pub mod marshal;
 pub mod mcts_handshake;
 pub mod udp_framing;
 
+pub use actor_channel::{
+    read_net_name, read_object_ref, write_net_name, write_object_ref, ActorBunch, ActorBunchCodec,
+    ActorOpenHeader, ActorSpawnLayout, ClassNetCacheView, NetFieldKind, NetFieldSchema, NetName,
+    NetPropertyType, NetRpcParam, NetStructField, NetStructFieldValue, NetStructKind, NetValue,
+    ObjectRef, PackageMapLevel, ReplicatedItem, RpcParamValue, MAX_DYNAMIC_CHANNEL_INDEX,
+    MAX_NETNAME_INDEX, MAX_STATIC_OBJECT_INDEX, MAX_STRUCT_DEPTH,
+};
 pub use bitstream::{
     strip_stop_bit, ue3_handshake_crc, ue3_str_crc, BitReader, BitWriter, HANDSHAKE_CRC_SALT,
     MAX_FSTRING_LEN, UE3_CRC32_POLY,
@@ -25,17 +33,19 @@ pub type FBitReader<'a> = BitReader<'a>;
 
 pub use bunch::{
     Bunch, BunchFlags, BunchHeader, ControlChannelHandshake, ControlMessage, DedicatedControlFrame,
-    FInBunch, HandshakePhase, Ue3ChannelType, Ue3Packet, ACTOR_CHANNEL_INDEX, CHTYPE_MAX, CONTROL_CHANNEL_INDEX,
-    DEDICATED_PREFIX_LEN, DEFAULT_ENGINE_MIN_NET_VERSION, DEFAULT_ENGINE_NET_VERSION, DEFAULT_GAME_CLASS,
-    DEFAULT_HANDSHAKE_CHALLENGE, DEFAULT_MAX_PACKET, DEFAULT_MAX_PACKET_BITS, DEFAULT_NET_SPEED,
-    DEFAULT_SHOOTING_RANGE_LEVEL, DEFAULT_SHOOTING_RANGE_MAP, EXUDP_MAX_PACKET_BITS,
-    MARSHAL_CHANNEL_INDEX, MAX_ALLOWED_PACKET_BITS, MAX_CHANNELS, MAX_CHSEQUENCE, MAX_PACKETID, NMT_ACTOR_CHANNEL_FAILURE,
-    NMT_CHALLENGE, NMT_CLIENT_AUTH_REQUEST, NMT_FAILURE, NMT_HANDSHAKE_CHALLENGE,
+    FInBunch, HandshakePhase, NmtDownloadMgr, NmtHave, NmtUses, NmtUsesOpt, NmtUsesOptEx,
+    Ue3ChannelType, Ue3Packet, ACTOR_CHANNEL_INDEX, CHTYPE_MAX, CONTROL_CHANNEL_INDEX,
+    DEDICATED_PREFIX_LEN, DEFAULT_ENGINE_MIN_NET_VERSION, DEFAULT_ENGINE_NET_VERSION,
+    DEFAULT_GAME_CLASS, DEFAULT_HANDSHAKE_CHALLENGE, DEFAULT_MAX_PACKET, DEFAULT_MAX_PACKET_BITS,
+    DEFAULT_NET_SPEED, DEFAULT_SHOOTING_RANGE_LEVEL, DEFAULT_SHOOTING_RANGE_MAP,
+    EXUDP_MAX_PACKET_BITS, MARSHAL_CHANNEL_INDEX, MAX_ALLOWED_PACKET_BITS, MAX_CHANNELS,
+    MAX_CHSEQUENCE, MAX_PACKETID, NMT_ACTOR_CHANNEL_FAILURE, NMT_CHALLENGE,
+    NMT_CLIENT_AUTH_REQUEST, NMT_DOWNLOAD_MGR, NMT_FAILURE, NMT_HANDSHAKE_CHALLENGE,
     NMT_HANDSHAKE_COMPLETE, NMT_HANDSHAKE_RESPONSE, NMT_HANDSHAKE_START, NMT_HAVE, NMT_HELLO,
     NMT_JOIN, NMT_JOIN_SPLIT, NMT_LOGIN, NMT_MAP_LOADED, NMT_MARSHAL_PACKAGE, NMT_NETSPEED,
     NMT_PLAY_TIME, NMT_REDIRECT, NMT_SERVER_AUTH_REQUEST, NMT_TIME_LAPSE, NMT_UPGRADE, NMT_USES,
-    NMT_USES_OPT, NMT_USES_OPT_EX, NMT_WELCOME, PCOM_PREFIX_LEN, PcomPrefix,
-    SESSION_TOKEN_LEN, SUBFLAG_SEQUENCED, SUBFLAG_UNSEQUENCED, VOICE_CHANNEL_INDEX,
+    NMT_USES_OPT, NMT_USES_OPT_EX, NMT_WELCOME, PCOM_PREFIX_LEN, PcomPrefix, SESSION_TOKEN_LEN,
+    SUBFLAG_SEQUENCED, SUBFLAG_UNSEQUENCED, VOICE_CHANNEL_INDEX,
 };
 pub use error::{NetError, PcomError};
 pub use framing::{CPackFrame, MagicToken, HEADER_LEN, MAX_PAYLOAD_LEN};

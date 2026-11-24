@@ -13,6 +13,7 @@
 - [Technical Roadblocks & De-risking](specs/TECHNICAL_ROADBLOCKS.md)
 - [G1: UPK & Asset Extraction Pipeline](specs/G1_ASSET_PIPELINE.md)
 - [G2: Server Protocol & UE3 Bunches](specs/G2_SERVER_PROTOCOL.md)
+- [UActorChannel & FClassNetCache Wire Specification](specs/UACTOR_CHANNEL_WIRE_SPEC.md)
 - [MCTS Gazebo Lifecycle & Map Instance Protocol](specs/mcts_gazebo_lifecycle.md)
 - [MCTS Inventory & Session Template](specs/MCTS_INVENTORY_TEMPLATE.md)
 - [Retail Network Capture Plan](specs/RETAIL_CAPTURE_PLAN.md)
