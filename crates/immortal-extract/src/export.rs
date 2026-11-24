@@ -6,7 +6,8 @@
 //! Unreal Engine 3 Export Table and `ObjectExport` (`FObjectExport`).
 //!
 //! The Export Table describes all objects serialized within this package.
-//! In Paladins UE3 (version 893), each `FObjectExport` is serialized as exactly 68 bytes.
+//! In Paladins UE3 (version 893), each `FObjectExport` has a 68-byte fixed layout
+//! plus a variable-length `TArray<int32>` for `generation_net_object_count`.
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
@@ -17,7 +18,7 @@ use crate::index::PackageIndex;
 use crate::name::{FName, NameTable};
 
 /// An entry in the package's Export Table (`FObjectExport`).
-/// Exactly 68 bytes serialized in CookedPCConsole format.
+/// Minimum 68 bytes serialized in CookedPCConsole format when `generation_net_object_count` is empty.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ObjectExport {
     /// Class index in the package index hierarchy (points to an Import or Export).
@@ -38,8 +39,8 @@ pub struct ObjectExport {
     pub serial_offset: i32,
     /// Export flags (`EF_ForcedExport`, etc.).
     pub export_flags: u32,
-    /// Generation net object count.
-    pub generation_net_object_count: i32,
+    /// Generation net object counts (`TArray<int32>`).
+    pub generation_net_object_count: Vec<i32>,
     /// 16-byte object GUID.
     pub guid: [u8; 16],
     /// Package flags associated with this export.
@@ -47,8 +48,13 @@ pub struct ObjectExport {
 }
 
 impl ObjectExport {
-    /// Exact binary serialized size of an `ObjectExport` entry in Paladins UE3 (68 bytes).
-    pub const SERIALIZED_SIZE: usize = 68;
+    /// Minimum binary serialized size of an `ObjectExport` entry in Paladins UE3 (68 bytes when `generation_net_object_count` is empty).
+    pub const MIN_SERIALIZED_SIZE: usize = 68;
+
+    /// Returns the exact binary serialized size of this `ObjectExport` entry in bytes.
+    pub fn serialized_size(&self) -> usize {
+        Self::MIN_SERIALIZED_SIZE + self.generation_net_object_count.len() * 4
+    }
 
     /// Reads an `ObjectExport` entry from a binary stream.
     pub fn read<R: Read>(reader: &mut R) -> Result<Self, ExtractError> {
@@ -61,7 +67,17 @@ impl ObjectExport {
         let serial_size = reader.read_i32::<LittleEndian>()?;
         let serial_offset = reader.read_i32::<LittleEndian>()?;
         let export_flags = reader.read_u32::<LittleEndian>()?;
-        let generation_net_object_count = reader.read_i32::<LittleEndian>()?;
+        let net_count = reader.read_i32::<LittleEndian>()?;
+        if net_count < 0 {
+            return Err(ExtractError::CorruptChunk {
+                reason: format!("Negative generation_net_object_count length: {net_count}"),
+            });
+        }
+        let net_len = net_count as usize;
+        let mut generation_net_object_count = Vec::with_capacity(net_len.min(1024));
+        for _ in 0..net_len {
+            generation_net_object_count.push(reader.read_i32::<LittleEndian>()?);
+        }
         let mut guid = [0u8; 16];
         reader.read_exact(&mut guid)?;
         let package_flags = reader.read_u32::<LittleEndian>()?;
@@ -93,7 +109,10 @@ impl ObjectExport {
         writer.write_i32::<LittleEndian>(self.serial_size)?;
         writer.write_i32::<LittleEndian>(self.serial_offset)?;
         writer.write_u32::<LittleEndian>(self.export_flags)?;
-        writer.write_i32::<LittleEndian>(self.generation_net_object_count)?;
+        writer.write_i32::<LittleEndian>(self.generation_net_object_count.len() as i32)?;
+        for &count in &self.generation_net_object_count {
+            writer.write_i32::<LittleEndian>(count)?;
+        }
         writer.write_all(&self.guid)?;
         writer.write_u32::<LittleEndian>(self.package_flags)?;
         Ok(())
@@ -205,14 +224,42 @@ mod tests {
             serial_size: 4096,
             serial_offset: 1048576,
             export_flags: 0x01,
-            generation_net_object_count: 0,
+            generation_net_object_count: vec![],
             guid: [0x77; 16],
             package_flags: 0,
         };
 
         let mut buf = Vec::new();
         export.write(&mut buf).unwrap();
-        assert_eq!(buf.len(), ObjectExport::SERIALIZED_SIZE);
+        assert_eq!(buf.len(), ObjectExport::MIN_SERIALIZED_SIZE);
+        assert_eq!(buf.len(), export.serialized_size());
+
+        let mut cursor = Cursor::new(buf);
+        let parsed = ObjectExport::read(&mut cursor).unwrap();
+        assert_eq!(export, parsed);
+    }
+
+    #[test]
+    fn test_export_entry_variable_net_object_counts() {
+        let export = ObjectExport {
+            class_index: PackageIndex::from_import_index(2),
+            super_index: PackageIndex::NULL,
+            outer_index: PackageIndex::from_export_index(0),
+            object_name: FName::new(42, 1),
+            archetype: PackageIndex::NULL,
+            object_flags: 0x00070010,
+            serial_size: 512,
+            serial_offset: 8192,
+            export_flags: 0x04,
+            generation_net_object_count: vec![12, 34, 56],
+            guid: [0xAB; 16],
+            package_flags: 0x08,
+        };
+
+        let mut buf = Vec::new();
+        export.write(&mut buf).unwrap();
+        assert_eq!(buf.len(), ObjectExport::MIN_SERIALIZED_SIZE + 12);
+        assert_eq!(buf.len(), export.serialized_size());
 
         let mut cursor = Cursor::new(buf);
         let parsed = ObjectExport::read(&mut cursor).unwrap();
@@ -232,7 +279,7 @@ mod tests {
                 serial_size: 100,
                 serial_offset: 500,
                 export_flags: 0,
-                generation_net_object_count: 0,
+                generation_net_object_count: vec![3, 7],
                 guid: [1; 16],
                 package_flags: 0,
             },
@@ -246,7 +293,7 @@ mod tests {
                 serial_size: 200,
                 serial_offset: 600,
                 export_flags: 0,
-                generation_net_object_count: 0,
+                generation_net_object_count: vec![],
                 guid: [2; 16],
                 package_flags: 0,
             },
@@ -254,7 +301,7 @@ mod tests {
 
         let mut buf = Vec::new();
         table.write(&mut buf).unwrap();
-        assert_eq!(buf.len(), 2 * ObjectExport::SERIALIZED_SIZE);
+        assert_eq!(buf.len(), 2 * ObjectExport::MIN_SERIALIZED_SIZE + 8);
 
         let mut cursor = Cursor::new(buf);
         let parsed = ExportTable::read(&mut cursor, table.len()).unwrap();

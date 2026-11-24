@@ -3,18 +3,18 @@
 // Corporate Stewardship & Infrastructure: Purrfect Software Limited (PSL)
 // Governed by: ICARO-42/b Ordinance (Company-Supported Personal IP Framework)
 
-//! Live workstation example for extracting Fernando's Flame Lance weapon assets
-//! (`DEVICE10774_ASSETS_SF.upk`) into glTF 2.0 and DDS textures.
+//! Live workstation example for inspecting Fernando's Flame Lance weapon package
+//! (`DEVICE10774_ASSETS_SF.upk`) export inventory and collision (`RB_BodySetup`).
 
 use immortal_extract::{
-    export_weapon_static_mesh, get_weapon_mapping, GPUSkinVertex, UpkPackage,
-    WeaponExtractionPipeline, DEVICE_FERNANDO_FLAME_LANCE,
+    extract_package_collision, get_weapon_mapping, UpkPackage, WeaponExtractionPipeline,
+    DEVICE_FERNANDO_FLAME_LANCE,
 };
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
-    println!("🔥 PROJECT IMMORTAL: FLAME LANCE WEAPON EXTRACTION");
+    println!("🔥 PROJECT IMMORTAL: FLAME LANCE WEAPON PACKAGE INSPECTOR");
     println!("============================================================");
 
     let cooked_dir = Path::new(
@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let pipeline = WeaponExtractionPipeline::new(cooked_dir);
-    let pkg = UpkPackage::open_file(&weapon_pkg_path)?;
+    let mut pkg = UpkPackage::open_file(&weapon_pkg_path)?;
     let summary = pkg.summary();
 
     println!(
@@ -72,41 +72,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             stm.export_index, stm.object_name, stm.serial_size
         );
     }
+    for tex in inventory.textures.iter().take(10) {
+        println!(
+            "  • Texture2D #{}: '{}' ({} bytes)",
+            tex.export_index, tex.object_name, tex.serial_size
+        );
+    }
+    if inventory.textures.len() > 10 {
+        println!("  • ... and {} more Texture2D exports", inventory.textures.len() - 10);
+    }
 
-    // Export synthetic static mesh for Flame Lance nozzle to verify glTF 2.0 output
-    let vertices = vec![
-        GPUSkinVertex {
-            position: [0.0, 0.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            tangent: [1.0, 0.0, 0.0, 1.0],
-            tex_coord_0: [0.0, 0.0],
-            joints_0: [0, 0, 0, 0],
-            weights_0: [1.0, 0.0, 0.0, 0.0],
-        },
-        GPUSkinVertex {
-            position: [15.0, 0.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            tangent: [1.0, 0.0, 0.0, 1.0],
-            tex_coord_0: [1.0, 0.0],
-            joints_0: [0, 0, 0, 0],
-            weights_0: [1.0, 0.0, 0.0, 0.0],
-        },
-        GPUSkinVertex {
-            position: [0.0, 15.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            tangent: [1.0, 0.0, 0.0, 1.0],
-            tex_coord_0: [0.0, 1.0],
-            joints_0: [0, 0, 0, 0],
-            weights_0: [1.0, 0.0, 0.0, 0.0],
-        },
-    ];
-    let indices = vec![0, 1, 2];
-    let gltf_export = export_weapon_static_mesh(&vertices, &indices, "fernando_flame_lance.bin")?;
-    gltf_export.save_to_dir(output_dir, "fernando_flame_lance")?;
+    let collision = extract_package_collision(&mut pkg)?;
     println!(
-        "✅ Exported Flame Lance glTF 2.0 to: {}",
-        output_dir.join("fernando_flame_lance.gltf").display()
+        "Parsed {} RB_BodySetup collision exports from {}",
+        collision.len(),
+        mapping.default_package_file
     );
+
+    let inventory_json = output_dir.join("device10774_inventory.json");
+    std::fs::write(&inventory_json, serde_json::to_string_pretty(&inventory)?)?;
+    println!(
+        "✅ Wrote real UPK weapon inventory JSON to: {}",
+        inventory_json.display()
+    );
+    println!("ℹ️  Note: USkeletalMesh / UStaticMesh vertex-buffer decoders are unimplemented (`PSL-INV-012`); no synthetic glTF placeholder was emitted.");
 
     Ok(())
 }

@@ -32,12 +32,15 @@ pub fn read_fstring<R: Read>(reader: &mut R) -> Result<String, ExtractError> {
                 buf.pop();
             }
 
-            String::from_utf8(buf).map_err(|e| ExtractError::InvalidString {
-                reason: format!("UTF-8 decoding failed: {e}"),
-            })
+            // UE3 ANSI strings use Windows-1252 / Latin-1 for non-ASCII bytes; fall back to
+            // byte-for-byte Latin-1 mapping when the payload is not valid UTF-8.
+            match String::from_utf8(buf) {
+                Ok(s) => Ok(s),
+                Err(err) => Ok(err.into_bytes().into_iter().map(|b| b as char).collect()),
+            }
         }
         l => {
-            let char_count = (-l) as usize;
+            let char_count = l.unsigned_abs() as usize;
             let mut u16_buf = Vec::with_capacity(char_count);
             for _ in 0..char_count {
                 u16_buf.push(reader.read_u16::<LittleEndian>()?);
@@ -116,5 +119,17 @@ mod tests {
         let mut cursor = Cursor::new(buf);
         let parsed = read_fstring(&mut cursor).unwrap();
         assert_eq!(parsed, "");
+    }
+
+    #[test]
+    fn test_fstring_latin1_fallback() {
+        // Non-UTF-8 Latin-1 bytes: "Caf\xe9 \xa9" + NUL
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&7i32.to_le_bytes());
+        buf.extend_from_slice(&[b'C', b'a', b'f', 0xE9, b' ', 0xA9, 0x00]);
+
+        let mut cursor = Cursor::new(buf);
+        let parsed = read_fstring(&mut cursor).unwrap();
+        assert_eq!(parsed, "Café ©");
     }
 }

@@ -520,8 +520,8 @@ pub fn export_skeletal_mesh_to_gltf(
     // 6. Joints (JOINTS_0)
     let joints_offset = bin.len();
     for v in &model.vertices {
-        for j in 0..4 {
-            bin.extend_from_slice(&v.joints_0[j].to_le_bytes());
+        for &joint in &v.joints_0 {
+            bin.extend_from_slice(&joint.to_le_bytes());
         }
     }
     let joints_len = bin.len() - joints_offset;
@@ -544,8 +544,8 @@ pub fn export_skeletal_mesh_to_gltf(
     // 7. Weights (WEIGHTS_0)
     let weights_offset = bin.len();
     for v in &model.vertices {
-        for w in 0..4 {
-            bin.extend_from_slice(&v.weights_0[w].to_le_bytes());
+        for &weight in &v.weights_0 {
+            bin.extend_from_slice(&weight.to_le_bytes());
         }
     }
     let weights_len = bin.len() - weights_offset;

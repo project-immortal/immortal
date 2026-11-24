@@ -47,4 +47,10 @@ pub enum ExtractError {
 
     #[error("glTF export error: {reason}")]
     GltfExport { reason: String },
+
+    #[error("Invalid UE3 property tag: {reason}")]
+    InvalidProperty { reason: String },
+
+    #[error("Invalid collision geometry: {reason}")]
+    InvalidCollision { reason: String },
 }

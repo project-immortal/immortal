@@ -172,6 +172,20 @@ impl<R: Read + Seek> UpkPackage<R> {
         Ok(result)
     }
 
+    /// Reads the serialized raw payload bytes for an `ObjectExport`.
+    pub fn read_export_data(&mut self, export: &ObjectExport) -> Result<Vec<u8>, ExtractError> {
+        if export.serial_size <= 0 {
+            return Ok(Vec::new());
+        }
+        if export.serial_offset < 0 {
+            return Err(ExtractError::BufferOverflow {
+                required: export.serial_size as usize,
+                available: 0,
+            });
+        }
+        self.read_bytes(export.serial_offset as u64, export.serial_size as usize)
+    }
+
     /// Reads and parses the package's Name Table, Import Table, and Export Table.
     pub fn read_tables(&mut self) -> Result<(NameTable, ImportTable, ExportTable), ExtractError> {
         let name_offset = self.summary.name_offset as u64;
@@ -181,15 +195,19 @@ impl<R: Read + Seek> UpkPackage<R> {
         let import_count = self.summary.import_count as usize;
         let export_count = self.summary.export_count as usize;
 
-        // If package is compressed and Chunk 0 contains the entire table range:
+        // If package is compressed and Chunk 0 appears to contain the tables:
         if self.summary.is_compressed() && !self.summary.compressed_chunks.is_empty() {
             let chunk0 = &self.summary.compressed_chunks[0];
             let c0_start = chunk0.uncompressed_offset as u64;
             let c0_end = c0_start + chunk0.uncompressed_size as u64;
-            let exp_end =
-                export_offset + (export_count as u64 * ObjectExport::SERIALIZED_SIZE as u64);
+            let min_exp_end =
+                export_offset + (export_count as u64 * ObjectExport::MIN_SERIALIZED_SIZE as u64);
 
-            if name_offset >= c0_start && exp_end <= c0_end {
+            if name_offset >= c0_start
+                && import_offset >= c0_start
+                && export_offset >= c0_start
+                && min_exp_end <= c0_end
+            {
                 let chunk0_data = self.decompress_chunk_at(0)?;
 
                 let name_rel = (name_offset - c0_start) as usize;
@@ -207,15 +225,18 @@ impl<R: Read + Seek> UpkPackage<R> {
                 }
 
                 let mut name_cursor = Cursor::new(&chunk0_data[name_rel..]);
-                let name_table = NameTable::read(&mut name_cursor, name_count)?;
-
                 let mut import_cursor = Cursor::new(&chunk0_data[import_rel..]);
-                let import_table = ImportTable::read(&mut import_cursor, import_count)?;
-
                 let mut export_cursor = Cursor::new(&chunk0_data[export_rel..]);
-                let export_table = ExportTable::read(&mut export_cursor, export_count)?;
 
-                return Ok((name_table, import_table, export_table));
+                // Variable-length `ObjectExport` entries can spill across the chunk 0 boundary;
+                // fast-path only if all three tables parse completely within chunk 0.
+                if let (Ok(name_table), Ok(import_table), Ok(export_table)) = (
+                    NameTable::read(&mut name_cursor, name_count),
+                    ImportTable::read(&mut import_cursor, import_count),
+                    ExportTable::read(&mut export_cursor, export_count),
+                ) {
+                    return Ok((name_table, import_table, export_table));
+                }
             }
 
             // Tables span across chunks: decompress full virtual package stream

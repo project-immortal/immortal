@@ -11,14 +11,15 @@ use std::path::Path;
 use immortal_extract::{
     convert_coord_ue3_to_gltf, convert_wem_to_wav, create_bkhd, export_dds,
     export_skeletal_mesh_to_gltf, export_to_wav, export_weapon_skeletal_mesh,
-    export_weapon_static_mesh, extract_weapon_texture, get_weapon_mapping, inspect_weapon_package,
-    parse_bkhd, parse_wav, write_compressed_chunk, write_tfc_chunk, ExportTable, FByteBulkData,
-    FCompressedChunk, FMeshBone, FName, FSkeletalMeshLODModel, FTexture2DMipMap, GPUSkinVertex,
-    GenerationInfo, ImportTable, NameEntry, NameTable, ObjectExport, ObjectImport, PackageIndex,
-    PackageSummary, PckArchive, RefSkeleton, TextureFormat, TfcResolver, UpkPackage, WavSpec,
-    WeaponExtractionPipeline, BULKDATA_COMPRESSED_LZO, BULKDATA_COMPRESSED_ZLIB,
-    BULKDATA_STORE_IN_SEPARATE_FILE, CHAMPION_FERNANDO, COMPRESS_LZO, COMPRESS_ZLIB,
-    DEVICE_FERNANDO_FLAME_LANCE, PKG_COMPRESSED, PKG_COOKED, UPK_MAGIC,
+    export_weapon_static_mesh, extract_package_collision, extract_weapon_texture,
+    get_weapon_mapping, inspect_weapon_package, parse_bkhd, parse_wav, write_compressed_chunk,
+    write_tfc_chunk, ExportTable, FByteBulkData, FCompressedChunk, FMeshBone, FName,
+    FSkeletalMeshLODModel, FTexture2DMipMap, GPUSkinVertex, GenerationInfo, ImportTable,
+    NameEntry, NameTable, ObjectExport, ObjectImport, PackageIndex, PackageSummary, PckArchive,
+    RefSkeleton, TextureFormat, TfcResolver, UpkPackage, WavSpec, WeaponExtractionPipeline,
+    BULKDATA_COMPRESSED_LZO, BULKDATA_COMPRESSED_ZLIB, BULKDATA_STORE_IN_SEPARATE_FILE,
+    CHAMPION_FERNANDO, COMPRESS_LZO, COMPRESS_ZLIB, DEVICE_FERNANDO_FLAME_LANCE, PKG_COMPRESSED,
+    PKG_COOKED, UPK_MAGIC,
 };
 
 /// Helper to build a hermetic synthetic UPK package in memory.
@@ -288,7 +289,7 @@ fn test_synthetic_upk_object_tables_and_path_resolution() {
             serial_size: 1024,
             serial_offset: 2048,
             export_flags: 0,
-            generation_net_object_count: 0,
+            generation_net_object_count: vec![],
             guid: [0x11; 16],
             package_flags: 0,
         },
@@ -302,7 +303,7 @@ fn test_synthetic_upk_object_tables_and_path_resolution() {
             serial_size: 2048,
             serial_offset: 3072,
             export_flags: 0,
-            generation_net_object_count: 0,
+            generation_net_object_count: vec![],
             guid: [0x22; 16],
             package_flags: 0,
         },
@@ -585,7 +586,8 @@ fn test_integration_synthetic_tfc_and_dds_pipeline() {
     assert_eq!(extracted_mip2, bc7_pixels);
     let dds2 = export_dds(128, 64, TextureFormat::Bc7, &extracted_mip2);
     assert_eq!(&dds2[0..4], b"DDS ");
-    assert_eq!(dds2.len(), 128 + bc7_pixels.len());
+    assert_eq!(&dds2[84..88], b"DX10");
+    assert_eq!(dds2.len(), 148 + bc7_pixels.len());
 
     // Clean up
     let _ = std::fs::remove_dir_all(&temp_dir);
@@ -796,7 +798,7 @@ fn test_integration_synthetic_weapon_package_and_gltf_pipeline() {
             serial_size: 442925,
             serial_offset: 1000,
             export_flags: 0,
-            generation_net_object_count: 0,
+            generation_net_object_count: vec![],
             guid: [0x10; 16],
             package_flags: 0,
         },
@@ -810,7 +812,7 @@ fn test_integration_synthetic_weapon_package_and_gltf_pipeline() {
             serial_size: 890820,
             serial_offset: 500000,
             export_flags: 0,
-            generation_net_object_count: 0,
+            generation_net_object_count: vec![],
             guid: [0x20; 16],
             package_flags: 0,
         },
@@ -824,7 +826,7 @@ fn test_integration_synthetic_weapon_package_and_gltf_pipeline() {
             serial_size: 9809,
             serial_offset: 1400000,
             export_flags: 0,
-            generation_net_object_count: 0,
+            generation_net_object_count: vec![],
             guid: [0x30; 16],
             package_flags: 0,
         },
@@ -838,7 +840,7 @@ fn test_integration_synthetic_weapon_package_and_gltf_pipeline() {
             serial_size: 3420,
             serial_offset: 1500000,
             export_flags: 0,
-            generation_net_object_count: 0,
+            generation_net_object_count: vec![],
             guid: [0x40; 16],
             package_flags: 0,
         },
@@ -1031,34 +1033,47 @@ fn test_probe_paladins_real_weapon_package_if_present() {
     assert_eq!(inventory.device_id, 10774);
     assert_eq!(inventory.champion_id, 1026);
 
-    // Verify presence of Flame Lance skeletal meshes
+    // Verify presence of Flame Lance skeletal meshes and exact synced counts
+    assert_eq!(inventory.skeletal_meshes.len(), 20);
+    assert_eq!(inventory.static_meshes.len(), 38);
+    assert_eq!(inventory.textures.len(), 172);
+
     let mesh_1p = inventory.find_skeletal_mesh("1p");
     assert!(
         mesh_1p.is_some(),
         "SkeletalMesh 1p must exist in Flame Lance package"
     );
-    assert_eq!(mesh_1p.unwrap().object_name, "skl_wep_fernando_skin11a_1p");
+    assert_eq!(mesh_1p.unwrap().object_name, "skl_wep_lance_skin03a_1p");
+    assert!(
+        inventory.find_skeletal_mesh("skin11a_1p").is_some(),
+        "Skin11a 1p must also exist in Flame Lance package"
+    );
 
     let mesh_3p = inventory.find_skeletal_mesh("3p");
     assert!(
         mesh_3p.is_some(),
         "SkeletalMesh 3p must exist in Flame Lance package"
     );
-    assert_eq!(mesh_3p.unwrap().object_name, "skl_wep_fernando_skin11a_3p");
+    assert_eq!(mesh_3p.unwrap().object_name, "skl_wep_lance_skin03a_3p");
 
     // Verify static meshes (e.g. shield pieces)
-    assert!(
-        !inventory.static_meshes.is_empty(),
-        "Must contain static meshes"
-    );
     let shield_part = inventory.find_static_mesh("shield");
     assert!(shield_part.is_some(), "Must contain shield static meshes");
 
-    // Verify texture exports
-    assert!(
-        !inventory.textures.is_empty(),
-        "Must contain texture exports"
-    );
+    // Verify zero UnknownExport_ failures across the entire package
+    let (names, imports, exports) = pkg.read_tables().unwrap();
+    for i in 0..exports.len() {
+        let full = pkg.resolve_full_path(
+            &names,
+            &imports,
+            &exports,
+            PackageIndex::from_export_index(i),
+        );
+        assert!(
+            !full.contains("UnknownExport_"),
+            "Unexpected UnknownExport_ in DEVICE10774_ASSETS_SF.upk at #{i}: {full}"
+        );
+    }
 
     println!(
         "Successfully verified real Paladins Flame Lance weapon package ({} skeletal meshes, {} static meshes, {} textures)",
@@ -1066,4 +1081,308 @@ fn test_probe_paladins_real_weapon_package_if_present() {
         inventory.static_meshes.len(),
         inventory.textures.len()
     );
+}
+
+fn count_classes_and_check_unknowns(
+    pkg: &mut UpkPackage<std::io::BufReader<std::fs::File>>,
+) -> std::collections::BTreeMap<String, usize> {
+    let (names, imports, exports) = pkg.read_tables().expect("read_tables failed");
+    assert_eq!(names.len(), pkg.summary().name_count as usize);
+    assert_eq!(imports.len(), pkg.summary().import_count as usize);
+    assert_eq!(exports.len(), pkg.summary().export_count as usize);
+
+    let mut counts = std::collections::BTreeMap::new();
+    for (i, exp) in exports.entries().iter().enumerate() {
+        let full = pkg.resolve_full_path(
+            &names,
+            &imports,
+            &exports,
+            PackageIndex::from_export_index(i),
+        );
+        assert!(
+            !full.contains("UnknownExport_"),
+            "Found UnknownExport_ at export #{i}: {full}"
+        );
+        if let Some(cls) = exp.resolve_class_name(&names, &imports, &exports) {
+            *counts.entry(cls.to_ascii_lowercase()).or_insert(0) += 1;
+        }
+    }
+    counts
+}
+
+#[test]
+fn test_probe_paladins_real_fernando_and_map_collision_upks_if_present() {
+    let base = Path::new(
+        "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole",
+    );
+    if !base.exists() {
+        println!("Skipping real UPK collision/export-count tests: CookedPCConsole not found");
+        return;
+    }
+
+    // 1. FERNANDO_ASSETS_SF.upk
+    let fernando_path = base.join("FERNANDO_ASSETS_SF.upk");
+    if fernando_path.exists() {
+        let mut pkg = UpkPackage::open_file(&fernando_path).unwrap();
+        let counts = count_classes_and_check_unknowns(&mut pkg);
+        assert_eq!(counts.get("skeletalmesh").copied().unwrap_or(0), 35);
+        assert_eq!(counts.get("staticmesh").copied().unwrap_or(0), 93);
+        assert_eq!(counts.get("texture2d").copied().unwrap_or(0), 374);
+        assert_eq!(counts.get("rb_bodysetup").copied().unwrap_or(0), 36);
+
+        let col = extract_package_collision(&mut pkg).unwrap();
+        assert_eq!(col.len(), 36);
+        for item in &col {
+            assert!(
+                item.geometry.validate_closure(0.1),
+                "RB_BodySetup {} failed hull closure",
+                item.full_path
+            );
+        }
+    }
+
+    // 2. Shootingrange_Collision.upk, SG_JaguarFalls_Rework_P.upk, SG_StoneKeep_P.upk
+    let map_expectations = [
+        ("Shootingrange_Collision.upk", 90usize, 0usize),
+        ("SG_JaguarFalls_Rework_P.upk", 71usize, 7usize),
+        ("SG_StoneKeep_P.upk", 62usize, 6usize),
+    ];
+
+    for (filename, expected_brushes, expected_bodies) in map_expectations {
+        let path = base.join(filename);
+        if !path.exists() {
+            continue;
+        }
+        let mut pkg = UpkPackage::open_file(&path).unwrap();
+        let counts = count_classes_and_check_unknowns(&mut pkg);
+        assert_eq!(
+            counts.get("brushcomponent").copied().unwrap_or(0),
+            expected_brushes,
+            "{filename} BrushComponent count mismatch"
+        );
+        assert_eq!(
+            counts.get("rb_bodysetup").copied().unwrap_or(0),
+            expected_bodies,
+            "{filename} RB_BodySetup count mismatch"
+        );
+
+        let collisions = extract_package_collision(&mut pkg).unwrap();
+        assert_eq!(collisions.len(), expected_brushes + expected_bodies);
+
+        let mut total_hulls = 0usize;
+        for entry in &collisions {
+            assert!(
+                entry.geometry.validate_closure(0.1),
+                "{filename} {} failed hull closure",
+                entry.full_path
+            );
+            total_hulls += entry.geometry.convex_hulls.len();
+        }
+        assert!(total_hulls > 0, "{filename} must contain convex hulls");
+
+        if filename == "SG_StoneKeep_P.upk" {
+            // Verify SAT raycast against a real StoneKeep blocking hull face plane
+            let sample = collisions
+                .iter()
+                .flat_map(|c| c.geometry.convex_hulls.iter())
+                .find(|h| !h.plane_equations.is_empty() && h.aabb_max[0] > h.aabb_min[0] + 1.0)
+                .expect("SG_StoneKeep_P must contain a non-degenerate convex hull");
+
+            let center = [
+                0.5 * (sample.aabb_min[0] + sample.aabb_max[0]),
+                0.5 * (sample.aabb_min[1] + sample.aabb_max[1]),
+                0.5 * (sample.aabb_min[2] + sample.aabb_max[2]),
+            ];
+            let ray_origin = [sample.aabb_max[0] + 100.0, center[1], center[2]];
+            let hit = sample
+                .raycast(ray_origin, [-1.0, 0.0, 0.0], 500.0)
+                .expect("Raycast toward StoneKeep hull +X face must hit");
+            assert!(
+                (hit.point[0] - sample.aabb_max[0]).abs() <= 0.1,
+                "Expected hit at X={:.3}, got {:.3}",
+                sample.aabb_max[0],
+                hit.point[0]
+            );
+        }
+    }
+}
+
+#[test]
+fn test_integration_synthetic_upk_collision_extraction() {
+    use byteorder::{LittleEndian, WriteBytesExt};
+
+    let name_table = NameTable::new(vec![
+        NameEntry::new("None", 0),                 // 0
+        NameEntry::new("Core", 0),                 // 1
+        NameEntry::new("Class", 0),                // 2
+        NameEntry::new("BrushComponent", 0),       // 3
+        NameEntry::new("BrushAggGeom", 0),         // 4
+        NameEntry::new("StructProperty", 0),       // 5
+        NameEntry::new("KAggregateGeom", 0),       // 6
+        NameEntry::new("ConvexElems", 0),          // 7
+        NameEntry::new("ArrayProperty", 0),        // 8
+        NameEntry::new("VertexData", 0),           // 9
+        NameEntry::new("FacePlaneData", 0),        // 10
+        NameEntry::new("ElemBox", 0),              // 11
+        NameEntry::new("Box", 0),                  // 12
+        NameEntry::new("BrushComponent_0", 0),     // 13
+    ]);
+
+    let import_table = ImportTable::new(vec![ObjectImport {
+        class_package: FName::new(1, 0),
+        class_name: FName::new(2, 0),
+        outer_index: PackageIndex::NULL,
+        object_name: FName::new(3, 0), // BrushComponent
+    }]);
+
+    let write_fn = |buf: &mut Vec<u8>, idx: i32| {
+        buf.write_i32::<LittleEndian>(idx).unwrap();
+        buf.write_i32::<LittleEndian>(0).unwrap();
+    };
+
+    // ConvexElem: box [10, 20] x [-10, 10] x [0, 50]
+    let mut ce = Vec::new();
+    write_fn(&mut ce, 9);
+    write_fn(&mut ce, 8);
+    ce.write_u32::<LittleEndian>(4 + 8 * 12).unwrap();
+    ce.write_u32::<LittleEndian>(0).unwrap();
+    ce.write_u32::<LittleEndian>(8).unwrap();
+    for v in [
+        [10.0f32, -10.0, 0.0],
+        [20.0, -10.0, 0.0],
+        [20.0, 10.0, 0.0],
+        [10.0, 10.0, 0.0],
+        [10.0, -10.0, 50.0],
+        [20.0, -10.0, 50.0],
+        [20.0, 10.0, 50.0],
+        [10.0, 10.0, 50.0],
+    ] {
+        for c in v {
+            ce.write_f32::<LittleEndian>(c).unwrap();
+        }
+    }
+    write_fn(&mut ce, 10);
+    write_fn(&mut ce, 8);
+    ce.write_u32::<LittleEndian>(4 + 6 * 16).unwrap();
+    ce.write_u32::<LittleEndian>(0).unwrap();
+    ce.write_u32::<LittleEndian>(6).unwrap();
+    for p in [
+        [20.0f32, 1.0, 0.0, 0.0],
+        [-10.0, -1.0, 0.0, 0.0],
+        [10.0, 0.0, 1.0, 0.0],
+        [10.0, 0.0, -1.0, 0.0],
+        [50.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 0.0, -1.0],
+    ] {
+        for c in p {
+            ce.write_f32::<LittleEndian>(c).unwrap();
+        }
+    }
+    write_fn(&mut ce, 11);
+    write_fn(&mut ce, 5);
+    ce.write_u32::<LittleEndian>(25).unwrap();
+    ce.write_u32::<LittleEndian>(0).unwrap();
+    write_fn(&mut ce, 12);
+    for c in [10.0f32, -10.0, 0.0, 20.0, 10.0, 50.0] {
+        ce.write_f32::<LittleEndian>(c).unwrap();
+    }
+    ce.write_u8(1).unwrap();
+    write_fn(&mut ce, 0);
+
+    let mut agg = Vec::new();
+    write_fn(&mut agg, 7);
+    write_fn(&mut agg, 8);
+    agg.write_u32::<LittleEndian>(4 + ce.len() as u32).unwrap();
+    agg.write_u32::<LittleEndian>(0).unwrap();
+    agg.write_u32::<LittleEndian>(1).unwrap();
+    agg.extend_from_slice(&ce);
+    write_fn(&mut agg, 0);
+
+    let mut export_payload = Vec::new();
+    export_payload.write_i32::<LittleEndian>(0).unwrap(); // TemplateOwnerClass
+    export_payload.write_i32::<LittleEndian>(1).unwrap(); // NetIndex
+    write_fn(&mut export_payload, 4); // BrushAggGeom
+    write_fn(&mut export_payload, 5);
+    export_payload
+        .write_u32::<LittleEndian>(agg.len() as u32)
+        .unwrap();
+    export_payload.write_u32::<LittleEndian>(0).unwrap();
+    write_fn(&mut export_payload, 6);
+    export_payload.extend_from_slice(&agg);
+    write_fn(&mut export_payload, 0);
+
+    let mut tables_buf = Vec::new();
+    let name_offset = 0u32;
+    name_table.write(&mut tables_buf).unwrap();
+    let import_offset = tables_buf.len() as u32;
+    import_table.write(&mut tables_buf).unwrap();
+    let export_offset = tables_buf.len() as u32;
+
+    let payload_offset = 1024 + export_offset as usize + ObjectExport::MIN_SERIALIZED_SIZE;
+    let export_table = ExportTable::new(vec![ObjectExport {
+        class_index: PackageIndex::from_import_index(0),
+        super_index: PackageIndex::NULL,
+        outer_index: PackageIndex::NULL,
+        object_name: FName::new(13, 0),
+        archetype: PackageIndex::NULL,
+        object_flags: 0x00070000,
+        serial_size: export_payload.len() as i32,
+        serial_offset: payload_offset as i32,
+        export_flags: 0,
+        generation_net_object_count: vec![],
+        guid: [0x55; 16],
+        package_flags: 0,
+    }]);
+    export_table.write(&mut tables_buf).unwrap();
+
+    let summary = PackageSummary {
+        tag: UPK_MAGIC,
+        file_version: 893,
+        licensee_version: 0,
+        total_header_size: payload_offset as u32,
+        folder_name: "ChaosGame/CookedPCConsole".to_string(),
+        package_flags: PKG_COOKED,
+        name_count: name_table.len() as u32,
+        name_offset: 1024 + name_offset,
+        export_count: export_table.len() as u32,
+        export_offset: 1024 + export_offset,
+        import_count: import_table.len() as u32,
+        import_offset: 1024 + import_offset,
+        depends_offset: 0,
+        import_export_guids_offset: 0,
+        import_guids_count: 0,
+        export_guids_count: 0,
+        thumbnail_table_offset: 0,
+        guid: [0x66; 16],
+        generations: vec![GenerationInfo {
+            export_count: 1,
+            name_count: name_table.len() as i32,
+            net_object_count: 0,
+        }],
+        engine_version: 10897,
+        cooker_version: 393358,
+        compression_flags: 0,
+        compressed_chunks: Vec::new(),
+    };
+
+    let mut pkg_buf = Vec::new();
+    summary.write(&mut pkg_buf).unwrap();
+    pkg_buf.resize(1024, 0);
+    pkg_buf.extend_from_slice(&tables_buf);
+    assert_eq!(pkg_buf.len(), payload_offset);
+    pkg_buf.extend_from_slice(&export_payload);
+
+    let mut pkg = UpkPackage::open(Cursor::new(pkg_buf)).unwrap();
+    let extracted = extract_package_collision(&mut pkg).unwrap();
+    assert_eq!(extracted.len(), 1);
+    assert_eq!(extracted[0].object_name, "BrushComponent_0");
+    assert!(extracted[0].geometry.validate_closure(1e-4));
+    assert!(extracted[0]
+        .geometry
+        .contains_point([15.0, 0.0, 25.0], 1e-4));
+    let hit = extracted[0]
+        .geometry
+        .raycast([100.0, 0.0, 25.0], [-1.0, 0.0, 0.0], 200.0)
+        .unwrap();
+    assert!((hit.point[0] - 20.0).abs() < 1e-4);
 }

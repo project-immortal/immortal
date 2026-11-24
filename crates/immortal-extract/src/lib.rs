@@ -9,6 +9,7 @@
 
 pub mod audio;
 pub mod chunk;
+pub mod collision;
 pub mod error;
 pub mod export;
 pub mod fstring;
@@ -17,6 +18,7 @@ pub mod index;
 pub mod mesh;
 pub mod name;
 pub mod package;
+pub mod property;
 pub mod summary;
 pub mod tfc;
 pub mod weapon;
@@ -30,6 +32,11 @@ pub use chunk::{
     write_compressed_chunk, FCompressedChunk, FCompressedChunkBlock, FCompressedChunkHeader,
     COMPRESS_LZMA, COMPRESS_LZO, COMPRESS_ZLIB,
 };
+pub use collision::{
+    extract_body_setup_collision, extract_brush_component_collision, extract_package_collision,
+    parse_aggregate_geom, AggregateGeometry, BoxElem, CollisionExport, ConvexHull, RaycastHit,
+    SphereElem, SphylElem,
+};
 pub use error::ExtractError;
 pub use export::{ExportTable, ObjectExport};
 pub use fstring::{read_fstring, write_fstring};
@@ -41,6 +48,10 @@ pub use mesh::{
 };
 pub use name::{FName, NameEntry, NameTable};
 pub use package::UpkPackage;
+pub use property::{
+    find_property, parse_tagged_array_elements, read_object_properties, read_property_chain,
+    FPropertyTag, ObjectPropertyHeader, PropertyValue, StructValue,
+};
 pub use summary::{GenerationInfo, PackageSummary, PKG_COMPRESSED, PKG_COOKED};
 pub use tfc::{
     build_dds_header, export_dds, export_dds_with_mips, write_tfc_chunk, FByteBulkData,

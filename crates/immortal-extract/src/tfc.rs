@@ -52,30 +52,45 @@ pub const DDSCAPS_MIPMAP: u32 = 0x00400000;
 pub const DDPF_ALPHAPIXELS: u32 = 0x00000001;
 pub const DDPF_FOURCC: u32 = 0x00000004;
 pub const DDPF_RGB: u32 = 0x00000040;
+pub const DDPF_LUMINANCE: u32 = 0x00020000;
 
 /// FourCC codes for texture formats.
 pub const FOURCC_DXT1: u32 = 0x31545844; // "DXT1"
+pub const FOURCC_DXT3: u32 = 0x33545844; // "DXT3"
 pub const FOURCC_DXT5: u32 = 0x35545844; // "DXT5"
-pub const FOURCC_BC7: u32 = 0x00374342; // "BC7\0"
+pub const FOURCC_DX10: u32 = 0x30315844; // "DX10"
+
+/// DXGI format identifier for `BC7_UNORM` in `DDS_HEADER_DXT10`.
+pub const DXGI_FORMAT_BC7_UNORM: u32 = 98;
+/// `D3D10_RESOURCE_DIMENSION_TEXTURE2D` in `DDS_HEADER_DXT10`.
+pub const D3D10_RESOURCE_DIMENSION_TEXTURE2D: u32 = 3;
 
 /// Supported texture formats for DDS export.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextureFormat {
     Dxt1,
+    Dxt3,
     Dxt5,
     Bc7,
     Rgba8,
     Bgra8,
+    G8,
 }
 
 impl TextureFormat {
     pub fn four_cc(&self) -> Option<u32> {
         match self {
             Self::Dxt1 => Some(FOURCC_DXT1),
+            Self::Dxt3 => Some(FOURCC_DXT3),
             Self::Dxt5 => Some(FOURCC_DXT5),
-            Self::Bc7 => Some(FOURCC_BC7),
-            Self::Rgba8 | Self::Bgra8 => None,
+            Self::Bc7 => Some(FOURCC_DX10),
+            Self::Rgba8 | Self::Bgra8 | Self::G8 => None,
         }
+    }
+
+    /// Returns `true` if this format requires the 20-byte `DDS_HEADER_DXT10` extension.
+    pub fn uses_dx10_header(&self) -> bool {
+        matches!(self, Self::Bc7)
     }
 }
 
@@ -402,14 +417,16 @@ impl TfcResolver {
     }
 }
 
-/// Builds a standard 128-byte DirectDraw Surface (`.dds`) header.
+/// Builds a DirectDraw Surface (`.dds`) header (128 bytes for legacy formats,
+/// or 148 bytes with the 20-byte `DDS_HEADER_DXT10` extension for DX10 formats such as `Bc7`).
 pub fn build_dds_header(
     width: u32,
     height: u32,
     format: TextureFormat,
     mip_count: u32,
-) -> [u8; 128] {
-    let mut header = [0u8; 128];
+) -> Vec<u8> {
+    let total_len = if format.uses_dx10_header() { 148 } else { 128 };
+    let mut header = vec![0u8; total_len];
     let mut cursor = 0;
 
     // 0..4: Magic "DDS "
@@ -426,10 +443,10 @@ pub fn build_dds_header(
         flags |= DDSD_MIPMAPCOUNT;
     }
     match format {
-        TextureFormat::Dxt1 | TextureFormat::Dxt5 | TextureFormat::Bc7 => {
+        TextureFormat::Dxt1 | TextureFormat::Dxt3 | TextureFormat::Dxt5 | TextureFormat::Bc7 => {
             flags |= DDSD_LINEARSIZE;
         }
-        TextureFormat::Rgba8 | TextureFormat::Bgra8 => {
+        TextureFormat::Rgba8 | TextureFormat::Bgra8 | TextureFormat::G8 => {
             flags |= DDSD_PITCH;
         }
     }
@@ -451,12 +468,13 @@ pub fn build_dds_header(
             let blocks_y = height.div_ceil(4).max(1);
             blocks_x * blocks_y * 8
         }
-        TextureFormat::Dxt5 | TextureFormat::Bc7 => {
+        TextureFormat::Dxt3 | TextureFormat::Dxt5 | TextureFormat::Bc7 => {
             let blocks_x = width.div_ceil(4).max(1);
             let blocks_y = height.div_ceil(4).max(1);
             blocks_x * blocks_y * 16
         }
         TextureFormat::Rgba8 | TextureFormat::Bgra8 => width * 4,
+        TextureFormat::G8 => width,
     };
     header[cursor..cursor + 4].copy_from_slice(&pitch_or_linear.to_le_bytes());
     cursor += 4;
@@ -481,6 +499,8 @@ pub fn build_dds_header(
     // 80..84: dwFlags
     let pf_flags = if format.four_cc().is_some() {
         DDPF_FOURCC
+    } else if format == TextureFormat::G8 {
+        DDPF_LUMINANCE
     } else {
         DDPF_RGB | DDPF_ALPHAPIXELS
     };
@@ -495,6 +515,7 @@ pub fn build_dds_header(
     // 88..92: dwRGBBitCount
     let rgb_bits = match format {
         TextureFormat::Rgba8 | TextureFormat::Bgra8 => 32u32,
+        TextureFormat::G8 => 8u32,
         _ => 0u32,
     };
     header[cursor..cursor + 4].copy_from_slice(&rgb_bits.to_le_bytes());
@@ -502,7 +523,7 @@ pub fn build_dds_header(
 
     // 92..96: dwRBitMask
     let r_mask = match format {
-        TextureFormat::Rgba8 => 0x000000FFu32,
+        TextureFormat::Rgba8 | TextureFormat::G8 => 0x000000FFu32,
         TextureFormat::Bgra8 => 0x00FF0000u32,
         _ => 0,
     };
@@ -541,11 +562,15 @@ pub fn build_dds_header(
     }
     header[cursor..cursor + 4].copy_from_slice(&caps.to_le_bytes());
 
-    // 112..116: dwCaps2 (0)
-    // 116..120: dwCaps3 (0)
-    // 120..124: dwCaps4 (0)
-    // 124..128: dwReserved2 (0)
-    // already 0 initialized
+    // 112..128: dwCaps2..dwReserved2 (zero initialized)
+    if format == TextureFormat::Bc7 {
+        // 128..148: DDS_HEADER_DXT10
+        header[128..132].copy_from_slice(&DXGI_FORMAT_BC7_UNORM.to_le_bytes());
+        header[132..136].copy_from_slice(&D3D10_RESOURCE_DIMENSION_TEXTURE2D.to_le_bytes());
+        header[136..140].copy_from_slice(&0u32.to_le_bytes()); // miscFlag
+        header[140..144].copy_from_slice(&1u32.to_le_bytes()); // arraySize
+        header[144..148].copy_from_slice(&0u32.to_le_bytes()); // miscFlags2
+    }
 
     header
 }
@@ -553,7 +578,7 @@ pub fn build_dds_header(
 /// Exports raw mip data into a valid `.dds` binary buffer.
 pub fn export_dds(width: u32, height: u32, format: TextureFormat, mip_data: &[u8]) -> Vec<u8> {
     let header = build_dds_header(width, height, format, 1);
-    let mut output = Vec::with_capacity(128 + mip_data.len());
+    let mut output = Vec::with_capacity(header.len() + mip_data.len());
     output.extend_from_slice(&header);
     output.extend_from_slice(mip_data);
     output
@@ -568,7 +593,7 @@ pub fn export_dds_with_mips(
 ) -> Vec<u8> {
     let total_len: usize = mip_chain.iter().map(|m| m.len()).sum();
     let header = build_dds_header(width, height, format, mip_chain.len() as u32);
-    let mut output = Vec::with_capacity(128 + total_len);
+    let mut output = Vec::with_capacity(header.len() + total_len);
     output.extend_from_slice(&header);
     for mip in mip_chain {
         output.extend_from_slice(mip);
@@ -679,15 +704,45 @@ mod tests {
     }
 
     #[test]
-    fn test_dds_header_dxt5_and_bc7() {
+    fn test_dds_header_dxt5_dxt3_and_bc7() {
+        let dxt3_hdr = build_dds_header(256, 256, TextureFormat::Dxt3, 1);
+        assert_eq!(dxt3_hdr.len(), 128);
+        let four_cc_dxt3 =
+            u32::from_le_bytes([dxt3_hdr[84], dxt3_hdr[85], dxt3_hdr[86], dxt3_hdr[87]]);
+        assert_eq!(four_cc_dxt3, FOURCC_DXT3);
+
         let dxt5_hdr = build_dds_header(512, 512, TextureFormat::Dxt5, 1);
+        assert_eq!(dxt5_hdr.len(), 128);
         let four_cc_dxt5 =
             u32::from_le_bytes([dxt5_hdr[84], dxt5_hdr[85], dxt5_hdr[86], dxt5_hdr[87]]);
         assert_eq!(four_cc_dxt5, FOURCC_DXT5);
 
         let bc7_hdr = build_dds_header(1024, 1024, TextureFormat::Bc7, 1);
-        let four_cc_bc7 = u32::from_le_bytes([bc7_hdr[84], bc7_hdr[85], bc7_hdr[86], bc7_hdr[87]]);
-        assert_eq!(four_cc_bc7, FOURCC_BC7);
+        assert_eq!(bc7_hdr.len(), 148);
+        let four_cc_dx10 =
+            u32::from_le_bytes([bc7_hdr[84], bc7_hdr[85], bc7_hdr[86], bc7_hdr[87]]);
+        assert_eq!(four_cc_dx10, FOURCC_DX10);
+        let dxgi_format =
+            u32::from_le_bytes([bc7_hdr[128], bc7_hdr[129], bc7_hdr[130], bc7_hdr[131]]);
+        assert_eq!(dxgi_format, DXGI_FORMAT_BC7_UNORM);
+        let res_dim =
+            u32::from_le_bytes([bc7_hdr[132], bc7_hdr[133], bc7_hdr[134], bc7_hdr[135]]);
+        assert_eq!(res_dim, D3D10_RESOURCE_DIMENSION_TEXTURE2D);
+        let array_size =
+            u32::from_le_bytes([bc7_hdr[140], bc7_hdr[141], bc7_hdr[142], bc7_hdr[143]]);
+        assert_eq!(array_size, 1);
+    }
+
+    #[test]
+    fn test_dds_export_g8() {
+        let raw_pixels = vec![0x80u8; 32 * 32];
+        let dds = export_dds(32, 32, TextureFormat::G8, &raw_pixels);
+        assert_eq!(dds.len(), 128 + raw_pixels.len());
+        assert_eq!(&dds[0..4], b"DDS ");
+        let pf_flags = u32::from_le_bytes([dds[80], dds[81], dds[82], dds[83]]);
+        assert_eq!(pf_flags, DDPF_LUMINANCE);
+        let bpp = u32::from_le_bytes([dds[88], dds[89], dds[90], dds[91]]);
+        assert_eq!(bpp, 8);
     }
 
     #[test]
