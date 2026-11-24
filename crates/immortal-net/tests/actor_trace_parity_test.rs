@@ -121,7 +121,13 @@ fn schema_tg_player_controller() -> ClassNetCacheView {
                 },
                 1,
             ),
-            prop(29, "Controller", "PlayerReplicationInfo", NetPropertyType::Object, 1),
+            prop(
+                29,
+                "Controller",
+                "PlayerReplicationInfo",
+                NetPropertyType::Object,
+                1,
+            ),
             rpc(
                 41,
                 "PlayerController",
@@ -162,7 +168,12 @@ fn schema_tg_player_controller() -> ClassNetCacheView {
             ),
             rpc(114, "PlayerController", "ClientFlushLevelStreaming", vec![]),
             rpc(117, "PlayerController", "ClientSetOnlineStatus", vec![]),
-            rpc(118, "PlayerController", "ClientVoiceHandshakeComplete", vec![]),
+            rpc(
+                118,
+                "PlayerController",
+                "ClientVoiceHandshakeComplete",
+                vec![],
+            ),
             rpc(131, "PlayerController", "ClientStartNetworkedVoice", vec![]),
             rpc(
                 207,
@@ -170,8 +181,20 @@ fn schema_tg_player_controller() -> ClassNetCacheView {
                 "ClientSetReadyState",
                 vec![("bReadyToPlay", NetPropertyType::Bool, 1)],
             ),
-            prop(291, "TgPlayerController", "r_fServerTimeStamp", NetPropertyType::Float, 1),
-            prop(292, "TgPlayerController", "r_bInputEnabled", NetPropertyType::Int, 20),
+            prop(
+                291,
+                "TgPlayerController",
+                "r_fServerTimeStamp",
+                NetPropertyType::Float,
+                1,
+            ),
+            prop(
+                292,
+                "TgPlayerController",
+                "r_bInputEnabled",
+                NetPropertyType::Int,
+                20,
+            ),
         ])
         .unwrap()
 }
@@ -224,12 +247,36 @@ fn schema_tg_pawn_fernando() -> ClassNetCacheView {
                 NetPropertyType::Struct(NetStructKind::Vector),
                 1,
             ),
-            prop(33, "Pawn", "PlayerReplicationInfo", NetPropertyType::Object, 1),
+            prop(
+                33,
+                "Pawn",
+                "PlayerReplicationInfo",
+                NetPropertyType::Object,
+                1,
+            ),
             prop(35, "Pawn", "Health", NetPropertyType::Int, 1),
-            prop(148, "TgPawn", "r_CurrentPropValues", NetPropertyType::Float, 153),
-            prop(149, "TgPawn", "r_fCachedMaxHealth", NetPropertyType::Float, 1),
+            prop(
+                148,
+                "TgPawn",
+                "r_CurrentPropValues",
+                NetPropertyType::Float,
+                153,
+            ),
+            prop(
+                149,
+                "TgPawn",
+                "r_fCachedMaxHealth",
+                NetPropertyType::Float,
+                1,
+            ),
             prop(160, "TgPawn", "r_fIntroOffset", NetPropertyType::Float, 1),
-            prop(181, "TgPawn", "r_nFirstValidFlashEventIdx", NetPropertyType::Int, 1),
+            prop(
+                181,
+                "TgPawn",
+                "r_nFirstValidFlashEventIdx",
+                NetPropertyType::Int,
+                1,
+            ),
             prop(189, "TgPawn", "r_nMountSkinId", NetPropertyType::Int, 1),
             prop(190, "TgPawn", "r_nPacingType", NetPropertyType::Int, 1),
             prop(192, "TgPawn", "r_nPawnId", NetPropertyType::Int, 1),
@@ -250,7 +297,13 @@ fn schema_matinee_actor() -> ClassNetCacheView {
             prop(26, "MatineeActor", "Position", NetPropertyType::Float, 1),
             prop(27, "MatineeActor", "PlayRate", NetPropertyType::Float, 1),
             prop(30, "MatineeActor", "bIsPlaying", NetPropertyType::Bool, 1),
-            prop(31, "MatineeActor", "InterpAction", NetPropertyType::Object, 1),
+            prop(
+                31,
+                "MatineeActor",
+                "InterpAction",
+                NetPropertyType::Object,
+                1,
+            ),
         ])
         .unwrap()
 }
@@ -258,14 +311,62 @@ fn schema_matinee_actor() -> ClassNetCacheView {
 fn schema_tg_rep_info_player() -> ClassNetCacheView {
     ClassNetCacheView::new("TgRepInfo_Player", 150)
         .with_fields([
-            prop(31, "PlayerReplicationInfo", "bIsSpectator", NetPropertyType::Bool, 1),
-            prop(32, "PlayerReplicationInfo", "bOnlySpectator", NetPropertyType::Bool, 1),
-            prop(33, "PlayerReplicationInfo", "bOutOfLives", NetPropertyType::Bool, 1),
-            prop(41, "PlayerReplicationInfo", "PlayerID", NetPropertyType::Int, 1),
-            prop(42, "PlayerReplicationInfo", "StartTime", NetPropertyType::Int, 1),
-            prop(44, "PlayerReplicationInfo", "PlayerName", NetPropertyType::Str, 1),
-            prop(88, "TgRepInfo_Player", "r_nEarnedCredits", NetPropertyType::Int, 1),
-            prop(89, "TgRepInfo_Player", "r_nCredits", NetPropertyType::Int, 1),
+            prop(
+                31,
+                "PlayerReplicationInfo",
+                "bIsSpectator",
+                NetPropertyType::Bool,
+                1,
+            ),
+            prop(
+                32,
+                "PlayerReplicationInfo",
+                "bOnlySpectator",
+                NetPropertyType::Bool,
+                1,
+            ),
+            prop(
+                33,
+                "PlayerReplicationInfo",
+                "bOutOfLives",
+                NetPropertyType::Bool,
+                1,
+            ),
+            prop(
+                41,
+                "PlayerReplicationInfo",
+                "PlayerID",
+                NetPropertyType::Int,
+                1,
+            ),
+            prop(
+                42,
+                "PlayerReplicationInfo",
+                "StartTime",
+                NetPropertyType::Int,
+                1,
+            ),
+            prop(
+                44,
+                "PlayerReplicationInfo",
+                "PlayerName",
+                NetPropertyType::Str,
+                1,
+            ),
+            prop(
+                88,
+                "TgRepInfo_Player",
+                "r_nEarnedCredits",
+                NetPropertyType::Int,
+                1,
+            ),
+            prop(
+                89,
+                "TgRepInfo_Player",
+                "r_nCredits",
+                NetPropertyType::Int,
+                1,
+            ),
         ])
         .unwrap()
 }
@@ -315,22 +416,118 @@ fn schema_tg_rep_info_game() -> ClassNetCacheView {
 
     ClassNetCacheView::new("TgRepInfo_Game", 198)
         .with_fields([
-            prop(25, "GameReplicationInfo", "ServerName", NetPropertyType::Str, 1),
-            prop(29, "GameReplicationInfo", "ElapsedTime", NetPropertyType::Int, 1),
-            prop(32, "GameReplicationInfo", "bMatchHasBegun", NetPropertyType::Bool, 1),
-            prop(34, "GameReplicationInfo", "GameClass", NetPropertyType::Object, 1),
-            prop(42, "TgRepInfo_Game", "r_DifficultyDebugData", bot_difficulty_debug, 1),
-            prop(47, "TgRepInfo_Game", "r_fRemountLockoutTime", NetPropertyType::Float, 1),
-            prop(55, "TgRepInfo_Game", "r_fPlayerViewDistance", NetPropertyType::Float, 1),
-            prop(114, "TgRepInfo_Game", "r_fMissionTime", NetPropertyType::Float, 1),
-            prop(115, "TgRepInfo_Game", "r_nMissionTimerStateChange", NetPropertyType::Int, 1),
-            prop(116, "TgRepInfo_Game", "r_fMissionRemainingTime", NetPropertyType::Float, 1),
-            prop(134, "TgRepInfo_Game", "r_bEnableHeadshots", NetPropertyType::Bool, 1),
-            prop(142, "TgRepInfo_Game", "r_bAllowWeaponLagPrediction", NetPropertyType::Bool, 1),
-            prop(143, "TgRepInfo_Game", "r_bUseInstantFireMeshTrace", NetPropertyType::Bool, 1),
-            prop(173, "TgRepInfo_Game", "r_bDisablePlayerMovement", NetPropertyType::Bool, 1),
-            prop(176, "TgRepInfo_Game", "r_bLoadoutSelectionEnabled", NetPropertyType::Bool, 1),
-            prop(178, "TgRepInfo_Game", "r_bCanPurchaseMasterRiding", NetPropertyType::Bool, 1),
+            prop(
+                25,
+                "GameReplicationInfo",
+                "ServerName",
+                NetPropertyType::Str,
+                1,
+            ),
+            prop(
+                29,
+                "GameReplicationInfo",
+                "ElapsedTime",
+                NetPropertyType::Int,
+                1,
+            ),
+            prop(
+                32,
+                "GameReplicationInfo",
+                "bMatchHasBegun",
+                NetPropertyType::Bool,
+                1,
+            ),
+            prop(
+                34,
+                "GameReplicationInfo",
+                "GameClass",
+                NetPropertyType::Object,
+                1,
+            ),
+            prop(
+                42,
+                "TgRepInfo_Game",
+                "r_DifficultyDebugData",
+                bot_difficulty_debug,
+                1,
+            ),
+            prop(
+                47,
+                "TgRepInfo_Game",
+                "r_fRemountLockoutTime",
+                NetPropertyType::Float,
+                1,
+            ),
+            prop(
+                55,
+                "TgRepInfo_Game",
+                "r_fPlayerViewDistance",
+                NetPropertyType::Float,
+                1,
+            ),
+            prop(
+                114,
+                "TgRepInfo_Game",
+                "r_fMissionTime",
+                NetPropertyType::Float,
+                1,
+            ),
+            prop(
+                115,
+                "TgRepInfo_Game",
+                "r_nMissionTimerStateChange",
+                NetPropertyType::Int,
+                1,
+            ),
+            prop(
+                116,
+                "TgRepInfo_Game",
+                "r_fMissionRemainingTime",
+                NetPropertyType::Float,
+                1,
+            ),
+            prop(
+                134,
+                "TgRepInfo_Game",
+                "r_bEnableHeadshots",
+                NetPropertyType::Bool,
+                1,
+            ),
+            prop(
+                142,
+                "TgRepInfo_Game",
+                "r_bAllowWeaponLagPrediction",
+                NetPropertyType::Bool,
+                1,
+            ),
+            prop(
+                143,
+                "TgRepInfo_Game",
+                "r_bUseInstantFireMeshTrace",
+                NetPropertyType::Bool,
+                1,
+            ),
+            prop(
+                173,
+                "TgRepInfo_Game",
+                "r_bDisablePlayerMovement",
+                NetPropertyType::Bool,
+                1,
+            ),
+            prop(
+                176,
+                "TgRepInfo_Game",
+                "r_bLoadoutSelectionEnabled",
+                NetPropertyType::Bool,
+                1,
+            ),
+            prop(
+                178,
+                "TgRepInfo_Game",
+                "r_bCanPurchaseMasterRiding",
+                NetPropertyType::Bool,
+                1,
+            ),
             prop(
                 192,
                 "TgRepInfo_Game",
@@ -416,8 +613,9 @@ fn test_live_retail_oracle_trace_parity() {
                 continue;
             }
             let raw_bytes = decode_hex(&tb.data_hex);
-            let msgs = ControlMessage::decode_all(&raw_bytes, tb.num_bits)
-                .unwrap_or_else(|e| panic!("ch=0 decode_all failed ({} bits): {:?}", tb.num_bits, e));
+            let msgs = ControlMessage::decode_all(&raw_bytes, tb.num_bits).unwrap_or_else(|e| {
+                panic!("ch=0 decode_all failed ({} bits): {:?}", tb.num_bits, e)
+            });
             let mut re_writer = immortal_net::BitWriter::new();
             for m in &msgs {
                 match m {

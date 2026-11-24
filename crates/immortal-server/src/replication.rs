@@ -29,7 +29,6 @@ use immortal_extract::netcache::{
 };
 use immortal_extract::package::read_tables_from_bytes;
 use immortal_extract::{PackageSummary, UpkPackage};
-pub use immortal_net::{FBitReader, FBitWriter, FInBunch};
 use immortal_net::{
     ActorBunch, ActorBunchCodec, ActorOpenHeader, ActorSpawnLayout, BitReader, BitWriter, Bunch,
     BunchFlags, BunchHeader, ClassNetCacheView, NetError, NetFieldKind, NetFieldSchema, NetName,
@@ -37,6 +36,7 @@ use immortal_net::{
     ObjectRef, ReplicatedItem, RpcParamValue, Ue3ChannelType, ACTOR_CHANNEL_INDEX, MAX_CHSEQUENCE,
     MAX_STRUCT_DEPTH,
 };
+pub use immortal_net::{FBitReader, FBitWriter, FInBunch};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::io::{Cursor, Read, Write};
@@ -206,16 +206,20 @@ impl ActorReplicationSchemas {
 
         let mut registry = NetCacheRegistry::with_manifest(manifest.clone());
         for path in &ordered_paths {
-            registry
-                .load_package_file(path)
-                .with_context(|| format!("Failed to load UPK into NetCacheRegistry: {}", path.display()))?;
+            registry.load_package_file(path).with_context(|| {
+                format!(
+                    "Failed to load UPK into NetCacheRegistry: {}",
+                    path.display()
+                )
+            })?;
         }
 
         let player_controller = class_net_cache_to_view(&mut registry, PLAYER_CONTROLLER_CLASS)?;
         let pawn_fernando = class_net_cache_to_view(&mut registry, FERNANDO_PAWN_CLASS)?;
         let rep_info_player = class_net_cache_to_view(&mut registry, REP_INFO_PLAYER_CLASS)?;
         let rep_info_game = class_net_cache_to_view(&mut registry, REP_INFO_GAME_CLASS)?;
-        let rep_info_task_force = class_net_cache_to_view(&mut registry, REP_INFO_TASK_FORCE_CLASS)?;
+        let rep_info_task_force =
+            class_net_cache_to_view(&mut registry, REP_INFO_TASK_FORCE_CLASS)?;
 
         let tg_game_path = upk_dir.join("TgGame.upk");
         let archetypes = resolve_tggame_archetypes(&tg_game_path, &manifest)?;
@@ -375,10 +379,8 @@ fn resolve_tggame_archetypes(
         ("Default__TgRepInfo_Game", None),
         ("Default__TgRepInfo_TaskForce", None),
     ]);
-    let mut class_targets: BTreeMap<&str, Option<u32>> = BTreeMap::from([
-        ("TgHUD", None),
-        ("TgGame_Paladins", None),
-    ]);
+    let mut class_targets: BTreeMap<&str, Option<u32>> =
+        BTreeMap::from([("TgHUD", None), ("TgGame_Paladins", None)]);
 
     for export in export_table.entries() {
         let Some(name) = export.resolve_object_name(&name_table) else {
@@ -466,7 +468,8 @@ fn convert_field_entry(
             tail_type_name,
             ..
         } => {
-            let prop_type = convert_property_type(registry, *property_class, tail_type_name.as_deref(), 0)?;
+            let prop_type =
+                convert_property_type(registry, *property_class, tail_type_name.as_deref(), 0)?;
             NetFieldKind::Property {
                 prop_type,
                 array_dim: *array_dim,
@@ -475,8 +478,12 @@ fn convert_field_entry(
         ExtractNetFieldKind::Function { params, .. } => {
             let mut converted_params = Vec::with_capacity(params.len());
             for p in params {
-                let prop_type =
-                    convert_property_type(registry, p.property_class, p.tail_type_name.as_deref(), 0)?;
+                let prop_type = convert_property_type(
+                    registry,
+                    p.property_class,
+                    p.tail_type_name.as_deref(),
+                    0,
+                )?;
                 converted_params.push(NetRpcParam {
                     name: p.name.clone(),
                     prop_type,
@@ -659,7 +666,13 @@ fn hermetic_player_controller_view() -> ClassNetCacheView {
                 NetPropertyType::Struct(NetStructKind::Vector),
                 1,
             ),
-            hermetic_prop(29, "Controller", "PlayerReplicationInfo", NetPropertyType::Object, 1),
+            hermetic_prop(
+                29,
+                "Controller",
+                "PlayerReplicationInfo",
+                NetPropertyType::Object,
+                1,
+            ),
             hermetic_rpc(38, "PlayerController", "ServerShortTimeout", vec![]),
             hermetic_rpc(
                 41,
@@ -694,11 +707,7 @@ fn hermetic_player_controller_view() -> ClassNetCacheView {
                 "ServerMove",
                 vec![
                     hermetic_param("TimeStamp", NetPropertyType::Float, 1),
-                    hermetic_param(
-                        "InAccel",
-                        NetPropertyType::Struct(NetStructKind::Vector),
-                        1,
-                    ),
+                    hermetic_param("InAccel", NetPropertyType::Struct(NetStructKind::Vector), 1),
                     hermetic_param(
                         "ClientLoc",
                         NetPropertyType::Struct(NetStructKind::Vector),
@@ -720,11 +729,7 @@ fn hermetic_player_controller_view() -> ClassNetCacheView {
                 "PlayerController",
                 "ServerUpdateCamera",
                 vec![
-                    hermetic_param(
-                        "CamLoc",
-                        NetPropertyType::Struct(NetStructKind::Vector),
-                        1,
-                    ),
+                    hermetic_param("CamLoc", NetPropertyType::Struct(NetStructKind::Vector), 1),
                     hermetic_param("CamPitchAndYaw", NetPropertyType::Int, 1),
                 ],
             ),
@@ -770,7 +775,12 @@ fn hermetic_player_controller_view() -> ClassNetCacheView {
             ),
             hermetic_rpc(114, "PlayerController", "ClientFlushLevelStreaming", vec![]),
             hermetic_rpc(117, "PlayerController", "ClientSetOnlineStatus", vec![]),
-            hermetic_rpc(118, "PlayerController", "ClientVoiceHandshakeComplete", vec![]),
+            hermetic_rpc(
+                118,
+                "PlayerController",
+                "ClientVoiceHandshakeComplete",
+                vec![],
+            ),
             hermetic_rpc(131, "PlayerController", "ClientStartNetworkedVoice", vec![]),
             hermetic_rpc(
                 165,
@@ -782,7 +792,12 @@ fn hermetic_player_controller_view() -> ClassNetCacheView {
                     hermetic_param("nItemCount", NetPropertyType::Int, 1),
                 ],
             ),
-            hermetic_rpc(173, PLAYER_CONTROLLER_CLASS, "ServerRequestGraphData", vec![]),
+            hermetic_rpc(
+                173,
+                PLAYER_CONTROLLER_CLASS,
+                "ServerRequestGraphData",
+                vec![],
+            ),
             hermetic_rpc(
                 184,
                 PLAYER_CONTROLLER_CLASS,
@@ -801,8 +816,20 @@ fn hermetic_player_controller_view() -> ClassNetCacheView {
                 "ClientSetReadyState",
                 vec![hermetic_param("bReadyToPlay", NetPropertyType::Bool, 1)],
             ),
-            hermetic_prop(291, PLAYER_CONTROLLER_CLASS, "r_fServerTimeStamp", NetPropertyType::Float, 1),
-            hermetic_prop(292, PLAYER_CONTROLLER_CLASS, "r_bInputEnabled", NetPropertyType::Int, 20),
+            hermetic_prop(
+                291,
+                PLAYER_CONTROLLER_CLASS,
+                "r_fServerTimeStamp",
+                NetPropertyType::Float,
+                1,
+            ),
+            hermetic_prop(
+                292,
+                PLAYER_CONTROLLER_CLASS,
+                "r_bInputEnabled",
+                NetPropertyType::Int,
+                20,
+            ),
         ])
         .expect("Hermetic TgPlayerController ClassNetCacheView")
 }
@@ -850,11 +877,29 @@ fn hermetic_fernando_view() -> ClassNetCacheView {
                 NetPropertyType::Struct(NetStructKind::Vector),
                 1,
             ),
-            hermetic_prop(33, "Pawn", "PlayerReplicationInfo", NetPropertyType::Object, 1),
+            hermetic_prop(
+                33,
+                "Pawn",
+                "PlayerReplicationInfo",
+                NetPropertyType::Object,
+                1,
+            ),
             hermetic_prop(35, "Pawn", "Health", NetPropertyType::Int, 1),
             hermetic_prop(52, "Pawn", "Controller", NetPropertyType::Object, 1),
-            hermetic_prop(148, "TgPawn", "r_CurrentPropValues", NetPropertyType::Float, 153),
-            hermetic_prop(149, "TgPawn", "r_fCachedMaxHealth", NetPropertyType::Float, 1),
+            hermetic_prop(
+                148,
+                "TgPawn",
+                "r_CurrentPropValues",
+                NetPropertyType::Float,
+                153,
+            ),
+            hermetic_prop(
+                149,
+                "TgPawn",
+                "r_fCachedMaxHealth",
+                NetPropertyType::Float,
+                1,
+            ),
             hermetic_prop(190, "TgPawn", "r_nPacingType", NetPropertyType::Int, 1),
             hermetic_prop(192, "TgPawn", "r_nPawnId", NetPropertyType::Int, 1),
             hermetic_prop(194, "TgPawn", "r_nPhysicalType", NetPropertyType::Int, 1),
@@ -916,13 +961,55 @@ fn hermetic_rep_info_player_view() -> ClassNetCacheView {
                     hermetic_param("Index", NetPropertyType::Int, 1),
                 ],
             ),
-            hermetic_prop(28, "PlayerReplicationInfo", "bBot", NetPropertyType::Bool, 1),
-            hermetic_prop(31, "PlayerReplicationInfo", "bIsSpectator", NetPropertyType::Bool, 1),
-            hermetic_prop(32, "PlayerReplicationInfo", "bOnlySpectator", NetPropertyType::Bool, 1),
-            hermetic_prop(33, "PlayerReplicationInfo", "bOutOfLives", NetPropertyType::Bool, 1),
-            hermetic_prop(41, "PlayerReplicationInfo", "PlayerID", NetPropertyType::Int, 1),
-            hermetic_prop(42, "PlayerReplicationInfo", "StartTime", NetPropertyType::Int, 1),
-            hermetic_prop(44, "PlayerReplicationInfo", "PlayerName", NetPropertyType::Str, 1),
+            hermetic_prop(
+                28,
+                "PlayerReplicationInfo",
+                "bBot",
+                NetPropertyType::Bool,
+                1,
+            ),
+            hermetic_prop(
+                31,
+                "PlayerReplicationInfo",
+                "bIsSpectator",
+                NetPropertyType::Bool,
+                1,
+            ),
+            hermetic_prop(
+                32,
+                "PlayerReplicationInfo",
+                "bOnlySpectator",
+                NetPropertyType::Bool,
+                1,
+            ),
+            hermetic_prop(
+                33,
+                "PlayerReplicationInfo",
+                "bOutOfLives",
+                NetPropertyType::Bool,
+                1,
+            ),
+            hermetic_prop(
+                41,
+                "PlayerReplicationInfo",
+                "PlayerID",
+                NetPropertyType::Int,
+                1,
+            ),
+            hermetic_prop(
+                42,
+                "PlayerReplicationInfo",
+                "StartTime",
+                NetPropertyType::Int,
+                1,
+            ),
+            hermetic_prop(
+                44,
+                "PlayerReplicationInfo",
+                "PlayerName",
+                NetPropertyType::Str,
+                1,
+            ),
             hermetic_prop(
                 46,
                 "PlayerReplicationInfo",
@@ -930,12 +1017,48 @@ fn hermetic_rep_info_player_view() -> ClassNetCacheView {
                 NetPropertyType::Struct(NetStructKind::UniqueNetId),
                 1,
             ),
-            hermetic_prop(71, REP_INFO_PLAYER_CLASS, "r_PawnOwner", NetPropertyType::Object, 1),
-            hermetic_prop(74, REP_INFO_PLAYER_CLASS, "r_nWeaponSkinId", NetPropertyType::Int, 1),
-            hermetic_prop(78, REP_INFO_PLAYER_CLASS, "r_nSkinId", NetPropertyType::Int, 1),
-            hermetic_prop(79, REP_INFO_PLAYER_CLASS, "r_nProfileId", NetPropertyType::Int, 1),
-            hermetic_prop(88, REP_INFO_PLAYER_CLASS, "r_nEarnedCredits", NetPropertyType::Int, 1),
-            hermetic_prop(89, REP_INFO_PLAYER_CLASS, "r_nCredits", NetPropertyType::Int, 1),
+            hermetic_prop(
+                71,
+                REP_INFO_PLAYER_CLASS,
+                "r_PawnOwner",
+                NetPropertyType::Object,
+                1,
+            ),
+            hermetic_prop(
+                74,
+                REP_INFO_PLAYER_CLASS,
+                "r_nWeaponSkinId",
+                NetPropertyType::Int,
+                1,
+            ),
+            hermetic_prop(
+                78,
+                REP_INFO_PLAYER_CLASS,
+                "r_nSkinId",
+                NetPropertyType::Int,
+                1,
+            ),
+            hermetic_prop(
+                79,
+                REP_INFO_PLAYER_CLASS,
+                "r_nProfileId",
+                NetPropertyType::Int,
+                1,
+            ),
+            hermetic_prop(
+                88,
+                REP_INFO_PLAYER_CLASS,
+                "r_nEarnedCredits",
+                NetPropertyType::Int,
+                1,
+            ),
+            hermetic_prop(
+                89,
+                REP_INFO_PLAYER_CLASS,
+                "r_nCredits",
+                NetPropertyType::Int,
+                1,
+            ),
             hermetic_prop(
                 105,
                 REP_INFO_PLAYER_CLASS,
@@ -943,10 +1066,34 @@ fn hermetic_rep_info_player_view() -> ClassNetCacheView {
                 NetPropertyType::Byte { enum_count: None },
                 1,
             ),
-            hermetic_prop(126, REP_INFO_PLAYER_CLASS, "r_TaskForce", NetPropertyType::Object, 1),
-            hermetic_prop(134, REP_INFO_PLAYER_CLASS, "r_nHealthMaximum", NetPropertyType::Int, 1),
-            hermetic_prop(135, REP_INFO_PLAYER_CLASS, "r_nHealthCurrent", NetPropertyType::Int, 1),
-            hermetic_prop(145, REP_INFO_PLAYER_CLASS, "r_nPawnId", NetPropertyType::Int, 1),
+            hermetic_prop(
+                126,
+                REP_INFO_PLAYER_CLASS,
+                "r_TaskForce",
+                NetPropertyType::Object,
+                1,
+            ),
+            hermetic_prop(
+                134,
+                REP_INFO_PLAYER_CLASS,
+                "r_nHealthMaximum",
+                NetPropertyType::Int,
+                1,
+            ),
+            hermetic_prop(
+                135,
+                REP_INFO_PLAYER_CLASS,
+                "r_nHealthCurrent",
+                NetPropertyType::Int,
+                1,
+            ),
+            hermetic_prop(
+                145,
+                REP_INFO_PLAYER_CLASS,
+                "r_nPawnId",
+                NetPropertyType::Int,
+                1,
+            ),
         ])
         .expect("Hermetic TgRepInfo_Player ClassNetCacheView")
 }
@@ -954,8 +1101,20 @@ fn hermetic_rep_info_player_view() -> ClassNetCacheView {
 fn hermetic_rep_info_game_view() -> ClassNetCacheView {
     ClassNetCacheView::new(REP_INFO_GAME_CLASS, 198)
         .with_fields([
-            hermetic_prop(32, "GameReplicationInfo", "bMatchHasBegun", NetPropertyType::Bool, 1),
-            hermetic_prop(34, "GameReplicationInfo", "GameClass", NetPropertyType::Object, 1),
+            hermetic_prop(
+                32,
+                "GameReplicationInfo",
+                "bMatchHasBegun",
+                NetPropertyType::Bool,
+                1,
+            ),
+            hermetic_prop(
+                34,
+                "GameReplicationInfo",
+                "GameClass",
+                NetPropertyType::Object,
+                1,
+            ),
             hermetic_prop(
                 55,
                 REP_INFO_GAME_CLASS,
@@ -1485,7 +1644,12 @@ impl ReplicationSession {
     fn encode_pc_open_bunch(&mut self, schemas: &ActorReplicationSchemas) -> Result<Bunch> {
         let pc_cache = &schemas.player_controller;
         let mut items = Vec::with_capacity(42);
-        items.push(prop_item(pc_cache, "bCollideWorld", 0, NetValue::Bool(true))?);
+        items.push(prop_item(
+            pc_cache,
+            "bCollideWorld",
+            0,
+            NetValue::Bool(true),
+        )?);
         items.push(prop_item(
             pc_cache,
             "Role",
@@ -1512,7 +1676,10 @@ impl ReplicationSession {
         items.push(rpc_item(
             pc_cache,
             "ClientCapBandwidth",
-            vec![rpc_param("Cap", Some(vec![NetValue::Int(CLIENT_BANDWIDTH_CAP)]))],
+            vec![rpc_param(
+                "Cap",
+                Some(vec![NetValue::Int(CLIENT_BANDWIDTH_CAP)]),
+            )],
         )?);
         items.push(rpc_item(pc_cache, "ClientVoiceHandshakeComplete", vec![])?);
         items.push(rpc_item(
@@ -1592,10 +1759,7 @@ impl ReplicationSession {
         .map_err(Into::into)
     }
 
-    fn encode_task_force_open_bunch(
-        &mut self,
-        schemas: &ActorReplicationSchemas,
-    ) -> Result<Bunch> {
+    fn encode_task_force_open_bunch(&mut self, schemas: &ActorReplicationSchemas) -> Result<Bunch> {
         let tf_cache = &schemas.rep_info_task_force;
         let bunch_data = ActorBunch {
             open_header: Some(ActorOpenHeader {
@@ -1610,14 +1774,8 @@ impl ReplicationSession {
             ],
         };
         let seq = self.next_task_force_seq();
-        ActorBunchCodec::encode_to_bunch(
-            TASK_FORCE_CHANNEL_INDEX,
-            seq,
-            true,
-            tf_cache,
-            &bunch_data,
-        )
-        .map_err(Into::into)
+        ActorBunchCodec::encode_to_bunch(TASK_FORCE_CHANNEL_INDEX, seq, true, tf_cache, &bunch_data)
+            .map_err(Into::into)
     }
 
     fn encode_archway_fernando_open_bunch(
@@ -1660,11 +1818,7 @@ impl ReplicationSession {
                     pawn_cache,
                     "Rotation",
                     0,
-                    NetValue::Rotator([
-                        pawn.rotation.pitch,
-                        pawn.rotation.yaw,
-                        pawn.rotation.roll,
-                    ]),
+                    NetValue::Rotator([pawn.rotation.pitch, pawn.rotation.yaw, pawn.rotation.roll]),
                 )?,
                 prop_item(
                     pawn_cache,
@@ -1839,7 +1993,12 @@ impl ReplicationSession {
                 )?,
                 prop_item(pri_cache, "PlayerID", 0, NetValue::Int(self.player_id))?,
                 prop_item(pri_cache, "r_nCredits", 0, NetValue::Int(self.credits))?,
-                prop_item(pri_cache, "r_nEarnedCredits", 0, NetValue::Int(self.credits))?,
+                prop_item(
+                    pri_cache,
+                    "r_nEarnedCredits",
+                    0,
+                    NetValue::Int(self.credits),
+                )?,
             ],
         };
         let seq = self.next_pri_seq();
@@ -1907,14 +2066,8 @@ impl ReplicationSession {
             )?],
         };
         let seq = self.next_pawn_seq();
-        ActorBunchCodec::encode_to_bunch(
-            PLAYER_PAWN_CHANNEL_INDEX,
-            seq,
-            true,
-            pawn_cache,
-            &update,
-        )
-        .map_err(Into::into)
+        ActorBunchCodec::encode_to_bunch(PLAYER_PAWN_CHANNEL_INDEX, seq, true, pawn_cache, &update)
+            .map_err(Into::into)
     }
 
     fn encode_pc_pri_and_timestamp_bunch(
@@ -1975,8 +2128,13 @@ impl ReplicationSession {
                 NetValue::Float(ts),
             )?],
         };
-        let bunch =
-            ActorBunchCodec::encode_to_bunch(PLAYER_CONTROLLER_CHANNEL_INDEX, 0, false, pc_cache, &update)?;
+        let bunch = ActorBunchCodec::encode_to_bunch(
+            PLAYER_CONTROLLER_CHANNEL_INDEX,
+            0,
+            false,
+            pc_cache,
+            &update,
+        )?;
         Ok(Some(bunch))
     }
 
@@ -2123,14 +2281,8 @@ impl ReplicationSession {
             ],
         };
         let seq = self.next_pawn_seq();
-        ActorBunchCodec::encode_to_bunch(
-            PLAYER_PAWN_CHANNEL_INDEX,
-            seq,
-            false,
-            pawn_cache,
-            &update,
-        )
-        .map_err(Into::into)
+        ActorBunchCodec::encode_to_bunch(PLAYER_PAWN_CHANNEL_INDEX, seq, false, pawn_cache, &update)
+            .map_err(Into::into)
     }
 
     /// Verified hook into `physics.rs`: resolves surface velocity against `surface_normal`
@@ -2149,8 +2301,13 @@ impl ReplicationSession {
             self.pawn.velocity.y,
             self.pawn.velocity.z,
         ];
-        let (resolved, _interaction) =
-            crate::physics::resolve_surface_velocity(vel, surface_normal, m_b_can_base_on, 980.0, dt_sec);
+        let (resolved, _interaction) = crate::physics::resolve_surface_velocity(
+            vel,
+            surface_normal,
+            m_b_can_base_on,
+            980.0,
+            dt_sec,
+        );
         self.pawn.velocity = Vector3::new(resolved[0], resolved[1], resolved[2]);
         self.pawn.location.x += resolved[0] * dt_sec;
         self.pawn.location.y += resolved[1] * dt_sec;
@@ -2221,11 +2378,8 @@ impl ReplicationSession {
             [base[0], base[1], base[2] + head_center_offset_z],
             22.0,
         );
-        let target = crate::combat::TargetHitbox::new_normalized(
-            self.pawn.champion_id,
-            cylinder,
-            head,
-        );
+        let target =
+            crate::combat::TargetHitbox::new_normalized(self.pawn.champion_id, cylinder, head);
         target.evaluate_ray_hit(origin, dir, None)
     }
 
@@ -2442,10 +2596,12 @@ impl ReplicationPayload {
                 data.push(REP_OP_POSSESS);
                 data.write_u32::<LittleEndian>(*actor_id).unwrap();
                 let ctrl_bytes = controller_name.as_bytes();
-                data.write_u16::<LittleEndian>(ctrl_bytes.len() as u16).unwrap();
+                data.write_u16::<LittleEndian>(ctrl_bytes.len() as u16)
+                    .unwrap();
                 data.extend_from_slice(ctrl_bytes);
                 let ply_bytes = local_player_name.as_bytes();
-                data.write_u16::<LittleEndian>(ply_bytes.len() as u16).unwrap();
+                data.write_u16::<LittleEndian>(ply_bytes.len() as u16)
+                    .unwrap();
                 data.extend_from_slice(ply_bytes);
             }
             Self::SpawnActor {
@@ -2465,7 +2621,8 @@ impl ReplicationPayload {
                 data.write_u32::<LittleEndian>(*weapon_device_id).unwrap();
                 data.push(*team);
                 let class_bytes = class_name.as_bytes();
-                data.write_u16::<LittleEndian>(class_bytes.len() as u16).unwrap();
+                data.write_u16::<LittleEndian>(class_bytes.len() as u16)
+                    .unwrap();
                 data.extend_from_slice(class_bytes);
                 location.write_bytes(&mut data).unwrap();
                 rotation.write_bytes(&mut data).unwrap();
@@ -2480,7 +2637,8 @@ impl ReplicationPayload {
                 data.push(REP_OP_SPAWN_DEVICE);
                 data.write_u32::<LittleEndian>(*device_id).unwrap();
                 let dev_bytes = device_name.as_bytes();
-                data.write_u16::<LittleEndian>(dev_bytes.len() as u16).unwrap();
+                data.write_u16::<LittleEndian>(dev_bytes.len() as u16)
+                    .unwrap();
                 data.extend_from_slice(dev_bytes);
                 data.write_u32::<LittleEndian>(*owner_pawn_id).unwrap();
             }
@@ -2496,10 +2654,12 @@ impl ReplicationPayload {
                 data.push(REP_OP_SPAWN_BOT);
                 data.write_u32::<LittleEndian>(*bot_id).unwrap();
                 let b_bytes = bot_name.as_bytes();
-                data.write_u16::<LittleEndian>(b_bytes.len() as u16).unwrap();
+                data.write_u16::<LittleEndian>(b_bytes.len() as u16)
+                    .unwrap();
                 data.extend_from_slice(b_bytes);
                 let p_bytes = pawn_name.as_bytes();
-                data.write_u16::<LittleEndian>(p_bytes.len() as u16).unwrap();
+                data.write_u16::<LittleEndian>(p_bytes.len() as u16)
+                    .unwrap();
                 data.extend_from_slice(p_bytes);
                 data.write_u32::<LittleEndian>(*champion_id as u32).unwrap();
                 data.push(*team);
@@ -2662,7 +2822,8 @@ impl ReplicationPayload {
             return Ok(Self::Unknown(Vec::new()));
         }
         let raw = reader.read_bytes(bytes_left)?;
-        Self::decode(&raw).map_err(|e| NetError::BunchError(format!("Replication decode error: {}", e)))
+        Self::decode(&raw)
+            .map_err(|e| NetError::BunchError(format!("Replication decode error: {}", e)))
     }
 }
 
@@ -2943,12 +3104,9 @@ mod tests {
             let (cache, layout) = schemas
                 .for_channel(b.header.ch_index)
                 .expect("Channel schema must exist");
-            let dec = ActorBunchCodec::decode_bunch(
-                b,
-                cache,
-                b.header.flags.b_open.then_some(layout),
-            )
-            .expect("ActorBunchCodec must decode with 0 leftover bits");
+            let dec =
+                ActorBunchCodec::decode_bunch(b, cache, b.header.flags.b_open.then_some(layout))
+                    .expect("ActorBunchCodec must decode with 0 leftover bits");
             if b.header.flags.b_open {
                 assert_eq!(b.header.ch_sequence, 1);
                 open_by_ch.insert(b.header.ch_index, dec);
@@ -3035,7 +3193,9 @@ mod tests {
         )));
 
         // ch=3 follow-up: PRI + r_fServerTimeStamp
-        let pc_followup = followups_by_ch.get(&PLAYER_CONTROLLER_CHANNEL_INDEX).unwrap();
+        let pc_followup = followups_by_ch
+            .get(&PLAYER_CONTROLLER_CHANNEL_INDEX)
+            .unwrap();
         assert!(pc_followup.items.iter().any(|it| matches!(
             it,
             ReplicatedItem::Property {

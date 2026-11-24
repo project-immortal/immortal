@@ -47,10 +47,7 @@ pub const SUBFLAG_UNSEQUENCED: u16 = 0x0010;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcomPrefix {
     /// Standalone UDP 7777 framing (6 bytes: 4-byte sequence LE + 2-byte subflag BE).
-    Standalone {
-        sequence: u32,
-        subflag: u16,
-    },
+    Standalone { sequence: u32, subflag: u16 },
     /// Dedicated server sequenced gameplay datagram (10 bytes, or 16 bytes on Seq 1 with
     /// the 6-byte `?exudp=2` encrypted `PComNetConn` prefix slot).
     DedicatedSequenced {
@@ -59,10 +56,7 @@ pub enum PcomPrefix {
         session_token: Option<[u8; 6]>,
     },
     /// Dedicated server unsequenced control / handshake / PMTU frame (10 bytes).
-    DedicatedUnsequenced {
-        magic: [u8; 4],
-        subflag: u16,
-    },
+    DedicatedUnsequenced { magic: [u8; 4], subflag: u16 },
     /// Raw unparsed prefix fallback.
     Raw(Vec<u8>),
 }
@@ -972,7 +966,9 @@ impl Ue3Packet {
                     &datagram[10..],
                 )
             }
-        } else if datagram.len() >= 7 && (datagram[0] == 0x00 || (datagram.len() >= 6 && datagram[4..6] == [0x00, 0x01])) {
+        } else if datagram.len() >= 7
+            && (datagram[0] == 0x00 || (datagram.len() >= 6 && datagram[4..6] == [0x00, 0x01]))
+        {
             let seq = u32::from_le_bytes(datagram[0..4].try_into().unwrap());
             let subflag = u16::from_be_bytes(datagram[4..6].try_into().unwrap());
             (
@@ -2184,18 +2180,12 @@ mod tests {
 
     #[test]
     fn test_dedicated_10byte_prefix_packet_roundtrip() {
-        let dedicated_prefix: [u8; 10] = [
-            0x01, 0x00, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78, 0x00, 0x01,
-        ];
-        let mut pkt = Ue3Packet::new_with_prefix(
-            PcomPrefix::from(dedicated_prefix),
-            42,
-        );
+        let dedicated_prefix: [u8; 10] =
+            [0x01, 0x00, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78, 0x00, 0x01];
+        let mut pkt = Ue3Packet::new_with_prefix(PcomPrefix::from(dedicated_prefix), 42);
         pkt.acks.push(10);
-        pkt.bunches.push(Bunch::control(
-            1,
-            ControlMessage::MapLoaded.encode(),
-        ));
+        pkt.bunches
+            .push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
 
         let encoded = pkt.encode().expect("encode dedicated packet");
         assert!(encoded.len() >= 11);
@@ -2209,11 +2199,9 @@ mod tests {
         assert_eq!(decoded.acks, vec![10]);
         assert_eq!(decoded.bunches.len(), 1);
 
-        let msgs = ControlMessage::decode_all(
-            &decoded.bunches[0].data,
-            decoded.bunches[0].num_bits,
-        )
-        .expect("decode control messages from bunch");
+        let msgs =
+            ControlMessage::decode_all(&decoded.bunches[0].data, decoded.bunches[0].num_bits)
+                .expect("decode control messages from bunch");
         assert_eq!(msgs, vec![ControlMessage::MapLoaded]);
 
         let reencoded = decoded.encode().expect("re-encode dedicated packet");
@@ -2223,12 +2211,14 @@ mod tests {
     #[test]
     fn test_dedicated_10byte_prefix_unsequenced_0010_rejection() {
         // [0x00, 0x10] unsequenced / control frame must return NetError::UnsequencedControlFrame
-        let unseq_wire: [u8; 10] = [
-            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
-        ];
+        let unseq_wire: [u8; 10] = [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10];
         let err = Ue3Packet::decode(&unseq_wire).unwrap_err();
         match err {
-            NetError::UnsequencedControlFrame { magic, subflags, len } => {
+            NetError::UnsequencedControlFrame {
+                magic,
+                subflags,
+                len,
+            } => {
                 assert_eq!(magic, [0x01, 0x00, 0x00, 0x00]);
                 assert_eq!(subflags, 0x0010);
                 assert_eq!(len, 10);
@@ -2239,18 +2229,15 @@ mod tests {
 
     #[test]
     fn test_dedicated_1440b_mtu_roundtrip() {
-        let dedicated_prefix: [u8; 10] = [
-            0x01, 0x00, 0x00, 0x00, 0x2A, 0x00, 0x00, 0x00, 0x00, 0x01,
-        ];
-        let mut pkt = Ue3Packet::new_with_prefix(
-            PcomPrefix::from(dedicated_prefix),
-            1337,
-        );
+        let dedicated_prefix: [u8; 10] =
+            [0x01, 0x00, 0x00, 0x00, 0x2A, 0x00, 0x00, 0x00, 0x00, 0x01];
+        let mut pkt = Ue3Packet::new_with_prefix(PcomPrefix::from(dedicated_prefix), 1337);
         pkt.acks.push(99);
 
         // Build a large bunch filling up toward 1440-byte MTU buffer (e.g. 1200 bytes)
         let large_payload = vec![0xA5; 1200];
-        pkt.bunches.push(Bunch::actor(5, false, large_payload.clone()));
+        pkt.bunches
+            .push(Bunch::actor(5, false, large_payload.clone()));
 
         // Encode with 1440-byte MTU ladder (11520 bits)
         let encoded = pkt
@@ -2287,50 +2274,68 @@ mod tests {
     #[test]
     fn test_dedicated_sequenced_seq1_session_token_and_seq2_roundtrip() {
         let token = [0x78, 0x7E, 0x10, 0x7B, 0x9A, 0x8F];
-        let mut pkt_seq1 = Ue3Packet::new_with_prefix(
-            PcomPrefix::dedicated_sequenced(1, Some(token)),
-            100,
-        );
-        pkt_seq1.bunches.push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
+        let mut pkt_seq1 =
+            Ue3Packet::new_with_prefix(PcomPrefix::dedicated_sequenced(1, Some(token)), 100);
+        pkt_seq1
+            .bunches
+            .push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
 
         let enc_seq1 = pkt_seq1
             .encode_with_max_bits(EXUDP_MAX_PACKET_BITS)
             .expect("encode seq1");
-        assert_eq!(&enc_seq1[..10], &[0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01]);
+        assert_eq!(
+            &enc_seq1[..10],
+            &[0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01]
+        );
         assert_eq!(&enc_seq1[10..16], &token);
 
-        let dec_seq1 = Ue3Packet::decode_with_max_bits(&enc_seq1, EXUDP_MAX_PACKET_BITS)
-            .expect("decode seq1");
-        assert_eq!(dec_seq1.pcom_prefix, PcomPrefix::dedicated_sequenced(1, Some(token)));
+        let dec_seq1 =
+            Ue3Packet::decode_with_max_bits(&enc_seq1, EXUDP_MAX_PACKET_BITS).expect("decode seq1");
+        assert_eq!(
+            dec_seq1.pcom_prefix,
+            PcomPrefix::dedicated_sequenced(1, Some(token))
+        );
         assert_eq!(dec_seq1.pcom_prefix.session_token(), Some(&token));
         assert_eq!(dec_seq1.pcom_prefix.sequence(), Some(1));
         assert_eq!(dec_seq1.packet_id, 100);
         assert_eq!(dec_seq1.bunches.len(), 1);
-        assert_eq!(dec_seq1.encode_pcom(EXUDP_MAX_PACKET_BITS).unwrap(), enc_seq1);
+        assert_eq!(
+            dec_seq1.encode_pcom(EXUDP_MAX_PACKET_BITS).unwrap(),
+            enc_seq1
+        );
 
         // Seq 2 roundtrip (no session token)
-        let mut pkt_seq2 = Ue3Packet::new_with_prefix(
-            PcomPrefix::dedicated_sequenced(2, None),
-            101,
-        );
+        let mut pkt_seq2 =
+            Ue3Packet::new_with_prefix(PcomPrefix::dedicated_sequenced(2, None), 101);
         pkt_seq2.acks.push(100);
-        pkt_seq2.bunches.push(Bunch::control(2, ControlMessage::Join.encode()));
+        pkt_seq2
+            .bunches
+            .push(Bunch::control(2, ControlMessage::Join.encode()));
 
         let enc_seq2 = pkt_seq2
             .encode_with_max_bits(EXUDP_MAX_PACKET_BITS)
             .expect("encode seq2");
-        assert_eq!(&enc_seq2[..10], &[0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01]);
+        assert_eq!(
+            &enc_seq2[..10],
+            &[0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01]
+        );
         assert_eq!(enc_seq2.len(), 10 + (enc_seq2.len() - 10));
 
-        let dec_seq2 = Ue3Packet::decode_with_max_bits(&enc_seq2, EXUDP_MAX_PACKET_BITS)
-            .expect("decode seq2");
-        assert_eq!(dec_seq2.pcom_prefix, PcomPrefix::dedicated_sequenced(2, None));
+        let dec_seq2 =
+            Ue3Packet::decode_with_max_bits(&enc_seq2, EXUDP_MAX_PACKET_BITS).expect("decode seq2");
+        assert_eq!(
+            dec_seq2.pcom_prefix,
+            PcomPrefix::dedicated_sequenced(2, None)
+        );
         assert_eq!(dec_seq2.pcom_prefix.session_token(), None);
         assert_eq!(dec_seq2.pcom_prefix.sequence(), Some(2));
         assert_eq!(dec_seq2.packet_id, 101);
         assert_eq!(dec_seq2.acks, vec![100]);
         assert_eq!(dec_seq2.bunches.len(), 1);
-        assert_eq!(dec_seq2.encode_pcom(EXUDP_MAX_PACKET_BITS).unwrap(), enc_seq2);
+        assert_eq!(
+            dec_seq2.encode_pcom(EXUDP_MAX_PACKET_BITS).unwrap(),
+            enc_seq2
+        );
     }
 
     #[test]
@@ -2387,9 +2392,16 @@ mod tests {
             let encoded = msg.encode();
             assert_eq!(encoded[0], msg.opcode());
             let decoded = ControlMessage::decode(&encoded).unwrap_or_else(|e| {
-                panic!("Failed standalone decode for msg #{} ({:?}): {:?}", idx, msg, e)
+                panic!(
+                    "Failed standalone decode for msg #{} ({:?}): {:?}",
+                    idx, msg, e
+                )
             });
-            assert_eq!(&decoded, msg, "Standalone roundtrip mismatch for msg #{}", idx);
+            assert_eq!(
+                &decoded, msg,
+                "Standalone roundtrip mismatch for msg #{}",
+                idx
+            );
 
             // Bit-exact Ue3Packet / Bunch roundtrip
             let (raw_bits, num_bits) = msg.try_encode_bits().unwrap();
@@ -2411,11 +2423,9 @@ mod tests {
             ));
             let wire = pkt.encode().unwrap();
             let dec_pkt = Ue3Packet::decode(&wire).unwrap();
-            let dec_msgs = ControlMessage::decode_all(
-                &dec_pkt.bunches[0].data,
-                dec_pkt.bunches[0].num_bits,
-            )
-            .unwrap();
+            let dec_msgs =
+                ControlMessage::decode_all(&dec_pkt.bunches[0].data, dec_pkt.bunches[0].num_bits)
+                    .unwrap();
             assert_eq!(dec_msgs, vec![msg.clone()]);
         }
     }

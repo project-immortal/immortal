@@ -17,7 +17,9 @@ use crate::error::ExtractError;
 use crate::index::PackageIndex;
 use crate::name::NameTable;
 use crate::package::UpkPackage;
-use crate::property::{find_property, read_object_properties, FPropertyTag, PropertyValue, StructValue};
+use crate::property::{
+    find_property, read_object_properties, FPropertyTag, PropertyValue, StructValue,
+};
 
 const IDENTITY_MATRIX: [[f32; 4]; 4] = [
     [1.0, 0.0, 0.0, 0.0],
@@ -208,7 +210,12 @@ impl ConvexHull {
 
     /// Performs a raycast (`origin + t * dir`, `0 <= t <= max_distance`) against the convex hull
     /// via half-space / SAT slab clipping.
-    pub fn raycast(&self, origin: [f32; 3], dir: [f32; 3], max_distance: f32) -> Option<RaycastHit> {
+    pub fn raycast(
+        &self,
+        origin: [f32; 3],
+        dir: [f32; 3],
+        max_distance: f32,
+    ) -> Option<RaycastHit> {
         self.raycast_inflated(origin, dir, 0.0, max_distance)
     }
 
@@ -530,7 +537,12 @@ impl AggregateGeometry {
     }
 
     /// Finds the closest raycast intersection across all primitives in this `AggregateGeometry`.
-    pub fn raycast(&self, origin: [f32; 3], dir: [f32; 3], max_distance: f32) -> Option<RaycastHit> {
+    pub fn raycast(
+        &self,
+        origin: [f32; 3],
+        dir: [f32; 3],
+        max_distance: f32,
+    ) -> Option<RaycastHit> {
         self.sweep_internal(origin, dir, 0.0, max_distance)
     }
 
@@ -904,8 +916,7 @@ pub fn extract_package_collision<R: Read + Seek>(
     let mut results = Vec::new();
 
     for (idx, exp) in export_table.entries().iter().enumerate() {
-        let Some(class_name) =
-            exp.resolve_class_name(&name_table, &import_table, &export_table)
+        let Some(class_name) = exp.resolve_class_name(&name_table, &import_table, &export_table)
         else {
             continue;
         };
@@ -1053,7 +1064,7 @@ mod tests {
         sphere_elem.write_u32::<LittleEndian>(64).unwrap();
         sphere_elem.write_u32::<LittleEndian>(0).unwrap();
         write_fname(&mut sphere_elem, 17); // Matrix
-        // 4 FPlanes (W, X, Y, Z) with translation (500, 0, 50)
+                                           // 4 FPlanes (W, X, Y, Z) with translation (500, 0, 50)
         for p in [
             [0.0f32, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],

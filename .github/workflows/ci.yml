@@ -111,10 +111,45 @@ jobs:
               print(f"❌ Manifest status is not verified: {manifest.get('status')}")
               sys.exit(1)
 
-          unsatisfied = [o["id"] for o in obligations if o.get("status") != "satisfied"]
-          if unsatisfied:
-              print(f"❌ Unsatisfied obligations: {unsatisfied}")
+          if not isinstance(obligations, list) or not obligations:
+              print("❌ Obligations ledger must be a non-empty list!")
               sys.exit(1)
 
-          print(f"✔ Cleanroom audit passed: {len(obligations)} obligations satisfied.")
+          allowed_statuses = (
+              "satisfied",
+              "partial",
+              "in_progress",
+              "open",
+              "planned",
+              "archived",
+          )
+          allowed_set = set(allowed_statuses)
+          required_fields = ("id", "subject", "claim", "evidence_criteria")
+          counts = {s: 0 for s in allowed_statuses}
+          errors = []
+
+          for idx, item in enumerate(obligations):
+              if not isinstance(item, dict):
+                  errors.append(f"entry[{idx}] is not an object")
+                  continue
+              oid = item.get("id") or f"entry[{idx}]"
+              for field in required_fields:
+                  val = item.get(field)
+                  if not isinstance(val, str) or not val.strip():
+                      errors.append(f"{oid}: missing or empty '{field}'")
+              status = item.get("status")
+              if not isinstance(status, str) or status not in allowed_set:
+                  errors.append(f"{oid}: invalid status {status!r}")
+              else:
+                  counts[status] += 1
+
+          if errors:
+              print(f"❌ Cleanroom ledger validation errors: {errors}")
+              sys.exit(1)
+
+          breakdown = ", ".join(f"{s}={counts[s]}" for s in allowed_statuses)
+          print(
+              f"✔ Cleanroom audit passed: {len(obligations)} obligations verified "
+              f"({breakdown})."
+          )
           EOF

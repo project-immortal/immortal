@@ -69,12 +69,21 @@ pub enum PropertyValue {
     Float(f32),
     Bool(bool),
     Byte(u8),
-    Enum { enum_name: String, value: FName },
+    Enum {
+        enum_name: String,
+        value: FName,
+    },
     Name(FName, Option<String>),
     Object(PackageIndex),
     Str(String),
-    Struct { struct_name: String, data: StructValue },
-    Array { count: u32, raw_elements: Vec<u8> },
+    Struct {
+        struct_name: String,
+        data: StructValue,
+    },
+    Array {
+        count: u32,
+        raw_elements: Vec<u8>,
+    },
     Raw(Vec<u8>),
 }
 

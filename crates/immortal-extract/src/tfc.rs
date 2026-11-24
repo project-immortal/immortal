@@ -419,12 +419,7 @@ impl TfcResolver {
 
 /// Builds a DirectDraw Surface (`.dds`) header (128 bytes for legacy formats,
 /// or 148 bytes with the 20-byte `DDS_HEADER_DXT10` extension for DX10 formats such as `Bc7`).
-pub fn build_dds_header(
-    width: u32,
-    height: u32,
-    format: TextureFormat,
-    mip_count: u32,
-) -> Vec<u8> {
+pub fn build_dds_header(width: u32, height: u32, format: TextureFormat, mip_count: u32) -> Vec<u8> {
     let total_len = if format.uses_dx10_header() { 148 } else { 128 };
     let mut header = vec![0u8; total_len];
     let mut cursor = 0;
@@ -719,14 +714,12 @@ mod tests {
 
         let bc7_hdr = build_dds_header(1024, 1024, TextureFormat::Bc7, 1);
         assert_eq!(bc7_hdr.len(), 148);
-        let four_cc_dx10 =
-            u32::from_le_bytes([bc7_hdr[84], bc7_hdr[85], bc7_hdr[86], bc7_hdr[87]]);
+        let four_cc_dx10 = u32::from_le_bytes([bc7_hdr[84], bc7_hdr[85], bc7_hdr[86], bc7_hdr[87]]);
         assert_eq!(four_cc_dx10, FOURCC_DX10);
         let dxgi_format =
             u32::from_le_bytes([bc7_hdr[128], bc7_hdr[129], bc7_hdr[130], bc7_hdr[131]]);
         assert_eq!(dxgi_format, DXGI_FORMAT_BC7_UNORM);
-        let res_dim =
-            u32::from_le_bytes([bc7_hdr[132], bc7_hdr[133], bc7_hdr[134], bc7_hdr[135]]);
+        let res_dim = u32::from_le_bytes([bc7_hdr[132], bc7_hdr[133], bc7_hdr[134], bc7_hdr[135]]);
         assert_eq!(res_dim, D3D10_RESOURCE_DIMENSION_TEXTURE2D);
         let array_size =
             u32::from_le_bytes([bc7_hdr[140], bc7_hdr[141], bc7_hdr[142], bc7_hdr[143]]);

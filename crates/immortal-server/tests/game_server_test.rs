@@ -10,9 +10,9 @@
 
 use immortal_core::ChampionId;
 use immortal_net::{
-    ActorBunch, ActorBunchCodec, BitWriter, Bunch, ControlMessage, HelloRecvReply, HelloSend,
-    NetName, NetValue, ObjectRef, PingRecv, PingSend, ReplicatedItem, RpcParamValue,
-    Ue3ChannelType, Ue3Packet, ue3_handshake_crc, ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX,
+    ue3_handshake_crc, ActorBunch, ActorBunchCodec, BitWriter, Bunch, ControlMessage,
+    HelloRecvReply, HelloSend, NetName, NetValue, ObjectRef, PingRecv, PingSend, ReplicatedItem,
+    RpcParamValue, Ue3ChannelType, Ue3Packet, ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX,
     CPACK_OP_BUNCH, DEFAULT_ENGINE_MIN_NET_VERSION, DEFAULT_ENGINE_NET_VERSION, DEFAULT_HMAC_KEY,
     PCOM_PREFIX_LEN,
 };
@@ -419,7 +419,7 @@ async fn test_game_server_pcom_driver_loopback_integration() {
 
 #[tokio::test]
 async fn test_dedicated_server_handshake_and_map_loaded_hold() {
-    use immortal_net::{DedicatedControlFrame, EXUDP_MAX_PACKET_BITS, PcomPrefix};
+    use immortal_net::{DedicatedControlFrame, PcomPrefix, EXUDP_MAX_PACKET_BITS};
 
     let config = GameServerConfig {
         bind_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
@@ -453,9 +453,11 @@ async fn test_dedicated_server_handshake_and_map_loaded_hold() {
     assert_eq!(n, 46);
     let challenge_frame = DedicatedControlFrame::parse(&buf[..n]).expect("Parse ServerChallenge");
     let (server_token, challenge_flag) = match challenge_frame {
-        DedicatedControlFrame::ServerChallenge { handshake_flag, server_cookie, .. } => {
-            (server_cookie, handshake_flag)
-        }
+        DedicatedControlFrame::ServerChallenge {
+            handshake_flag,
+            server_cookie,
+            ..
+        } => (server_cookie, handshake_flag),
         other => panic!("Expected ServerChallenge, got {:?}", other),
     };
     assert_eq!(challenge_flag, 0x5D);
@@ -479,7 +481,8 @@ async fn test_dedicated_server_handshake_and_map_loaded_hold() {
     // 3. Sequenced Seq 1 with dynamic 6-byte session token: NMT_MapLoaded (0x2A) -> ACK only
     let prefix = PcomPrefix::dedicated_sequenced(1, Some(server_token));
     let mut c1 = Ue3Packet::new_with_prefix(prefix, 1);
-    c1.bunches.push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
+    c1.bunches
+        .push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
 
     let wire1 = c1.encode_pcom(EXUDP_MAX_PACKET_BITS).unwrap();
     client_socket.send(&wire1).await.unwrap();
@@ -489,7 +492,8 @@ async fn test_dedicated_server_handshake_and_map_loaded_hold() {
         .expect("Timeout waiting for dedicated ACK reply")
         .unwrap();
 
-    let s1 = Ue3Packet::decode_with_max_bits(&buf[..n], EXUDP_MAX_PACKET_BITS).expect("Decode dedicated server reply");
+    let s1 = Ue3Packet::decode_with_max_bits(&buf[..n], EXUDP_MAX_PACKET_BITS)
+        .expect("Decode dedicated server reply");
     assert_eq!(s1.pcom_prefix.sequence(), Some(1));
     assert_eq!(s1.pcom_prefix.session_token(), Some(&server_token));
     assert_eq!(s1.acks, vec![1]);
@@ -591,8 +595,10 @@ async fn run_exudp0_full_handshake_case(config: GameServerConfig) {
     let mut c2 = Ue3Packet::new(prefix, client_pkt_id);
     client_pkt_id += 1;
     c2.acks.push(s1.packet_id);
-    c2.bunches
-        .push(Bunch::control(ctrl_seq, ControlMessage::ServerAuthRequest.encode()));
+    c2.bunches.push(Bunch::control(
+        ctrl_seq,
+        ControlMessage::ServerAuthRequest.encode(),
+    ));
     ctrl_seq += 1;
     client_socket.send(&c2.encode().unwrap()).await.unwrap();
     let n = timeout(Duration::from_millis(500), client_socket.recv(&mut buf))
@@ -960,9 +966,8 @@ async fn run_exudp0_full_handshake_case(config: GameServerConfig) {
         } if name == "PlayerReplicationInfo"
     )));
 
-    let (bot_pri_cache, bot_pri_layout) = expected_schemas
-        .for_channel(BOT_PRI_CHANNEL_INDEX)
-        .unwrap();
+    let (bot_pri_cache, bot_pri_layout) =
+        expected_schemas.for_channel(BOT_PRI_CHANNEL_INDEX).unwrap();
     let bot_pri_decoded = ActorBunchCodec::decode_bunch(
         actor_open_bunches.get(&BOT_PRI_CHANNEL_INDEX).unwrap(),
         bot_pri_cache,
@@ -1086,7 +1091,10 @@ async fn run_exudp0_full_handshake_case(config: GameServerConfig) {
     let s8 = Ue3Packet::decode(&buf[..n]).unwrap();
     assert_eq!(s8.acks, vec![client_pkt_id]);
     assert_eq!(s8.bunches.len(), 1);
-    assert_eq!(s8.bunches[0].header.ch_index, PLAYER_CONTROLLER_CHANNEL_INDEX);
+    assert_eq!(
+        s8.bunches[0].header.ch_index,
+        PLAYER_CONTROLLER_CHANNEL_INDEX
+    );
     assert!(!s8.bunches[0].header.flags.b_reliable);
     let ts_decoded = ActorBunchCodec::decode_bunch(&s8.bunches[0], pc_cache, None)
         .expect("r_fServerTimeStamp heartbeat must decode with 0 leftover bits");

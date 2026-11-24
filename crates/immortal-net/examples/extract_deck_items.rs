@@ -16,9 +16,7 @@
 //!   all Deck/Item identifiers shown below are externally correlated from `CAP-03_Launch.log` and
 //!   binary VAs, NOT parsed from encrypted UDP payloads.
 
-use immortal_net::bunch::{
-    DedicatedControlFrame, SUBFLAG_SEQUENCED, SUBFLAG_UNSEQUENCED,
-};
+use immortal_net::bunch::{DedicatedControlFrame, SUBFLAG_SEQUENCED, SUBFLAG_UNSEQUENCED};
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -99,12 +97,19 @@ impl PcapExtractor {
                         let cap_len = u32::from_le_bytes(body[12..16].try_into()?) as usize;
                         let linktype = interfaces.get(iface_id).copied().unwrap_or(141);
 
-                        let time_sec = (((ts_high as u64) << 32) | (ts_low as u64)) as f64 / 1_000_000.0;
+                        let time_sec =
+                            (((ts_high as u64) << 32) | (ts_low as u64)) as f64 / 1_000_000.0;
                         frame_number += 1;
 
                         if body.len() >= 20 + cap_len {
                             let packet_data = &body[20..20 + cap_len];
-                            if let Some(pkt) = Self::parse_udp(packet_data, linktype, frame_number, time_sec, port_filter) {
+                            if let Some(pkt) = Self::parse_udp(
+                                packet_data,
+                                linktype,
+                                frame_number,
+                                time_sec,
+                                port_filter,
+                            ) {
                                 packets.push(pkt);
                             }
                         }
@@ -118,7 +123,13 @@ impl PcapExtractor {
                         frame_number += 1;
                         if body.len() >= 4 + orig_len {
                             let packet_data = &body[4..4 + orig_len];
-                            if let Some(pkt) = Self::parse_udp(packet_data, linktype, frame_number, 0.0, port_filter) {
+                            if let Some(pkt) = Self::parse_udp(
+                                packet_data,
+                                linktype,
+                                frame_number,
+                                0.0,
+                                port_filter,
+                            ) {
                                 packets.push(pkt);
                             }
                         }
@@ -138,7 +149,8 @@ impl PcapExtractor {
         let mut packets = Vec::new();
         let mut ghdr = [0u8; 24];
         reader.read_exact(&mut ghdr)?;
-        let is_little = ghdr[0..4] == [0xd4, 0xc3, 0xb2, 0xa1] || ghdr[0..4] == [0x4d, 0x3c, 0xb2, 0xa1];
+        let is_little =
+            ghdr[0..4] == [0xd4, 0xc3, 0xb2, 0xa1] || ghdr[0..4] == [0x4d, 0x3c, 0xb2, 0xa1];
         let linktype = if is_little {
             u32::from_le_bytes(ghdr[20..24].try_into()?) as u16
         } else {
@@ -167,7 +179,9 @@ impl PcapExtractor {
             reader.read_exact(&mut packet_data)?;
 
             frame_number += 1;
-            if let Some(pkt) = Self::parse_udp(&packet_data, linktype, frame_number, time_sec, port_filter) {
+            if let Some(pkt) =
+                Self::parse_udp(&packet_data, linktype, frame_number, time_sec, port_filter)
+            {
                 packets.push(pkt);
             }
         }
@@ -216,8 +230,14 @@ impl PcapExtractor {
             return None;
         }
 
-        let src_ip = format!("{}.{}.{}.{}", ip_data[12], ip_data[13], ip_data[14], ip_data[15]);
-        let dst_ip = format!("{}.{}.{}.{}", ip_data[16], ip_data[17], ip_data[18], ip_data[19]);
+        let src_ip = format!(
+            "{}.{}.{}.{}",
+            ip_data[12], ip_data[13], ip_data[14], ip_data[15]
+        );
+        let dst_ip = format!(
+            "{}.{}.{}.{}",
+            ip_data[16], ip_data[17], ip_data[18], ip_data[19]
+        );
 
         let udp_header = &ip_data[ihl..ihl + 8];
         let src_port = u16::from_be_bytes(udp_header[0..2].try_into().ok()?);
@@ -253,8 +273,10 @@ impl PcapExtractor {
         }
         let mut offset = 4;
         while offset + 4 <= packet_data.len() {
-            let tlv_len = u16::from_le_bytes(packet_data[offset..offset + 2].try_into().ok()?) as usize;
-            let tlv_type = u16::from_le_bytes(packet_data[offset + 2..offset + 4].try_into().ok()?) & 0x7FFF;
+            let tlv_len =
+                u16::from_le_bytes(packet_data[offset..offset + 2].try_into().ok()?) as usize;
+            let tlv_type =
+                u16::from_le_bytes(packet_data[offset + 2..offset + 4].try_into().ok()?) & 0x7FFF;
             if tlv_len < 4 {
                 break;
             }
@@ -321,14 +343,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pcap_path = locate_capture_file();
     println!("[*] Capture Target: {}", pcap_path.display());
     if !pcap_path.exists() {
-        eprintln!("[-] Error: Target capture file does not exist at {}", pcap_path.display());
-        eprintln!("    Please specify path via: cargo run --example extract_deck_items -- --pcap <path>");
+        eprintln!(
+            "[-] Error: Target capture file does not exist at {}",
+            pcap_path.display()
+        );
+        eprintln!(
+            "    Please specify path via: cargo run --example extract_deck_items -- --pcap <path>"
+        );
         std::process::exit(1);
     }
 
     println!("[*] Ingesting UDP 9113 datagram stream (NFLOG / PCAPNG)...");
     let packets = PcapExtractor::extract_packets(&pcap_path, Some(9113))?;
-    println!("[+] Total UDP Port 9113 Packets Extracted: {}\n", packets.len());
+    println!(
+        "[+] Total UDP Port 9113 Packets Extracted: {}\n",
+        packets.len()
+    );
 
     // 1. Audit Transport Framing & Handshake Protocol
     let mut unsequenced_frames = 0usize;
@@ -363,8 +393,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if subflags == SUBFLAG_UNSEQUENCED {
             unsequenced_frames += 1;
-            if let Some(DedicatedControlFrame::ServerChallenge { client_cookie, server_cookie, .. }) =
-                DedicatedControlFrame::parse(payload)
+            if let Some(DedicatedControlFrame::ServerChallenge {
+                client_cookie,
+                server_cookie,
+                ..
+            }) = DedicatedControlFrame::parse(payload)
             {
                 client_challenge_cookie = Some(client_cookie);
                 server_challenge_cookie = Some(server_cookie);
@@ -424,19 +457,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("--- [PHASE 1: TRANSPORT FRAMING & CRYPTOGRAPHIC BARRIER] ---");
-    println!("  • Unsequenced Control Frames (0x0010): {} frames", unsequenced_frames);
-    println!("  • Sequenced Gameplay Frames  (0x0001): {} frames", sequenced_frames);
+    println!(
+        "  • Unsequenced Control Frames (0x0010): {} frames",
+        unsequenced_frames
+    );
+    println!(
+        "  • Sequenced Gameplay Frames  (0x0001): {} frames",
+        sequenced_frames
+    );
 
     if let (Some(cc), Some(sc)) = (client_challenge_cookie, server_challenge_cookie) {
-        let cc_hex = cc.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
-        let sc_hex = sc.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
-        println!("  • Handshake Challenge (Frame 14598): Client Cookie: [{}] | Server Cookie: [{}]", cc_hex, sc_hex);
+        let cc_hex = cc
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let sc_hex = sc
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<Vec<_>>()
+            .join(" ");
+        println!(
+            "  • Handshake Challenge (Frame 14598): Client Cookie: [{}] | Server Cookie: [{}]",
+            cc_hex, sc_hex
+        );
     }
 
     if let Some((fnum, pnum, token)) = session_token_seq1 {
-        let token_hex = token.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
-        println!("  • Seq 1 Session Token Barrier: Pkt #{} (Frame {}) -> Token: [{}]", pnum, fnum, token_hex);
-        assert_eq!(token, [0x78, 0x7E, 0x10, 0x7B, 0x9A, 0x8F], "Session token must match authentic CAP-03 ground truth");
+        let token_hex = token
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<Vec<_>>()
+            .join(" ");
+        println!(
+            "  • Seq 1 Session Token Barrier: Pkt #{} (Frame {}) -> Token: [{}]",
+            pnum, fnum, token_hex
+        );
+        assert_eq!(
+            token,
+            [0x78, 0x7E, 0x10, 0x7B, 0x9A, 0x8F],
+            "Session token must match authentic CAP-03 ground truth"
+        );
     }
 
     if let Some((fnum, pnum, ts)) = welcome_frame {
@@ -454,7 +515,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     // 2. Encrypted Sequenced Gameplay Stream & Entropy Audit (Server Seq 51–60, Packets #524–#560)
-    println!("--- [PHASE 2: SEQUENCED 0x0001 STREAM & SHANNON ENTROPY AUDIT (PACKETS #524–#560)] ---");
+    println!(
+        "--- [PHASE 2: SEQUENCED 0x0001 STREAM & SHANNON ENTROPY AUDIT (PACKETS #524–#560)] ---"
+    );
     println!("  • PSL-INV-012 Notice: Sequenced 0x0001 payloads in CAP-03 are encrypted by ?exudp=2 (UNK-CRYPTO-001).");
     println!("    Decoder unmapped / infrastructure not yet ready — cannot extract UE3 bunches from capture.");
     if let Some((fnum, pnum, ref pkt)) = actor_channel_open_pkt {
@@ -462,7 +525,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let entropy = calculate_shannon_entropy(&pkt.payload[10..]);
         println!("  • Packet #{:<5} Frame {:<5} | S->C Seq {:<3} | Len {:<4} B | Payload Entropy: {:.4} bits/byte (cipher)", pnum, fnum, seq, pkt.payload.len(), entropy);
         println!("    ├─ External Launch.log correlation: [0195.74] TgPlayerController_1 setplayer TgLocalPlayer_0");
-        println!("    └─ Wire Prefix Hex: [{}]", pkt.payload.iter().take(16).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
+        println!(
+            "    └─ Wire Prefix Hex: [{}]",
+            pkt.payload
+                .iter()
+                .take(16)
+                .map(|b| format!("{:02x}", b))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
     }
 
     if let Some((fnum, pnum, ref pkt)) = pawn_spawn_pkt {
@@ -487,12 +558,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 0
             };
-            let dir = if pkt.src_port == 50427 { "C->S" } else { "S->C" };
+            let dir = if pkt.src_port == 50427 {
+                "C->S"
+            } else {
+                "S->C"
+            };
             seq51_60_count += 1;
             if seq51_60_count <= 8 || pnum == 560 {
-                println!("    [{:04}] Frame {:<5} | {} | Seq {:<4} | Len {:<4} B | [{}]",
-                    pnum, pkt.frame_number, dir, seq, pkt.payload.len(),
-                    pkt.payload.iter().take(12).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ")
+                println!(
+                    "    [{:04}] Frame {:<5} | {} | Seq {:<4} | Len {:<4} B | [{}]",
+                    pnum,
+                    pkt.frame_number,
+                    dir,
+                    seq,
+                    pkt.payload.len(),
+                    pkt.payload
+                        .iter()
+                        .take(12)
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<Vec<_>>()
+                        .join(" ")
                 );
             } else if seq51_60_count == 9 {
                 println!("    ... (Packets #532–#559 outer prefixes audited across Server Seq 54–73 and Client Seq 464–471) ...");
@@ -516,18 +601,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some((pnum, ref pkt)) = deck_equip_packet {
         let seq = u32::from_le_bytes(pkt.payload[4..8].try_into().unwrap());
         let entropy = calculate_shannon_entropy(&pkt.payload[10..]);
-        println!("  • Correlated Encrypted Datagram in Window (Frame {}):", pkt.frame_number);
-        println!("    ├─ Packet Index:  Pkt #{} (Frame {})", pnum, pkt.frame_number);
-        println!("    ├─ Direction:     Client -> Server ({}:{} -> {}:{})", pkt.src_ip, pkt.src_port, pkt.dst_ip, pkt.dst_port);
+        println!(
+            "  • Correlated Encrypted Datagram in Window (Frame {}):",
+            pkt.frame_number
+        );
+        println!(
+            "    ├─ Packet Index:  Pkt #{} (Frame {})",
+            pnum, pkt.frame_number
+        );
+        println!(
+            "    ├─ Direction:     Client -> Server ({}:{} -> {}:{})",
+            pkt.src_ip, pkt.src_port, pkt.dst_ip, pkt.dst_port
+        );
         println!("    ├─ Outer Seq:     Client Monotonic Seq = {}", seq);
-        println!("    ├─ Timestamp:     ts = {:.3}s (time-window correlated to Launch.log [0225.57])", pkt.timestamp_sec);
-        println!("    ├─ Wire Length:   {} Bytes | Cipher Entropy: {:.4} bits/byte", pkt.payload.len(), entropy);
-        println!("    └─ Ciphertext:    [{}]", pkt.payload.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
+        println!(
+            "    ├─ Timestamp:     ts = {:.3}s (time-window correlated to Launch.log [0225.57])",
+            pkt.timestamp_sec
+        );
+        println!(
+            "    ├─ Wire Length:   {} Bytes | Cipher Entropy: {:.4} bits/byte",
+            pkt.payload.len(),
+            entropy
+        );
+        println!(
+            "    └─ Ciphertext:    [{}]",
+            pkt.payload
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
     }
     println!();
 
     // 4. Launch.log Timestamp Correlation & Entropy Verification: Item Purchase Windows (UNK-PROP-001 OPEN)
-    println!("--- [PHASE 4: LAUNCH.LOG CORRELATION — ITEM PURCHASE WINDOWS (UNK-PROP-001 OPEN)] ---");
+    println!(
+        "--- [PHASE 4: LAUNCH.LOG CORRELATION — ITEM PURCHASE WINDOWS (UNK-PROP-001 OPEN)] ---"
+    );
     println!("  • External Retail Log Reference:");
     println!("    [0249.85] Log: Soft Init of PropID 4 on DeviceID 11059 for FireModeID 10445 -- Setting to 0.00");
     println!("    [0249.85] Log: ATgPawn::ReceiveInventoryData called");
@@ -541,33 +651,84 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let seq = u32::from_le_bytes(pkt.payload[4..8].try_into().unwrap());
         let entropy = calculate_shannon_entropy(&pkt.payload[10..]);
         println!("  • Correlated Encrypted Datagram in Round 1 Window (C->S):");
-        println!("    ├─ Packet Index:  Pkt #{} (Frame {})", pnum, pkt.frame_number);
+        println!(
+            "    ├─ Packet Index:  Pkt #{} (Frame {})",
+            pnum, pkt.frame_number
+        );
         println!("    ├─ Outer Seq:     Client Monotonic Seq = {}", seq);
-        println!("    ├─ Timestamp:     ts = {:.3}s (time-window correlated to Launch.log [0249.85])", pkt.timestamp_sec);
-        println!("    ├─ Wire Length:   {} Bytes | Cipher Entropy: {:.4} bits/byte", pkt.payload.len(), entropy);
-        println!("    └─ Prefix+Cipher: [{}]", pkt.payload.iter().take(24).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
+        println!(
+            "    ├─ Timestamp:     ts = {:.3}s (time-window correlated to Launch.log [0249.85])",
+            pkt.timestamp_sec
+        );
+        println!(
+            "    ├─ Wire Length:   {} Bytes | Cipher Entropy: {:.4} bits/byte",
+            pkt.payload.len(),
+            entropy
+        );
+        println!(
+            "    └─ Prefix+Cipher: [{}]",
+            pkt.payload
+                .iter()
+                .take(24)
+                .map(|b| format!("{:02x}", b))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
     }
 
     if let Some((pnum, ref pkt)) = item_buy1_resp_packet {
         let seq = u32::from_le_bytes(pkt.payload[4..8].try_into().unwrap());
         let entropy = calculate_shannon_entropy(&pkt.payload[10..]);
         println!("  • Correlated Encrypted Datagram in Round 1 Window (S->C):");
-        println!("    ├─ Packet Index:  Pkt #{} (Frame {})", pnum, pkt.frame_number);
+        println!(
+            "    ├─ Packet Index:  Pkt #{} (Frame {})",
+            pnum, pkt.frame_number
+        );
         println!("    ├─ Outer Seq:     Server Monotonic Seq = {}", seq);
         println!("    ├─ Timestamp:     ts = {:.3}s", pkt.timestamp_sec);
-        println!("    ├─ Wire Length:   {} Bytes | Cipher Entropy: {:.4} bits/byte", pkt.payload.len(), entropy);
-        println!("    └─ Prefix+Cipher: [{}]", pkt.payload.iter().take(24).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
+        println!(
+            "    ├─ Wire Length:   {} Bytes | Cipher Entropy: {:.4} bits/byte",
+            pkt.payload.len(),
+            entropy
+        );
+        println!(
+            "    └─ Prefix+Cipher: [{}]",
+            pkt.payload
+                .iter()
+                .take(24)
+                .map(|b| format!("{:02x}", b))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
     }
 
     if let Some((pnum, ref pkt)) = item_buy2_packet {
         let seq = u32::from_le_bytes(pkt.payload[4..8].try_into().unwrap());
         let entropy = calculate_shannon_entropy(&pkt.payload[10..]);
         println!("  • Correlated Encrypted Datagram in Round 2 Window (S->C):");
-        println!("    ├─ Packet Index:  Pkt #{} (Frame {})", pnum, pkt.frame_number);
+        println!(
+            "    ├─ Packet Index:  Pkt #{} (Frame {})",
+            pnum, pkt.frame_number
+        );
         println!("    ├─ Outer Seq:     Server Monotonic Seq = {}", seq);
-        println!("    ├─ Timestamp:     ts = {:.3}s (time-window correlated to Launch.log [0547.10])", pkt.timestamp_sec);
-        println!("    ├─ Wire Length:   {} Bytes | Cipher Entropy: {:.4} bits/byte", pkt.payload.len(), entropy);
-        println!("    └─ Prefix+Cipher: [{}]", pkt.payload.iter().take(24).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
+        println!(
+            "    ├─ Timestamp:     ts = {:.3}s (time-window correlated to Launch.log [0547.10])",
+            pkt.timestamp_sec
+        );
+        println!(
+            "    ├─ Wire Length:   {} Bytes | Cipher Entropy: {:.4} bits/byte",
+            pkt.payload.len(),
+            entropy
+        );
+        println!(
+            "    └─ Prefix+Cipher: [{}]",
+            pkt.payload
+                .iter()
+                .take(24)
+                .map(|b| format!("{:02x}", b))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
     }
     println!();
 
@@ -577,8 +738,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("    - Unsequenced 0x0010 handshake headers and 10-byte outer prefixes are parsed from CAP-03.");
     println!("    - Sequenced 0x0001 payloads carry high-entropy ciphertext (~7.55 bits/byte on large frames),");
     println!("      encrypted by the ?exudp=2 session cipher (UNK-CRYPTO-001).");
-    println!("    - Decoder unmapped / infrastructure not yet ready — this tool does NOT decrypt or");
-    println!("      deserialize UE3 bunches, and UNK-PROP-001 remains OPEN pending UNK-CRYPTO-001.");
+    println!(
+        "    - Decoder unmapped / infrastructure not yet ready — this tool does NOT decrypt or"
+    );
+    println!(
+        "      deserialize UE3 bunches, and UNK-PROP-001 remains OPEN pending UNK-CRYPTO-001."
+    );
     println!();
 
     println!("================================================================================");

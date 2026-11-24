@@ -706,13 +706,13 @@ impl PackageMapManifest {
 
             let object_count = raw_net_count as u32;
             let object_base = running_base;
-            running_base = running_base
-                .checked_add(object_count)
-                .ok_or_else(|| ExtractError::CorruptChunk {
+            running_base = running_base.checked_add(object_count).ok_or_else(|| {
+                ExtractError::CorruptChunk {
                     reason: format!(
                         "PackageMapManifest ObjectBase overflow at package '{package_name}'"
                     ),
-                })?;
+                }
+            })?;
 
             entries.push(PackageMapEntry {
                 package_name: package_name.to_string(),
@@ -747,7 +747,11 @@ impl PackageMapManifest {
             parsed.push((stem, pkg.summary().clone()));
         }
 
-        Self::from_summaries(parsed.iter().map(|(name, summary)| (name.as_str(), summary)))
+        Self::from_summaries(
+            parsed
+                .iter()
+                .map(|(name, summary)| (name.as_str(), summary)),
+        )
     }
 
     /// Looks up a package entry by package stem name.
@@ -992,7 +996,13 @@ impl NetCacheRegistry {
             }
 
             if let Some(prop_kind) = PropertyClass::from_class_name(&class_name) {
-                match UPropertyExport::parse(slice, prop_kind, exp_name, exp_pkg_idx, none_name_index) {
+                match UPropertyExport::parse(
+                    slice,
+                    prop_kind,
+                    exp_name,
+                    exp_pkg_idx,
+                    none_name_index,
+                ) {
                     Ok(mut prop) => {
                         prop.tail_type_name = prop.tail.primary_type_index().and_then(|tidx| {
                             resolve_package_index_name(
@@ -1109,7 +1119,10 @@ impl NetCacheRegistry {
     }
 
     /// Recursively constructs (or returns cached) `ClassNetCache` for `class_name`.
-    pub fn build_class_net_cache(&mut self, class_name: &str) -> Result<ClassNetCache, ExtractError> {
+    pub fn build_class_net_cache(
+        &mut self,
+        class_name: &str,
+    ) -> Result<ClassNetCache, ExtractError> {
         let mut visiting = HashSet::new();
         self.build_class_net_cache_inner(class_name, &mut visiting, 0)
     }
@@ -1126,7 +1139,9 @@ impl NetCacheRegistry {
 
         if depth >= MAX_FIELD_CHAIN_DEPTH {
             return Err(ExtractError::CorruptChunk {
-                reason: format!("Class inheritance depth exceeded {MAX_FIELD_CHAIN_DEPTH} at '{class_name}'"),
+                reason: format!(
+                    "Class inheritance depth exceeded {MAX_FIELD_CHAIN_DEPTH} at '{class_name}'"
+                ),
             });
         }
 
@@ -1152,8 +1167,7 @@ impl NetCacheRegistry {
         };
 
         let fields_base = if let Some(ref sup_name) = record.super_name {
-            let sup_cache =
-                self.build_class_net_cache_inner(sup_name, visiting, depth + 1)?;
+            let sup_cache = self.build_class_net_cache_inner(sup_name, visiting, depth + 1)?;
             sup_cache.max_index
         } else {
             0
@@ -1229,7 +1243,8 @@ impl NetCacheRegistry {
         visiting.remove(class_name);
 
         if self.cache_memo.len() < MAX_NETCACHE_CLASSES {
-            self.cache_memo.insert(class_name.to_string(), cache.clone());
+            self.cache_memo
+                .insert(class_name.to_string(), cache.clone());
         }
 
         Ok(cache)
@@ -1448,7 +1463,12 @@ mod tests {
         let cases: &[(PropertyClass, u64, Option<u16>, &[i32])] = &[
             (PropertyClass::IntProperty, CPF_NET, Some(0x0120), &[]),
             (PropertyClass::FloatProperty, 0, None, &[]),
-            (PropertyClass::BoolProperty, CPF_NET | CPF_REP_NOTIFY, Some(0x0044), &[]),
+            (
+                PropertyClass::BoolProperty,
+                CPF_NET | CPF_REP_NOTIFY,
+                Some(0x0044),
+                &[],
+            ),
             (PropertyClass::StrProperty, 0, None, &[]),
             (PropertyClass::NameProperty, 0, None, &[]),
             (PropertyClass::ByteProperty, CPF_NET, Some(0x0010), &[-3]),
@@ -1457,7 +1477,12 @@ mod tests {
             (PropertyClass::InterfaceProperty, 0, None, &[-6]),
             (PropertyClass::StructProperty, CPF_NET, Some(0x0080), &[-7]),
             (PropertyClass::ArrayProperty, 0, None, &[12]),
-            (PropertyClass::ClassProperty, CPF_NET, Some(0x0090), &[-8, -9]),
+            (
+                PropertyClass::ClassProperty,
+                CPF_NET,
+                Some(0x0090),
+                &[-8, -9],
+            ),
             (PropertyClass::DelegateProperty, 0, None, &[15, 16]),
             (PropertyClass::MapProperty, 0, None, &[17, 18]),
         ];
@@ -1621,18 +1646,18 @@ mod tests {
 
         // Build synthetic XOR-compressed UPK with BaseActor -> ChildPawn net fields sorted by NetIndex
         let names = NameTable::new(vec![
-            NameEntry::new("None", 0),            // 0
-            NameEntry::new("Core", 0),            // 1
-            NameEntry::new("IntProperty", 0),     // 2
-            NameEntry::new("BoolProperty", 0),    // 3
-            NameEntry::new("Function", 0),        // 4
-            NameEntry::new("BaseActor", 0),       // 5
-            NameEntry::new("ChildPawn", 0),       // 6
-            NameEntry::new("Health", 0),          // 7
-            NameEntry::new("bHidden", 0),         // 8
-            NameEntry::new("ServerJump", 0),      // 9
-            NameEntry::new("OverrideNoBase", 0),  // 10
-            NameEntry::new("ParamBool", 0),       // 11
+            NameEntry::new("None", 0),           // 0
+            NameEntry::new("Core", 0),           // 1
+            NameEntry::new("IntProperty", 0),    // 2
+            NameEntry::new("BoolProperty", 0),   // 3
+            NameEntry::new("Function", 0),       // 4
+            NameEntry::new("BaseActor", 0),      // 5
+            NameEntry::new("ChildPawn", 0),      // 6
+            NameEntry::new("Health", 0),         // 7
+            NameEntry::new("bHidden", 0),        // 8
+            NameEntry::new("ServerJump", 0),     // 9
+            NameEntry::new("OverrideNoBase", 0), // 10
+            NameEntry::new("ParamBool", 0),      // 11
         ]);
         let imports = ImportTable::new(vec![
             ObjectImport {
@@ -1737,13 +1762,48 @@ mod tests {
         ];
 
         let mut raw_exports = vec![
-            (PackageIndex::NULL, PackageIndex::NULL, PackageIndex::NULL, FName::new(5, 0)),
-            (PackageIndex::from_import_index(0), PackageIndex::NULL, PackageIndex::from_export_index(0), FName::new(7, 0)),
-            (PackageIndex::from_import_index(1), PackageIndex::NULL, PackageIndex::from_export_index(0), FName::new(8, 0)),
-            (PackageIndex::NULL, PackageIndex::from_export_index(0), PackageIndex::NULL, FName::new(6, 0)),
-            (PackageIndex::from_import_index(2), PackageIndex::NULL, PackageIndex::from_export_index(3), FName::new(9, 0)),
-            (PackageIndex::from_import_index(1), PackageIndex::NULL, PackageIndex::from_export_index(4), FName::new(11, 0)),
-            (PackageIndex::from_import_index(2), PackageIndex::NULL, PackageIndex::from_export_index(3), FName::new(10, 0)),
+            (
+                PackageIndex::NULL,
+                PackageIndex::NULL,
+                PackageIndex::NULL,
+                FName::new(5, 0),
+            ),
+            (
+                PackageIndex::from_import_index(0),
+                PackageIndex::NULL,
+                PackageIndex::from_export_index(0),
+                FName::new(7, 0),
+            ),
+            (
+                PackageIndex::from_import_index(1),
+                PackageIndex::NULL,
+                PackageIndex::from_export_index(0),
+                FName::new(8, 0),
+            ),
+            (
+                PackageIndex::NULL,
+                PackageIndex::from_export_index(0),
+                PackageIndex::NULL,
+                FName::new(6, 0),
+            ),
+            (
+                PackageIndex::from_import_index(2),
+                PackageIndex::NULL,
+                PackageIndex::from_export_index(3),
+                FName::new(9, 0),
+            ),
+            (
+                PackageIndex::from_import_index(1),
+                PackageIndex::NULL,
+                PackageIndex::from_export_index(4),
+                FName::new(11, 0),
+            ),
+            (
+                PackageIndex::from_import_index(2),
+                PackageIndex::NULL,
+                PackageIndex::from_export_index(3),
+                FName::new(10, 0),
+            ),
         ];
 
         let mut chunk_payload = Vec::new();

@@ -9,8 +9,8 @@
 //! frame parsing, and actual raw packet bytes from CAP-03.
 
 use immortal_net::bunch::{
-    Bunch, ControlMessage, DedicatedControlFrame, PcomPrefix, Ue3Packet,
-    EXUDP_MAX_PACKET_BITS, MAX_ALLOWED_PACKET_BITS, SUBFLAG_SEQUENCED, SUBFLAG_UNSEQUENCED,
+    Bunch, ControlMessage, DedicatedControlFrame, PcomPrefix, Ue3Packet, EXUDP_MAX_PACKET_BITS,
+    MAX_ALLOWED_PACKET_BITS, SUBFLAG_SEQUENCED, SUBFLAG_UNSEQUENCED,
 };
 use immortal_net::error::NetError;
 
@@ -58,7 +58,8 @@ fn test_dedicated_sequenced_seq1_session_token_roundtrip() {
     assert_eq!(prefix.len(), 16);
 
     let mut pkt = Ue3Packet::new_with_prefix(prefix.clone(), 1);
-    pkt.bunches.push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
+    pkt.bunches
+        .push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
 
     let wire = pkt.encode_pcom(EXUDP_MAX_PACKET_BITS).expect("encode seq1");
     assert_eq!(&wire[..4], &[0x01, 0x00, 0x00, 0x00]); // magic
@@ -66,13 +67,16 @@ fn test_dedicated_sequenced_seq1_session_token_roundtrip() {
     assert_eq!(&wire[8..10], &[0x00, 0x01]); // subflags = 0x0001
     assert_eq!(&wire[10..16], &token); // 6-byte session token
 
-    let decoded = Ue3Packet::decode_with_max_bits(&wire, EXUDP_MAX_PACKET_BITS).expect("decode seq1");
+    let decoded =
+        Ue3Packet::decode_with_max_bits(&wire, EXUDP_MAX_PACKET_BITS).expect("decode seq1");
     assert_eq!(decoded.pcom_prefix, prefix);
     assert_eq!(decoded.packet_id, 1);
     assert_eq!(decoded.bunches.len(), 1);
 
     // Re-encoding must match bit-for-bit
-    let reencoded = decoded.encode_pcom(EXUDP_MAX_PACKET_BITS).expect("reencode");
+    let reencoded = decoded
+        .encode_pcom(EXUDP_MAX_PACKET_BITS)
+        .expect("reencode");
     assert_eq!(reencoded, wire);
 }
 
@@ -87,20 +91,26 @@ fn test_dedicated_sequenced_seq2_plus_roundtrip() {
 
         let mut pkt = Ue3Packet::new_with_prefix(prefix.clone(), (seq % 16384) as u16);
         pkt.acks.push((seq - 1) as u16);
-        pkt.bunches.push(Bunch::control(seq % 1024, ControlMessage::Join.encode()));
+        pkt.bunches
+            .push(Bunch::control(seq % 1024, ControlMessage::Join.encode()));
 
-        let wire = pkt.encode_pcom(EXUDP_MAX_PACKET_BITS).expect("encode seq2+");
+        let wire = pkt
+            .encode_pcom(EXUDP_MAX_PACKET_BITS)
+            .expect("encode seq2+");
         assert_eq!(&wire[..4], &[0x01, 0x00, 0x00, 0x00]);
         assert_eq!(&wire[4..8], &seq.to_le_bytes());
         assert_eq!(&wire[8..10], &[0x00, 0x01]);
 
-        let decoded = Ue3Packet::decode_with_max_bits(&wire, EXUDP_MAX_PACKET_BITS).expect("decode seq2+");
+        let decoded =
+            Ue3Packet::decode_with_max_bits(&wire, EXUDP_MAX_PACKET_BITS).expect("decode seq2+");
         assert_eq!(decoded.pcom_prefix, prefix);
         assert_eq!(decoded.packet_id, (seq % 16384) as u16);
         assert_eq!(decoded.acks, vec![(seq - 1) as u16]);
         assert_eq!(decoded.bunches.len(), 1);
 
-        let reencoded = decoded.encode_pcom(EXUDP_MAX_PACKET_BITS).expect("reencode");
+        let reencoded = decoded
+            .encode_pcom(EXUDP_MAX_PACKET_BITS)
+            .expect("reencode");
         assert_eq!(reencoded, wire);
     }
 }
@@ -113,7 +123,8 @@ fn test_standalone_framing_roundtrip() {
     assert_eq!(prefix.len(), 6);
 
     let mut pkt = Ue3Packet::new_with_prefix(prefix.clone(), 42);
-    pkt.bunches.push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
+    pkt.bunches
+        .push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
 
     let wire = pkt.encode().expect("encode standalone");
     assert_eq!(&wire[..4], &42u32.to_le_bytes());
@@ -149,7 +160,12 @@ fn test_unsequenced_control_frame_rejection_and_parsing() {
 
     let parsed = DedicatedControlFrame::parse(&hello).expect("parse hello");
     match parsed {
-        DedicatedControlFrame::ClientHello { descriptor_len, ticket_payload, hmac, .. } => {
+        DedicatedControlFrame::ClientHello {
+            descriptor_len,
+            ticket_payload,
+            hmac,
+            ..
+        } => {
             assert_eq!(descriptor_len, 72);
             assert_eq!(ticket_payload.len(), 72);
             assert_eq!(hmac, [0xAB; 32]);
@@ -167,7 +183,12 @@ fn test_unsequenced_control_frame_rejection_and_parsing() {
 
     let parsed_ch = DedicatedControlFrame::parse(&challenge).expect("parse challenge");
     match parsed_ch {
-        DedicatedControlFrame::ServerChallenge { handshake_flag, client_cookie, server_cookie, .. } => {
+        DedicatedControlFrame::ServerChallenge {
+            handshake_flag,
+            client_cookie,
+            server_cookie,
+            ..
+        } => {
             assert_eq!(handshake_flag, 0x5D);
             assert_eq!(client_cookie, [1, 2, 3, 4, 5]);
             assert_eq!(server_cookie, [6, 7, 8, 9, 10, 11]);
@@ -184,7 +205,12 @@ fn test_unsequenced_control_frame_rejection_and_parsing() {
 
     let parsed_pmtu = DedicatedControlFrame::parse(&pmtu).expect("parse pmtu");
     match parsed_pmtu {
-        DedicatedControlFrame::PmtuProbe { probe_token, probe_marker, total_len, .. } => {
+        DedicatedControlFrame::PmtuProbe {
+            probe_token,
+            probe_marker,
+            total_len,
+            ..
+        } => {
             assert_eq!(probe_token, [0x25, 0x3E, 0x4E, 0xED, 0xA3, 0x7C]);
             assert_eq!(probe_marker, [0xFB, 0x73, 0x09, 0xF1, 0x45, 0x49]);
             assert_eq!(total_len, 1440);
@@ -201,7 +227,11 @@ fn test_unsequenced_control_frame_rejection_and_parsing() {
 
     let parsed_comp = DedicatedControlFrame::parse(&complete).expect("parse complete");
     match parsed_comp {
-        DedicatedControlFrame::HandshakeComplete { handshake_flag, session_tokens, .. } => {
+        DedicatedControlFrame::HandshakeComplete {
+            handshake_flag,
+            session_tokens,
+            ..
+        } => {
             assert_eq!(handshake_flag, 0x58);
             assert_eq!(session_tokens, [0xCC; 11]);
         }

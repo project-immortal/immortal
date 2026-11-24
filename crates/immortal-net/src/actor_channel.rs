@@ -623,7 +623,12 @@ impl ActorBunchCodec {
             (NetPropertyType::Byte { enum_count: None }, NetValue::Byte(b)) => {
                 writer.write_u8(*b);
             }
-            (NetPropertyType::Byte { enum_count: Some(count) }, NetValue::Enum(v)) => {
+            (
+                NetPropertyType::Byte {
+                    enum_count: Some(count),
+                },
+                NetValue::Enum(v),
+            ) => {
                 writer.write_int(*v, *count)?;
             }
             (NetPropertyType::Int, NetValue::Int(i)) => {
@@ -673,12 +678,7 @@ impl ActorBunchCodec {
                         )));
                     }
                     for elem in &fval.values {
-                        Self::encode_property_value(
-                            writer,
-                            &fschema.prop_type,
-                            elem,
-                            depth + 1,
-                        )?;
+                        Self::encode_property_value(writer, &fschema.prop_type, elem, depth + 1)?;
                     }
                 }
             }
@@ -718,11 +718,7 @@ impl ActorBunchCodec {
                             schema.name
                         )));
                     }
-                    let array_index = if *array_dim > 1 {
-                        reader.read_u8()?
-                    } else {
-                        0
-                    };
+                    let array_index = if *array_dim > 1 { reader.read_u8()? } else { 0 };
                     let value = Self::decode_property_value_depth(reader, prop_type, 0)?;
                     items.push(ReplicatedItem::Property {
                         rep_index,

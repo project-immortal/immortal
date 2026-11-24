@@ -67,7 +67,7 @@ Project Immortal will implement a cleanroom extractor in `immortal-extract` to e
   - Export data of `UBrushComponent` or `URB_BodySetup` from level packages (`*_P.upk`, `*_Collision.upk`).
 - **Outputs**:
   - Strongly typed `AggregateGeometry` struct:
-    ```rust
+    ```rust,ignore
     pub struct ConvexHull {
         pub vertices: Vec<[f32; 3]>,
         pub permuted_planes: Vec<[f32; 4]>, // SIMD SSE aligned planes for fast SAT
@@ -155,7 +155,7 @@ Project Immortal's server-side physics simulation will decode the `m_bCanBaseOn`
 - **Outputs**:
   - `SurfaceInteraction { can_stand: bool, apply_rooftop_slide: bool }`.
 - **Algorithm**:
-  ```rust
+  ```rust,ignore
   let is_steep = normal[2] < 0.7071; // Angle > 45 degrees
   let is_vertical = normal[2].abs() < 0.1; // Near vertical wall
   let apply_slide = !m_bCanBaseOn && is_steep && !is_vertical;
@@ -191,7 +191,7 @@ By implementing a cleanroom reader for `TAG0` containers and applying the invari
   - Raw bulk data bytes of `HavokNavMeshActor` from map package (`*_P.upk`).
 - **Outputs**:
   - Cleanroom navigation graph:
-    ```rust
+    ```rust,ignore
     pub struct NavMeshGraph {
         pub vertices: Vec<[f32; 3]>, // Scaled by 16.0 to Unreal Units
         pub faces: Vec<NavFace>,
@@ -463,7 +463,7 @@ Adopting this format allows Project Immortal's asset toolchain to distribute lig
 
 ## 3. Implementation Roadmap & Crate Allocation
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                    PROJECT IMMORTAL ROADMAP WITH ADOPTIONS                  │
 └──────────────────────────────────────┬──────────────────────────────────────┘

@@ -131,7 +131,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let inv_path = output_dir.join("fernando_collision_dump.json");
         std::fs::write(&inv_path, serde_json::to_string_pretty(&collision)?)?;
-        println!("  • Wrote real parsed collision JSON: {}", inv_path.display());
+        println!(
+            "  • Wrote real parsed collision JSON: {}",
+            inv_path.display()
+        );
     } else {
         println!("  ⚠️ UPK file not found: {}", upk_path.display());
     }

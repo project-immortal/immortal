@@ -79,7 +79,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     if inventory.textures.len() > 10 {
-        println!("  • ... and {} more Texture2D exports", inventory.textures.len() - 10);
+        println!(
+            "  • ... and {} more Texture2D exports",
+            inventory.textures.len() - 10
+        );
     }
 
     let collision = extract_package_collision(&mut pkg)?;

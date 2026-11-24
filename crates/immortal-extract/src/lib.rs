@@ -52,8 +52,8 @@ pub use netcache::{
     ClassNetCache, FieldNetCacheEntry, NetCacheRegistry, NetFieldKind, PackageMapEntry,
     PackageMapManifest, PackageParseStats, PropertyClass, PropertyTail, RpcParamSchema,
     UEnumExport, UFunctionExport, UPropertyExport, UStructExport, CPF_NET, CPF_PARM,
-    CPF_REP_NOTIFY, CPF_RETURN_PARM, FUNC_NET, FUNC_NET_CLIENT, FUNC_NET_SERVER,
-    MAX_ENUM_NAMES, MAX_FIELD_CHAIN_DEPTH, MAX_NETCACHE_CLASSES, MAX_PACKAGE_MANIFEST_ENTRIES,
+    CPF_REP_NOTIFY, CPF_RETURN_PARM, FUNC_NET, FUNC_NET_CLIENT, FUNC_NET_SERVER, MAX_ENUM_NAMES,
+    MAX_FIELD_CHAIN_DEPTH, MAX_NETCACHE_CLASSES, MAX_PACKAGE_MANIFEST_ENTRIES,
     MINIMAL_SHOOTING_RANGE_PACKAGES,
 };
 pub use package::UpkPackage;

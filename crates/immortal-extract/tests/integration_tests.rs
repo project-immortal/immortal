@@ -14,9 +14,9 @@ use immortal_extract::{
     export_weapon_static_mesh, extract_package_collision, extract_weapon_texture,
     get_weapon_mapping, inspect_weapon_package, parse_bkhd, parse_wav, write_compressed_chunk,
     write_tfc_chunk, ExportTable, FByteBulkData, FCompressedChunk, FMeshBone, FName,
-    FSkeletalMeshLODModel, FTexture2DMipMap, GPUSkinVertex, GenerationInfo, ImportTable,
-    NameEntry, NameTable, ObjectExport, ObjectImport, PackageIndex, PackageSummary, PckArchive,
-    RefSkeleton, TextureFormat, TfcResolver, UpkPackage, WavSpec, WeaponExtractionPipeline,
+    FSkeletalMeshLODModel, FTexture2DMipMap, GPUSkinVertex, GenerationInfo, ImportTable, NameEntry,
+    NameTable, ObjectExport, ObjectImport, PackageIndex, PackageSummary, PckArchive, RefSkeleton,
+    TextureFormat, TfcResolver, UpkPackage, WavSpec, WeaponExtractionPipeline,
     BULKDATA_COMPRESSED_LZO, BULKDATA_COMPRESSED_ZLIB, BULKDATA_STORE_IN_SEPARATE_FILE,
     CHAMPION_FERNANDO, COMPRESS_LZO, COMPRESS_ZLIB, DEVICE_FERNANDO_FLAME_LANCE, PKG_COMPRESSED,
     PKG_COOKED, UPK_MAGIC,
@@ -1212,20 +1212,20 @@ fn test_integration_synthetic_upk_collision_extraction() {
     use byteorder::{LittleEndian, WriteBytesExt};
 
     let name_table = NameTable::new(vec![
-        NameEntry::new("None", 0),                 // 0
-        NameEntry::new("Core", 0),                 // 1
-        NameEntry::new("Class", 0),                // 2
-        NameEntry::new("BrushComponent", 0),       // 3
-        NameEntry::new("BrushAggGeom", 0),         // 4
-        NameEntry::new("StructProperty", 0),       // 5
-        NameEntry::new("KAggregateGeom", 0),       // 6
-        NameEntry::new("ConvexElems", 0),          // 7
-        NameEntry::new("ArrayProperty", 0),        // 8
-        NameEntry::new("VertexData", 0),           // 9
-        NameEntry::new("FacePlaneData", 0),        // 10
-        NameEntry::new("ElemBox", 0),              // 11
-        NameEntry::new("Box", 0),                  // 12
-        NameEntry::new("BrushComponent_0", 0),     // 13
+        NameEntry::new("None", 0),             // 0
+        NameEntry::new("Core", 0),             // 1
+        NameEntry::new("Class", 0),            // 2
+        NameEntry::new("BrushComponent", 0),   // 3
+        NameEntry::new("BrushAggGeom", 0),     // 4
+        NameEntry::new("StructProperty", 0),   // 5
+        NameEntry::new("KAggregateGeom", 0),   // 6
+        NameEntry::new("ConvexElems", 0),      // 7
+        NameEntry::new("ArrayProperty", 0),    // 8
+        NameEntry::new("VertexData", 0),       // 9
+        NameEntry::new("FacePlaneData", 0),    // 10
+        NameEntry::new("ElemBox", 0),          // 11
+        NameEntry::new("Box", 0),              // 12
+        NameEntry::new("BrushComponent_0", 0), // 13
     ]);
 
     let import_table = ImportTable::new(vec![ObjectImport {
@@ -1486,7 +1486,10 @@ fn test_paladins_real_upk_netcache_and_manifest_parity_if_present() {
     assert_eq!(pc.own_fields[0].rep_index, 161);
     assert_eq!(pc.own_fields[0].field_name, "PlayNotifySound");
     assert_eq!(pc.own_fields[0].object_net_index, 16952);
-    assert!(matches!(pc.own_fields[0].kind, NetFieldKind::Function { .. }));
+    assert!(matches!(
+        pc.own_fields[0].kind,
+        NetFieldKind::Function { .. }
+    ));
     let last_pc = pc.own_fields.last().unwrap();
     assert_eq!(last_pc.rep_index, 302);
     assert_eq!(last_pc.field_name, "r_LastPurchasedItems");
@@ -1520,7 +1523,10 @@ fn test_paladins_real_upk_netcache_and_manifest_parity_if_present() {
     assert_eq!(fernando.fields_base, 261);
     assert_eq!(fernando.own_fields.len(), 3);
     assert_eq!(fernando.max_index, 264);
-    assert_eq!(fernando.own_fields[0].field_name, "r_bAegisShieldWasDestroyed");
+    assert_eq!(
+        fernando.own_fields[0].field_name,
+        "r_bAegisShieldWasDestroyed"
+    );
     assert_eq!(fernando.own_fields[1].field_name, "r_bHasAegisTalent");
     assert_eq!(fernando.own_fields[2].field_name, "r_ShieldDisplayType");
     assert_eq!(
@@ -1539,7 +1545,10 @@ fn test_paladins_real_upk_netcache_and_manifest_parity_if_present() {
     assert_eq!(pri.own_fields.len(), 101);
     assert_eq!(pri.max_index, 150);
     assert_eq!(pri.own_fields[0].field_name, "r_vWaypoint");
-    assert_eq!(pri.own_fields.last().unwrap().field_name, "SetAnnouncerPlaying");
+    assert_eq!(
+        pri.own_fields.last().unwrap().field_name,
+        "SetAnnouncerPlaying"
+    );
 
     let gri = registry
         .build_class_net_cache("TgRepInfo_Game")
@@ -1548,7 +1557,10 @@ fn test_paladins_real_upk_netcache_and_manifest_parity_if_present() {
     assert_eq!(gri.own_fields.len(), 163);
     assert_eq!(gri.max_index, 198);
     assert_eq!(gri.own_fields[0].field_name, "r_AbyssalEcho");
-    assert_eq!(gri.own_fields.last().unwrap().field_name, "ClientHandleAlert");
+    assert_eq!(
+        gri.own_fields.last().unwrap().field_name,
+        "ClientHandleAlert"
+    );
 
     // Verify UEnum and UStruct metadata extracted from Engine.upk / TgGame.upk
     let net_role = registry

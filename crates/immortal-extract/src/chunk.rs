@@ -424,15 +424,9 @@ mod tests {
         let payload = b"Test multi-block chunk decompression with LZO XOR 0x2A".repeat(3000);
         let block_size = 4096;
 
-        let chunk = write_compressed_chunk(
-            &mut buffer,
-            0,
-            0,
-            &payload,
-            block_size,
-            COMPRESS_LZO_XOR,
-        )
-        .unwrap();
+        let chunk =
+            write_compressed_chunk(&mut buffer, 0, 0, &payload, block_size, COMPRESS_LZO_XOR)
+                .unwrap();
 
         let mut cursor = Cursor::new(&buffer);
         // Without XOR flag, LZO decompression must fail on the 0x2A-masked stream

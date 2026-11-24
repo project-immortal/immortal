@@ -206,7 +206,8 @@ impl TargetHitbox {
             return HitResult::miss();
         };
         let Some((cyl_dist, cyl_hit)) =
-            self.cylinder.intersect_swept_sphere(origin, unit_dir, sweep_radius)
+            self.cylinder
+                .intersect_swept_sphere(origin, unit_dir, sweep_radius)
         else {
             return HitResult::miss();
         };
@@ -710,7 +711,9 @@ mod tests {
         let dy = normalized.head.center[1] - cyl.base[1];
         let radial_dist = (dx * dx + dy * dy).sqrt();
         assert!(radial_dist + normalized.head.radius <= cyl.radius + 1e-4);
-        assert!(normalized.head.center[2] + normalized.head.radius <= cyl.base[2] + cyl.height + 1e-4);
+        assert!(
+            normalized.head.center[2] + normalized.head.radius <= cyl.base[2] + cyl.height + 1e-4
+        );
 
         // Aiming at normalized head center must pass Stage 1 cylinder and register headshot.
         let res = normalized.evaluate_ray_hit(
@@ -725,7 +728,11 @@ mod tests {
     #[test]
     fn test_fernando_flame_lance_cone_bounds() {
         let in_cone = CylinderHitbox::new([600.0, 0.0, 0.0], 42.0, 176.0);
-        assert!(evaluate_flame_lance_cone([0.0, 0.0, 90.0], [1.0, 0.0, 0.0], &in_cone));
+        assert!(evaluate_flame_lance_cone(
+            [0.0, 0.0, 90.0],
+            [1.0, 0.0, 0.0],
+            &in_cone
+        ));
 
         let out_of_range = CylinderHitbox::new([1400.0, 0.0, 0.0], 42.0, 176.0);
         assert!(!evaluate_flame_lance_cone(
@@ -798,7 +805,8 @@ mod tests {
         assert_eq!(hits[2].0, 0); // t2 third (+40%)
         assert!((hits[2].1 - 630.0).abs() < 1e-4);
 
-        let charge = evaluate_charge_sweep([0.0, 0.0, 90.0], [1.0, 0.0, 0.0], 1000.0, 42.0, &[t1, t0]);
+        let charge =
+            evaluate_charge_sweep([0.0, 0.0, 90.0], [1.0, 0.0, 0.0], 1000.0, 42.0, &[t1, t0]);
         assert_eq!(charge.struck_target_index, Some(1));
         assert_eq!(charge.damage, 200.0);
 

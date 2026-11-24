@@ -35,7 +35,7 @@ The OSS release of Tempest provides unprecedented visibility into the inner mech
 
 The Tempest monorepo is a multi-language polyglot repository orchestrating C# (.NET 10), Rust, Zig, TypeScript (SvelteKit 5 + Electron), and Bash:
 
-```
+```text
 .dirtyroom/external/Tempest/
 ├── Tempest.slnx                    # .NET 10 XML Solution
 ├── global.json                     # .NET SDK 10.0.100 rollForward: latestFeature
@@ -90,7 +90,7 @@ A foundational challenge in server-authoritative game server reconstruction is v
 
 Tempest solves this by running the authentic retail Windows server executable headlessly under Wine. For Project Immortal, this architecture serves as a **Retail Dedicated Server Oracle**: an isolated dirty-room containerized service against which Project Immortal's cleanroom test harness executes automated differential bitstream fuzzing and packet parity validation.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                 DIRTY-ROOM DIFFERENTIAL VERIFICATION HARNESS                 │
 └──────────────────────────────────────┬──────────────────────────────────────┘
@@ -247,7 +247,7 @@ computed over the uppercase ASCII function name string.
 
 `CMarshal` encodes rows of strongly-typed key-value records. The stream layout operates as follows:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                             CMARSHAL STREAM HEADER                          │
 ├──────────────┬───────────────────────────────┬──────────────────────────────┤
@@ -391,7 +391,7 @@ Each level package (`*_P.upk`) contains a `HavokNavMeshActor` housing a single `
 
 #### NavMesh Data Layout
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           HAVOK TAGFILE (TAG0) HEADER                       │
 ├─────────────────┬───────────────────────────────┬───────────────────────────┤
@@ -491,7 +491,7 @@ Tempest implements a pure-Rust Wwise toolchain (`tempest-assets/src/wwise/`):
 
 For Project Immortal's Milestone 7 ("Neural Audio Restoration & Voice Line Synthesis"), this enables two non-invasive delivery mechanisms:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                 MILESTONE 7 NON-INVASIVE AUDIO PIPELINE                      │
 └──────────────────────────────────────┬──────────────────────────────────────┘
@@ -550,7 +550,7 @@ An exhaustive audit of repository licenses establishes the following legal topog
 
 Project Immortal enforces a strict 4-phase cleanroom membrane to guarantee zero code contamination:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                      DIRTY ROOM (.dirtyroom/external/)                      │
 │  - Cloned Tempest Monorepo & Docs                                           │

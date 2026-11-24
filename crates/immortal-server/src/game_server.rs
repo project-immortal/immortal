@@ -15,10 +15,10 @@ use immortal_extract::netcache::PackageMapManifest;
 use immortal_net::{
     current_time_millis, parse_cpack_udp, sha256, ActorBunchCodec, Bunch, CPackUdpPacket,
     ControlChannelHandshake, ControlMessage, DedicatedControlFrame, HandshakePhase, HelloRecvReply,
-    PingRecv, Ue3Packet, ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX, DEFAULT_GAME_PORT,
+    PcomPrefix, PingRecv, Ue3Packet, ACTOR_CHANNEL_INDEX, CONTROL_CHANNEL_INDEX, DEFAULT_GAME_PORT,
     DEFAULT_HMAC_KEY, DEFAULT_MAX_PACKET, DEFAULT_MAX_PACKET_BITS, DEFAULT_NET_SPEED,
     EXUDP_MAX_PACKET_BITS, HELLO_MIN_LEN, HELLO_PAYLOAD_OFFSET, MAX_CHSEQUENCE, MAX_PACKETID,
-    PCOM_PREFIX_LEN, PcomPrefix,
+    PCOM_PREFIX_LEN,
 };
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
@@ -220,7 +220,11 @@ impl GameServer {
         info!(
             "🎮 Game Server UDP bound to {} (schemas: {}, packages: {})",
             socket.local_addr()?,
-            if schemas.from_real_upk { "real UPK" } else { "hermetic" },
+            if schemas.from_real_upk {
+                "real UPK"
+            } else {
+                "hermetic"
+            },
             schemas.manifest.entries.len()
         );
         Ok(Self {
@@ -317,11 +321,17 @@ impl GameServer {
                     DedicatedControlFrame::ClientHello {
                         connection_nonce, ..
                     } => {
-                        debug!("Ingested dedicated unsequenced ClientHello (570B) from {}", src);
+                        debug!(
+                            "Ingested dedicated unsequenced ClientHello (570B) from {}",
+                            src
+                        );
                         let mut client_cookie = [0u8; 5];
                         client_cookie.copy_from_slice(&connection_nonce[0..5]);
-                        let (derived_cookie, derived_challenge) =
-                            derive_dedicated_session_material(session.session_id, src, &connection_nonce);
+                        let (derived_cookie, derived_challenge) = derive_dedicated_session_material(
+                            session.session_id,
+                            src,
+                            &connection_nonce,
+                        );
                         let server_cookie = self
                             .config
                             .session
@@ -349,7 +359,10 @@ impl GameServer {
                         total_len,
                         ..
                     } => {
-                        debug!("Ingested dedicated PMTU probe ({}B) from {}", total_len, src);
+                        debug!(
+                            "Ingested dedicated PMTU probe ({}B) from {}",
+                            total_len, src
+                        );
                         let probe_reply = DedicatedControlFrame::PmtuProbe {
                             magic: [0x01, 0x00, 0x00, 0x00],
                             probe_token,
@@ -498,7 +511,11 @@ impl GameServer {
             apply_pcom_prefix_metadata(session, &pkt.pcom_prefix);
             let prefix = if session.is_dedicated {
                 let seq = session.next_dedicated_seq();
-                let token = if seq == 1 { session.session_token } else { None };
+                let token = if seq == 1 {
+                    session.session_token
+                } else {
+                    None
+                };
                 PcomPrefix::dedicated_sequenced(seq, token)
             } else {
                 session.pcom_prefix.clone()
@@ -582,10 +599,7 @@ impl GameServer {
                             }
                             ControlMessage::MapLoaded => {
                                 staged_map_loaded = true;
-                                info!(
-                                    "🗺️ Client {} loaded map (NMT_MapLoaded 0x2A)",
-                                    src
-                                );
+                                info!("🗺️ Client {} loaded map (NMT_MapLoaded 0x2A)", src);
                             }
                             _ => {}
                         }
@@ -628,8 +642,8 @@ impl GameServer {
                             }
                         }
                         if ch_index == ACTOR_CHANNEL_INDEX {
-                            if let Some(ts_bunch) =
-                                staged_replication.maybe_server_timestamp_heartbeat(&self.schemas)?
+                            if let Some(ts_bunch) = staged_replication
+                                .maybe_server_timestamp_heartbeat(&self.schemas)?
                             {
                                 staged_reply_actor_bunches.push(ts_bunch);
                             }
@@ -723,7 +737,8 @@ impl GameServer {
             session.phase = SessionPhase::MapLoaded;
         }
 
-        let mut reply_bunches = Vec::with_capacity(staged_reply_msgs.len() + staged_reply_actor_bunches.len());
+        let mut reply_bunches =
+            Vec::with_capacity(staged_reply_msgs.len() + staged_reply_actor_bunches.len());
         for reply_msg in staged_reply_msgs {
             reply_bunches.push(Bunch::control(session.next_ctrl_seq(), reply_msg.encode()));
         }
@@ -883,7 +898,11 @@ fn pack_ue3_replies(
     let mut encoded_packets = Vec::new();
     let prefix = if session.is_dedicated {
         let seq = session.next_dedicated_seq();
-        let token = if seq == 1 { session.session_token } else { None };
+        let token = if seq == 1 {
+            session.session_token
+        } else {
+            None
+        };
         PcomPrefix::dedicated_sequenced(seq, token)
     } else {
         session.pcom_prefix.clone()
@@ -900,7 +919,11 @@ fn pack_ue3_replies(
             encoded_packets.push(current.encode_with_max_bits(max_packet_bits)?);
             let next_prefix = if session.is_dedicated {
                 let seq = session.next_dedicated_seq();
-                let token = if seq == 1 { session.session_token } else { None };
+                let token = if seq == 1 {
+                    session.session_token
+                } else {
+                    None
+                };
                 PcomPrefix::dedicated_sequenced(seq, token)
             } else {
                 session.pcom_prefix.clone()
@@ -933,8 +956,9 @@ fn detect_default_upk_dir() -> Option<PathBuf> {
     }
 }
 
-static DEFAULT_UPK_SCHEMAS_CACHE: OnceLock<std::result::Result<Arc<ActorReplicationSchemas>, String>> =
-    OnceLock::new();
+static DEFAULT_UPK_SCHEMAS_CACHE: OnceLock<
+    std::result::Result<Arc<ActorReplicationSchemas>, String>,
+> = OnceLock::new();
 
 fn resolve_schemas(upk_dir: Option<&Path>) -> Result<Arc<ActorReplicationSchemas>> {
     match upk_dir {
@@ -1775,7 +1799,8 @@ mod tests {
         let src: SocketAddr = "127.0.0.1:54329".parse().unwrap();
 
         let mut pkt = Ue3Packet::new([0x00, 0x01, 0x02, 0x03, 0x04, 0x05], 0);
-        pkt.bunches.push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
+        pkt.bunches
+            .push(Bunch::control(1, ControlMessage::MapLoaded.encode()));
         let encoded = pkt.encode().unwrap();
 
         let replies = server.handle_datagram(&encoded, src).await.unwrap();
@@ -2033,7 +2058,10 @@ mod tests {
         p0.bunches.push(ch3_rel_bunch);
         p0.bunches.push(ch80_bunch);
         p0.bunches.push(unknown_ch_bunch);
-        let r0 = server.handle_datagram(&p0.encode().unwrap(), src).await.unwrap();
+        let r0 = server
+            .handle_datagram(&p0.encode().unwrap(), src)
+            .await
+            .unwrap();
         let s0 = Ue3Packet::decode(&r0[0]).unwrap();
         assert_eq!(s0.acks, vec![0]);
         // Within 45ms of open_real_actor_channels, no extra heartbeat should fire yet
@@ -2077,7 +2105,10 @@ mod tests {
         .unwrap();
         let mut p1 = Ue3Packet::new(prefix, 1);
         p1.bunches.push(ch3_cam_bunch);
-        let r1 = server.handle_datagram(&p1.encode().unwrap(), src).await.unwrap();
+        let r1 = server
+            .handle_datagram(&p1.encode().unwrap(), src)
+            .await
+            .unwrap();
         let s1 = Ue3Packet::decode(&r1[0]).unwrap();
         assert_eq!(s1.acks, vec![1]);
         assert_eq!(s1.bunches.len(), 1);
@@ -2101,7 +2132,10 @@ mod tests {
         );
         assert_eq!(sess.replication.remote_user_data_updates, 1);
         assert!(sess.replication.remote_user_data_finalized);
-        assert_eq!(sess.replication.spectator_location, Some([355.0, 0.0, 203.0]));
+        assert_eq!(
+            sess.replication.spectator_location,
+            Some([355.0, 0.0, 203.0])
+        );
         assert_eq!(sess.replication.camera_location, Some([105.0, 0.0, 233.0]));
         assert_eq!(sess.replication.camera_pitch_yaw, Some(1234));
     }
