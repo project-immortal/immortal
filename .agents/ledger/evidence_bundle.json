@@ -45,7 +45,7 @@
     "evidence_id": "EV-LOG-005",
     "subject": "CAP-00 Shooting Range Paired Launch Log",
     "provider": "retail_client_log",
-    "digest": "58009f201e56b821f57b297b4f59846bfe32187d960715e7dcbc4bca62bc02bb",
+    "digest": "58009f20b948c15acd63668961d4775b7c9308ce63f7cacd5c729a87b2f0c294",
     "source_path": ".dirtyroom/pcaps/CAP-00_shooting_range_20261119_Launch.log"
   },
   {

@@ -363,7 +363,7 @@ A headless Wine runner executing the retail 64-bit Windows Paladins dedicated se
   - Runtime: Wine64 (or containerized Linux + Wine64 for 64-bit `ShippingPC-ChaosGame.exe`).
   - Display: `unset DISPLAY` (null/tty driver).
   - OpenSSL fix: `OPENSSL_ia32cap="~0x20000000"`.
-  - Flags: `server <MapName> -seekfreeloadingpcconsole -pid=402 -eac-nop-loaded -unattended -nullrhi`.
+  - Flags: `server <MapName>?game=TgGame.TgGame_Paladins?maxplayers=2 -port=7000 -multihome=127.0.0.1 -seekfreeloadingpcconsole -pid=402 -eac-nop-loaded -homedir=Tempest -log`.
 
 #### Verification Method & Acceptance Criteria
 - Binary patched cleanly via `python3 scripts/dirtyroom/patch_server_binary.py` into quarantined `.dirtyroom/oracle/runtime/Binaries/Win64/ShippingPC-ChaosGame-Server.exe` (`DYNAMIC_BASE == 0`).
