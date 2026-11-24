@@ -4,7 +4,8 @@
 // Governed by: ICARO-42/b Ordinance (Company-Supported Personal IP Framework)
 
 //! Unreal Engine 3 Chunked Decompression implementation.
-//! Supports LZO (`COMPRESS_LZO = 0x02`) and Zlib (`COMPRESS_ZLIB = 0x01`).
+//! Supports LZO (`COMPRESS_LZO = 0x02`), Zlib (`COMPRESS_ZLIB = 0x01`),
+//! and `0x2A` XOR-masked LZO (`COMPRESS_LZO_XOR = 0x202`).
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use flate2::read::ZlibDecoder;
@@ -19,6 +20,19 @@ use crate::UPK_MAGIC;
 pub const COMPRESS_ZLIB: u32 = 0x01;
 pub const COMPRESS_LZO: u32 = 0x02;
 pub const COMPRESS_LZMA: u32 = 0x04;
+/// UE3 XOR payload obfuscation mask (`0x200`); XORs compressed block bytes with `0x2A`.
+pub const COMPRESS_XOR_MASK: u32 = 0x200;
+/// Combined LZO + `0x2A` XOR obfuscation flag (`0x202`, used by Paladins v893 core packages).
+pub const COMPRESS_LZO_XOR: u32 = COMPRESS_LZO | COMPRESS_XOR_MASK;
+/// Byte-wise XOR mask applied to compressed block payloads when `COMPRESS_XOR_MASK` is set.
+const COMPRESS_XOR_KEY: u8 = 0x2A;
+
+#[inline]
+fn xor_payload_in_place(buf: &mut [u8]) {
+    for byte in buf.iter_mut() {
+        *byte ^= COMPRESS_XOR_KEY;
+    }
+}
 
 /// Represents an entry in the package header's chunk table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -226,6 +240,7 @@ pub fn decompress_chunk<R: Read + Seek>(
 
     let is_lzo = (compression_flags & COMPRESS_LZO) != 0;
     let is_zlib = (compression_flags & COMPRESS_ZLIB) != 0;
+    let is_xor = (compression_flags & COMPRESS_XOR_MASK) != 0;
 
     if !is_lzo && !is_zlib {
         return Err(ExtractError::UnsupportedCompression {
@@ -241,10 +256,15 @@ pub fn decompress_chunk<R: Read + Seek>(
 
         let block_decomp = if block.compressed_size >= block.uncompressed_size {
             block_comp_buf
-        } else if is_lzo {
-            decompress_lzo(&block_comp_buf, block.uncompressed_size as usize)?
         } else {
-            decompress_zlib(&block_comp_buf, block.uncompressed_size as usize)?
+            if is_xor {
+                xor_payload_in_place(&mut block_comp_buf);
+            }
+            if is_lzo {
+                decompress_lzo(&block_comp_buf, block.uncompressed_size as usize)?
+            } else {
+                decompress_zlib(&block_comp_buf, block.uncompressed_size as usize)?
+            }
         };
 
         if block_decomp.len() != block.uncompressed_size as usize {
@@ -289,6 +309,7 @@ pub fn write_compressed_chunk<W: Write>(
 
     let is_lzo = (compression_flags & COMPRESS_LZO) != 0;
     let is_zlib = (compression_flags & COMPRESS_ZLIB) != 0;
+    let is_xor = (compression_flags & COMPRESS_XOR_MASK) != 0;
 
     let mut blocks = Vec::with_capacity(num_blocks as usize);
     let mut compressed_payloads = Vec::with_capacity(num_blocks as usize);
@@ -298,7 +319,7 @@ pub fn write_compressed_chunk<W: Write>(
         let end = ((i + 1) * block_sz).min(uncompressed_size) as usize;
         let slice = &uncompressed_data[start..end];
 
-        let comp = if is_lzo {
+        let mut comp = if is_lzo {
             compress_lzo(slice)?
         } else if is_zlib {
             compress_zlib(slice)?
@@ -307,6 +328,10 @@ pub fn write_compressed_chunk<W: Write>(
                 flags: compression_flags,
             });
         };
+
+        if is_xor && comp.len() < slice.len() {
+            xor_payload_in_place(&mut comp);
+        }
 
         blocks.push(FCompressedChunkBlock {
             compressed_size: comp.len() as u32,
@@ -390,6 +415,31 @@ mod tests {
 
         let mut cursor = Cursor::new(buffer);
         let decompressed = decompress_chunk(&mut cursor, &chunk, COMPRESS_ZLIB).unwrap();
+        assert_eq!(payload.as_slice(), decompressed.as_slice());
+    }
+
+    #[test]
+    fn test_chunk_lzo_xor_roundtrip() {
+        let mut buffer = Vec::new();
+        let payload = b"Test multi-block chunk decompression with LZO XOR 0x2A".repeat(3000);
+        let block_size = 4096;
+
+        let chunk = write_compressed_chunk(
+            &mut buffer,
+            0,
+            0,
+            &payload,
+            block_size,
+            COMPRESS_LZO_XOR,
+        )
+        .unwrap();
+
+        let mut cursor = Cursor::new(&buffer);
+        // Without XOR flag, LZO decompression must fail on the 0x2A-masked stream
+        assert!(decompress_chunk(&mut cursor, &chunk, COMPRESS_LZO).is_err());
+
+        cursor.set_position(0);
+        let decompressed = decompress_chunk(&mut cursor, &chunk, COMPRESS_LZO_XOR).unwrap();
         assert_eq!(payload.as_slice(), decompressed.as_slice());
     }
 }

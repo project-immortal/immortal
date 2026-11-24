@@ -17,6 +17,7 @@ pub mod import;
 pub mod index;
 pub mod mesh;
 pub mod name;
+pub mod netcache;
 pub mod package;
 pub mod property;
 pub mod summary;
@@ -30,7 +31,7 @@ pub use audio::{
 pub use chunk::{
     compress_lzo, compress_zlib, decompress_chunk, decompress_lzo, decompress_zlib,
     write_compressed_chunk, FCompressedChunk, FCompressedChunkBlock, FCompressedChunkHeader,
-    COMPRESS_LZMA, COMPRESS_LZO, COMPRESS_ZLIB,
+    COMPRESS_LZMA, COMPRESS_LZO, COMPRESS_LZO_XOR, COMPRESS_XOR_MASK, COMPRESS_ZLIB,
 };
 pub use collision::{
     extract_body_setup_collision, extract_brush_component_collision, extract_package_collision,
@@ -47,6 +48,14 @@ pub use mesh::{
     FSkeletalMeshLODModel, GPUSkinVertex, GltfExport, RefSkeleton,
 };
 pub use name::{FName, NameEntry, NameTable};
+pub use netcache::{
+    ClassNetCache, FieldNetCacheEntry, NetCacheRegistry, NetFieldKind, PackageMapEntry,
+    PackageMapManifest, PackageParseStats, PropertyClass, PropertyTail, RpcParamSchema,
+    UEnumExport, UFunctionExport, UPropertyExport, UStructExport, CPF_NET, CPF_PARM,
+    CPF_REP_NOTIFY, CPF_RETURN_PARM, FUNC_NET, FUNC_NET_CLIENT, FUNC_NET_SERVER,
+    MAX_ENUM_NAMES, MAX_FIELD_CHAIN_DEPTH, MAX_NETCACHE_CLASSES, MAX_PACKAGE_MANIFEST_ENTRIES,
+    MINIMAL_SHOOTING_RANGE_PACKAGES,
+};
 pub use package::UpkPackage;
 pub use property::{
     find_property, parse_tagged_array_elements, read_object_properties, read_property_chain,

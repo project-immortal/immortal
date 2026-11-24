@@ -1386,3 +1386,178 @@ fn test_integration_synthetic_upk_collision_extraction() {
         .unwrap();
     assert!((hit.point[0] - 20.0).abs() < 1e-4);
 }
+
+#[test]
+fn test_paladins_real_upk_netcache_and_manifest_parity_if_present() {
+    use immortal_extract::{
+        NetCacheRegistry, NetFieldKind, PackageMapManifest, PropertyClass, COMPRESS_LZO,
+        COMPRESS_LZO_XOR, MINIMAL_SHOOTING_RANGE_PACKAGES,
+    };
+
+    let cooked_dir = Path::new(
+        "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole",
+    );
+    let required = ["Core", "Engine", "TgGame", "Shootingrange_P"];
+    if !required
+        .iter()
+        .all(|stem| cooked_dir.join(format!("{stem}.upk")).exists())
+    {
+        println!("Skipping real UPK netcache parity test: Paladins CookedPCConsole not found");
+        return;
+    }
+
+    let ordered_paths: Vec<_> = MINIMAL_SHOOTING_RANGE_PACKAGES
+        .iter()
+        .map(|stem| cooked_dir.join(format!("{stem}.upk")))
+        .filter(|p| p.exists())
+        .collect();
+
+    let manifest = PackageMapManifest::from_package_paths(&ordered_paths)
+        .expect("Failed to build PackageMapManifest from real UPKs");
+
+    let core_entry = manifest.get("Core").expect("Core entry missing");
+    assert_eq!(core_entry.object_base, 0);
+    assert_eq!(core_entry.object_count, 1562);
+
+    let engine_entry = manifest.get("Engine").expect("Engine entry missing");
+    assert_eq!(engine_entry.object_base, 1562);
+    assert_eq!(engine_entry.object_count, 35793);
+
+    let tggame_entry = manifest.get("TgGame").expect("TgGame entry missing");
+    assert_eq!(tggame_entry.object_count, 66967);
+
+    let sr_entry = manifest
+        .get("Shootingrange_P")
+        .expect("Shootingrange_P entry missing");
+    assert_eq!(sr_entry.object_count, 1038);
+
+    let mut registry = NetCacheRegistry::with_manifest(manifest);
+    for path in &ordered_paths {
+        let stats = registry
+            .load_package_file(path)
+            .unwrap_or_else(|e| panic!("Failed to load {}: {e}", path.display()));
+        assert_eq!(
+            stats.properties_failed, 0,
+            "Non-zero property parse failures in {}",
+            stats.package_name
+        );
+        assert_eq!(
+            stats.functions_failed, 0,
+            "Non-zero function parse failures in {}",
+            stats.package_name
+        );
+
+        match stats.package_name.as_str() {
+            "Core" => {
+                assert_eq!(stats.compression_flags, COMPRESS_LZO_XOR);
+                assert_eq!(stats.properties_parsed, 1132);
+                assert_eq!(stats.functions_parsed, 308);
+            }
+            "Engine" => {
+                assert_eq!(stats.compression_flags, COMPRESS_LZO_XOR);
+                assert_eq!(stats.properties_parsed, 23_294);
+                assert_eq!(stats.net_properties, 164);
+                assert_eq!(stats.functions_parsed, 5_250);
+                assert_eq!(stats.net_functions, 160);
+            }
+            "TgGame" => {
+                assert_eq!(stats.compression_flags, COMPRESS_LZO_XOR);
+                assert_eq!(stats.properties_parsed, 38_009);
+                assert_eq!(stats.net_properties, 992);
+                assert_eq!(stats.functions_parsed, 13_796);
+                assert_eq!(stats.net_functions, 412);
+            }
+            "Shootingrange_P" => {
+                assert_eq!(stats.compression_flags, COMPRESS_LZO);
+                assert_eq!(stats.properties_parsed, 0);
+                assert_eq!(stats.functions_parsed, 0);
+            }
+            _ => {}
+        }
+    }
+
+    // Exact ClassNetCache parity against probe_upk_netcache.py
+    let pc = registry
+        .build_class_net_cache("TgPlayerController")
+        .expect("TgPlayerController ClassNetCache failed");
+    assert_eq!(pc.fields_base, 161);
+    assert_eq!(pc.own_fields.len(), 142);
+    assert_eq!(pc.max_index, 303);
+    assert_eq!(pc.own_fields[0].rep_index, 161);
+    assert_eq!(pc.own_fields[0].field_name, "PlayNotifySound");
+    assert_eq!(pc.own_fields[0].object_net_index, 16952);
+    assert!(matches!(pc.own_fields[0].kind, NetFieldKind::Function { .. }));
+    let last_pc = pc.own_fields.last().unwrap();
+    assert_eq!(last_pc.rep_index, 302);
+    assert_eq!(last_pc.field_name, "r_LastPurchasedItems");
+    assert_eq!(last_pc.object_net_index, 62203);
+    assert_eq!(
+        last_pc.kind,
+        NetFieldKind::Property {
+            property_class: PropertyClass::StructProperty,
+            array_dim: 26,
+            property_flags: match last_pc.kind {
+                NetFieldKind::Property { property_flags, .. } => property_flags,
+                _ => 0,
+            },
+            rep_offset: match last_pc.kind {
+                NetFieldKind::Property { rep_offset, .. } => rep_offset,
+                _ => 0,
+            },
+            tail_type_name: Some("TG_LAST_PURCHASE".to_string()),
+        }
+    );
+
+    let ts = registry
+        .lookup_rep_field("TgPlayerController", 291)
+        .unwrap()
+        .expect("RepIndex 291 missing on TgPlayerController");
+    assert_eq!(ts.field_name, "r_fServerTimeStamp");
+
+    let fernando = registry
+        .build_class_net_cache("TgPawn_Fernando")
+        .expect("TgPawn_Fernando ClassNetCache failed");
+    assert_eq!(fernando.fields_base, 261);
+    assert_eq!(fernando.own_fields.len(), 3);
+    assert_eq!(fernando.max_index, 264);
+    assert_eq!(fernando.own_fields[0].field_name, "r_bAegisShieldWasDestroyed");
+    assert_eq!(fernando.own_fields[1].field_name, "r_bHasAegisTalent");
+    assert_eq!(fernando.own_fields[2].field_name, "r_ShieldDisplayType");
+    assert_eq!(
+        registry
+            .lookup_rep_field("TgPawn_Fernando", 23)
+            .unwrap()
+            .unwrap()
+            .field_name,
+        "Velocity"
+    );
+
+    let pri = registry
+        .build_class_net_cache("TgRepInfo_Player")
+        .expect("TgRepInfo_Player ClassNetCache failed");
+    assert_eq!(pri.fields_base, 49);
+    assert_eq!(pri.own_fields.len(), 101);
+    assert_eq!(pri.max_index, 150);
+    assert_eq!(pri.own_fields[0].field_name, "r_vWaypoint");
+    assert_eq!(pri.own_fields.last().unwrap().field_name, "SetAnnouncerPlaying");
+
+    let gri = registry
+        .build_class_net_cache("TgRepInfo_Game")
+        .expect("TgRepInfo_Game ClassNetCache failed");
+    assert_eq!(gri.fields_base, 35);
+    assert_eq!(gri.own_fields.len(), 163);
+    assert_eq!(gri.max_index, 198);
+    assert_eq!(gri.own_fields[0].field_name, "r_AbyssalEcho");
+    assert_eq!(gri.own_fields.last().unwrap().field_name, "ClientHandleAlert");
+
+    // Verify UEnum and UStruct metadata extracted from Engine.upk / TgGame.upk
+    let net_role = registry
+        .get_enum("ENetRole")
+        .expect("ENetRole enum missing");
+    assert!(net_role.resolved_names.len() >= 4);
+
+    let last_purchase = registry
+        .get_struct("TG_LAST_PURCHASE")
+        .expect("TG_LAST_PURCHASE struct missing");
+    assert!(!last_purchase.fields.is_empty());
+}

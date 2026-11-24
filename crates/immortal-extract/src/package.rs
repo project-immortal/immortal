@@ -10,7 +10,7 @@ use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 
-use crate::chunk::{decompress_chunk, FCompressedChunk};
+use crate::chunk::{decompress_chunk, FCompressedChunk, COMPRESS_XOR_MASK};
 use crate::error::ExtractError;
 use crate::export::{ExportTable, ObjectExport};
 use crate::import::ImportTable;
@@ -34,6 +34,38 @@ impl UpkPackage<BufReader<File>> {
     }
 }
 
+/// Parses the Name, Import, and Export tables from an already-decompressed virtual stream.
+pub fn read_tables_from_bytes(
+    virtual_stream: &[u8],
+    summary: &PackageSummary,
+) -> Result<(NameTable, ImportTable, ExportTable), ExtractError> {
+    let name_offset = summary.name_offset as usize;
+    let import_offset = summary.import_offset as usize;
+    let export_offset = summary.export_offset as usize;
+    let name_count = summary.name_count as usize;
+    let import_count = summary.import_count as usize;
+    let export_count = summary.export_count as usize;
+
+    let max_offset = name_offset.max(import_offset).max(export_offset);
+    if max_offset > virtual_stream.len() {
+        return Err(ExtractError::BufferOverflow {
+            required: max_offset,
+            available: virtual_stream.len(),
+        });
+    }
+
+    let mut name_cursor = Cursor::new(&virtual_stream[name_offset..]);
+    let name_table = NameTable::read(&mut name_cursor, name_count)?;
+
+    let mut import_cursor = Cursor::new(&virtual_stream[import_offset..]);
+    let import_table = ImportTable::read(&mut import_cursor, import_count)?;
+
+    let mut export_cursor = Cursor::new(&virtual_stream[export_offset..]);
+    let export_table = ExportTable::read(&mut export_cursor, export_count)?;
+
+    Ok((name_table, import_table, export_table))
+}
+
 impl<R: Read + Seek> UpkPackage<R> {
     /// Opens and parses a UPK package from an arbitrary seekable reader.
     pub fn open(mut reader: R) -> Result<Self, ExtractError> {
@@ -45,6 +77,11 @@ impl<R: Read + Seek> UpkPackage<R> {
     /// Returns a reference to the package summary header.
     pub fn summary(&self) -> &PackageSummary {
         &self.summary
+    }
+
+    /// Returns `true` if the package uses the `0x200` XOR payload mask (`0x2A` per byte).
+    pub fn is_xor_compressed(&self) -> bool {
+        (self.summary.compression_flags & COMPRESS_XOR_MASK) != 0
     }
 
     /// Returns the slice of compressed chunks in this package.
@@ -241,27 +278,7 @@ impl<R: Read + Seek> UpkPackage<R> {
 
             // Tables span across chunks: decompress full virtual package stream
             let virtual_stream = self.decompress_all()?;
-
-            if (name_offset as usize) > virtual_stream.len()
-                || (import_offset as usize) > virtual_stream.len()
-                || (export_offset as usize) > virtual_stream.len()
-            {
-                return Err(ExtractError::BufferOverflow {
-                    required: export_offset as usize,
-                    available: virtual_stream.len(),
-                });
-            }
-
-            let mut name_cursor = Cursor::new(&virtual_stream[name_offset as usize..]);
-            let name_table = NameTable::read(&mut name_cursor, name_count)?;
-
-            let mut import_cursor = Cursor::new(&virtual_stream[import_offset as usize..]);
-            let import_table = ImportTable::read(&mut import_cursor, import_count)?;
-
-            let mut export_cursor = Cursor::new(&virtual_stream[export_offset as usize..]);
-            let export_table = ExportTable::read(&mut export_cursor, export_count)?;
-
-            return Ok((name_table, import_table, export_table));
+            return read_tables_from_bytes(&virtual_stream, &self.summary);
         }
 
         // Direct uncompressed seek
@@ -373,5 +390,131 @@ impl<R: Read + Seek> UpkPackage<R> {
         export_table: &ExportTable,
     ) -> Option<String> {
         export.resolve_class_name(name_table, import_table, export_table)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chunk::{write_compressed_chunk, COMPRESS_LZO_XOR};
+    use crate::name::{FName, NameEntry};
+    use crate::summary::{GenerationInfo, PKG_COMPRESSED, PKG_COOKED};
+    use crate::UPK_MAGIC;
+
+    #[test]
+    fn test_chunked_package_lzo_xor_roundtrip() {
+        let names = NameTable::new(vec![
+            NameEntry::new("None", 0),
+            NameEntry::new("Core", 0),
+            NameEntry::new("Object", 0),
+            NameEntry::new("TestActor", 0),
+        ]);
+        let imports = ImportTable::new(vec![]);
+        let exports = ExportTable::new(vec![ObjectExport {
+            class_index: PackageIndex::NULL,
+            super_index: PackageIndex::NULL,
+            outer_index: PackageIndex::NULL,
+            object_name: FName::new(3, 0),
+            archetype: PackageIndex::NULL,
+            object_flags: 0x1,
+            serial_size: 64,
+            serial_offset: 0,
+            export_flags: 0,
+            generation_net_object_count: vec![],
+            guid: [0u8; 16],
+            package_flags: 0,
+        }]);
+
+        let mut chunk_payload = Vec::new();
+        let name_off = 0usize;
+        names.write(&mut chunk_payload).unwrap();
+        let import_off = chunk_payload.len();
+        imports.write(&mut chunk_payload).unwrap();
+        let export_off = chunk_payload.len();
+        exports.write(&mut chunk_payload).unwrap();
+        let data_off = chunk_payload.len();
+        let marker = b"XOR_MASKED_UPK_PAYLOAD_0123456789ABCDEF_REPEAT_TO_COMPRESS_";
+        let repeated = marker.repeat(12);
+        chunk_payload.extend_from_slice(&repeated);
+
+        let mut placeholder_summary = PackageSummary {
+            tag: UPK_MAGIC,
+            file_version: 893,
+            licensee_version: 0,
+            total_header_size: 0,
+            folder_name: "None".to_string(),
+            package_flags: PKG_COOKED | PKG_COMPRESSED,
+            name_count: names.len() as u32,
+            name_offset: 0,
+            export_count: exports.len() as u32,
+            export_offset: 0,
+            import_count: imports.len() as u32,
+            import_offset: 0,
+            depends_offset: 0,
+            import_export_guids_offset: 0,
+            import_guids_count: 0,
+            export_guids_count: 0,
+            thumbnail_table_offset: 0,
+            guid: [0x2A; 16],
+            generations: vec![GenerationInfo {
+                export_count: 1,
+                name_count: 4,
+                net_object_count: 10,
+            }],
+            engine_version: 10897,
+            cooker_version: 393358,
+            compression_flags: COMPRESS_LZO_XOR,
+            compressed_chunks: vec![FCompressedChunk {
+                uncompressed_offset: 0,
+                uncompressed_size: 0,
+                compressed_offset: 0,
+                compressed_size: 0,
+            }],
+        };
+
+        let mut header_probe = Vec::new();
+        placeholder_summary.write(&mut header_probe).unwrap();
+        let header_len = header_probe.len() as u32;
+
+        let mut chunk_bytes = Vec::new();
+        let chunk_meta = write_compressed_chunk(
+            &mut chunk_bytes,
+            header_len,
+            header_len,
+            &chunk_payload,
+            4096,
+            COMPRESS_LZO_XOR,
+        )
+        .unwrap();
+
+        placeholder_summary.total_header_size = header_len;
+        placeholder_summary.name_offset = header_len + name_off as u32;
+        placeholder_summary.import_offset = header_len + import_off as u32;
+        placeholder_summary.export_offset = header_len + export_off as u32;
+        placeholder_summary.compressed_chunks = vec![chunk_meta];
+
+        let mut file_bytes = Vec::new();
+        placeholder_summary.write(&mut file_bytes).unwrap();
+        file_bytes.extend_from_slice(&chunk_bytes);
+
+        let mut pkg = UpkPackage::open(Cursor::new(file_bytes)).unwrap();
+        assert!(pkg.is_xor_compressed());
+        assert_eq!(pkg.summary().compression_flags, COMPRESS_LZO_XOR);
+
+        let (parsed_names, parsed_imports, parsed_exports) = pkg.read_tables().unwrap();
+        assert_eq!(parsed_names, names);
+        assert_eq!(parsed_imports, imports);
+        assert_eq!(parsed_exports, exports);
+
+        let all = pkg.decompress_all().unwrap();
+        assert_eq!(
+            &all[header_len as usize + data_off..header_len as usize + data_off + repeated.len()],
+            repeated.as_slice()
+        );
+
+        let slice = pkg
+            .read_bytes((header_len as usize + data_off) as u64, repeated.len())
+            .unwrap();
+        assert_eq!(slice, repeated);
     }
 }
