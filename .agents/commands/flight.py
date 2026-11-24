@@ -8,10 +8,10 @@ from datetime import datetime
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
 import sys
 import time
+from typing import Any, Callable, Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.capture_core import inspect_sdd_status
@@ -24,6 +24,7 @@ from lib.common import (
     find_game_and_server_processes,
     get_launch_log_path,
     get_window_info,
+    is_ydotoold_running,
     kill_game_and_server,
     run_ydotool,
     send_key,
@@ -31,12 +32,40 @@ from lib.common import (
     stop_recording,
 )
 
+MILESTONE_ORDER = [
+    "LOBBY_MENU",
+    "MATCH_INVITE",
+    "GAZEBO",
+    "MAP_CHANGE",
+    "BROWSE_RANGE",
+    "WELCOMED",
+    "WORLD_READY",
+    "MAP_LOADED",
+    "ACTORS_REPLICATED",
+]
+
+MILESTONE_SOURCES = {
+    "LOBBY_MENU": "client",
+    "MATCH_INVITE": "client",
+    "GAZEBO": "client",
+    "MAP_CHANGE": "client",
+    "BROWSE_RANGE": "client",
+    "WELCOMED": "client",
+    "WORLD_READY": "client",
+    "MAP_LOADED": "server",
+    "ACTORS_REPLICATED": "server",
+}
+
 FLIGHT_TARGET_MAP = {
     "menu": "LOBBY_MENU",
     "invite": "MATCH_INVITE",
     "gazebo": "GAZEBO",
     "map": "MAP_CHANGE",
     "range": "BROWSE_RANGE",
+    "welcome": "WELCOMED",
+    "world": "WORLD_READY",
+    "actors": "ACTORS_REPLICATED",
+    "spawn": "ACTORS_REPLICATED",
 }
 
 FLIGHT_PATTERNS = {
@@ -53,7 +82,23 @@ FLIGHT_PATTERNS = {
         "LoadMap: 0.0.0.0:7777/Shootingrange_P",
         "LoadMap: 127.0.0.1:7777/Shootingrange_P",
     ],
+    "WELCOMED": ["DevNet: Welcomed by server"],
+    "WORLD_READY": [
+        "Bringing World shootingrange_p.TheWorld up for play",
+        "Bringing World Shootingrange_P.TheWorld up for play",
+    ],
+    "MAP_LOADED": ["NMT_MapLoaded 0x2A"],
+    "ACTORS_REPLICATED": ["emitting UActorChannel opens (ch=3, 4, 80, 81)"],
 }
+
+DIAGNOSTIC_PATTERNS = (
+    "Bunch",
+    "Overflow",
+    "Validation failed",
+    "NMT_Failure",
+    "Error processing datagram",
+)
+MAX_DIAGNOSTICS = 50
 
 
 def perform_flight_auto_accept():
@@ -129,7 +174,184 @@ def extract_keyframe(rec_file, timestamp_offset, output_img):
     return output_img if res.returncode == 0 and os.path.exists(output_img) else None
 
 
-def main():
+class LogTailer:
+    """Non-blocking file tailer handling log creation, truncation, and rotation."""
+
+    def __init__(self, path: Any, source: str):
+        self.path = str(path)
+        self.source = source
+        self.handle = None
+        self.ino: Optional[int] = None
+        self.pos: int = 0
+        self.warned: bool = False
+
+    def read_new_lines(self) -> List[str]:
+        """Reads newly appended lines since the last poll."""
+        if not os.path.exists(self.path):
+            return []
+        try:
+            st = os.stat(self.path)
+            if self.handle is None or st.st_ino != self.ino or st.st_size < self.pos:
+                self.close()
+                self.handle = open(self.path, "r", encoding="utf-8", errors="replace")
+                self.ino = st.st_ino
+                self.pos = 0
+            lines = self.handle.readlines()
+            if lines:
+                self.pos = self.handle.tell()
+            return lines
+        except OSError as exc:
+            if not self.warned:
+                print(f"[!] Warning: Error reading {self.path}: {exc}", file=sys.stderr)
+                self.warned = True
+            return []
+
+    def close(self) -> None:
+        """Closes the open file handle if present."""
+        if self.handle is not None:
+            try:
+                self.handle.close()
+            except OSError:
+                pass
+            self.handle = None
+
+
+def create_milestones() -> Dict[str, Dict[str, Any]]:
+    """Creates a fresh milestone tracking dictionary in canonical progression order."""
+    return {
+        m: {"detected": False, "timestamp": None, "elapsed": None, "line": None, "keyframe": None}
+        for m in MILESTONE_ORDER
+    }
+
+
+def compute_post_hold(target_key: str, post_hold_arg: Optional[float]) -> float:
+    """Returns post-target hold duration, defaulting to 5.0s for late-stage targets."""
+    if post_hold_arg is not None:
+        return max(0.0, float(post_hold_arg))
+    return 5.0 if target_key in ("WORLD_READY", "ACTORS_REPLICATED") else 0.5
+
+
+def process_log_lines(
+    lines: List[str],
+    source: str,
+    milestones: Dict[str, Dict[str, Any]],
+    diagnostics: List[str],
+    flight_start_time: float,
+    now_fn: Callable[[], float] = time.time,
+    on_milestone: Optional[Callable[[str], None]] = None,
+) -> None:
+    """Matches source-specific milestone patterns and captures bounded error diagnostics."""
+    for raw_line in lines:
+        clean_line = raw_line.strip()
+        if not clean_line:
+            continue
+
+        for m_name in MILESTONE_ORDER:
+            if MILESTONE_SOURCES.get(m_name) != source or milestones[m_name]["detected"]:
+                continue
+            for pat in FLIGHT_PATTERNS[m_name]:
+                if pat in clean_line:
+                    now = now_fn()
+                    elapsed = now - flight_start_time
+                    milestones[m_name]["detected"] = True
+                    milestones[m_name]["timestamp"] = now
+                    milestones[m_name]["elapsed"] = round(elapsed, 2)
+                    milestones[m_name]["line"] = clean_line
+                    print(f"[+] [FLIGHT] Milestone REACHED: {m_name} (+{elapsed:.2f}s)")
+                    if on_milestone is not None:
+                        on_milestone(m_name)
+                    break
+
+        if len(diagnostics) < MAX_DIAGNOSTICS and any(pat in clean_line for pat in DIAGNOSTIC_PATTERNS):
+            diagnostics.append(f"[{source}] {clean_line}")
+
+
+def build_summary_markdown(
+    ts_tag: str,
+    target_key: str,
+    passed: bool,
+    total_flight_duration: float,
+    timeout_sec: int,
+    rec_file: Optional[str],
+    rec_size_bytes: int,
+    milestones: Dict[str, Dict[str, Any]],
+    diagnostics: List[str],
+) -> str:
+    """Renders the markdown telemetry summary including milestones and bounded diagnostics."""
+    summary_lines = [
+        f"# Immortal Automated Flight Telemetry: {ts_tag}",
+        f"- **Target Milestone**: `{target_key}`",
+        f"- **Overall Result**: **{'PASS' if passed else 'FAIL / TIMEOUT'}**",
+        f"- **Total Duration**: {total_flight_duration}s (timeout: {timeout_sec}s)",
+        f"- **Video Recording**: `{rec_file or 'None'}` ({round(rec_size_bytes / 1024, 2)} KB)",
+        "",
+        "## Milestone Progression",
+        "| Milestone | Detected | Elapsed (s) | Keyframe | Sample Log Line |",
+        "| :--- | :---: | :---: | :--- | :--- |",
+    ]
+    for m_name in MILESTONE_ORDER:
+        m_data = milestones[m_name]
+        det = "✅ PASS" if m_data["detected"] else "❌"
+        el = f"+{m_data['elapsed']}s" if m_data["detected"] else "-"
+        kf = f"`{m_data['keyframe']}`" if m_data["keyframe"] else "-"
+        ln = f"`{m_data['line'][:60]}...`" if m_data["line"] else "-"
+        summary_lines.append(f"| **{m_name}** | {det} | {el} | {kf} | {ln} |")
+
+    summary_lines.extend(["", f"## Diagnostics ({len(diagnostics)}/{MAX_DIAGNOSTICS} max)"])
+    if diagnostics:
+        summary_lines.extend(f"- `{diag}`" for diag in diagnostics)
+    else:
+        summary_lines.append("- None")
+    return "\n".join(summary_lines)
+
+
+def print_flight_report(
+    args: argparse.Namespace,
+    target_key: str,
+    passed: bool,
+    total_flight_duration: float,
+    timeout_sec: int,
+    rec_file: Optional[str],
+    rec_size_bytes: int,
+    summary_path: Path,
+    milestones: Dict[str, Dict[str, Any]],
+    extracted_keyframes: Dict[str, str],
+    diagnostics: List[str],
+) -> None:
+    """Prints the human-readable post-flight telemetry summary."""
+    print("\n============================================================")
+    print("              IMMORTAL AUTOMATED FLIGHT REPORT              ")
+    print("============================================================")
+    print(f"  Flight Target:      {target_key} (target={args.target})")
+    print(f"  Overall Result:     {'PASS' if passed else 'FAIL / TIMEOUT'}")
+    print(f"  Total Duration:     {total_flight_duration}s / {timeout_sec}s max")
+    print(f"  Recording:          {rec_file or 'None'} ({round(rec_size_bytes / 1024, 2)} KB)")
+    print(f"  Telemetry Summary:  {summary_path}")
+    print("\nMilestones:")
+    for m_name in MILESTONE_ORDER:
+        m_data = milestones[m_name]
+        status_str = (
+            f"[PASS]  {m_name:<18} (+{m_data['elapsed']}s)"
+            if m_data["detected"]
+            else f"[----]  {m_name:<18} (not reached)"
+        )
+        line_preview = f"  {m_data['line'][:70]}" if m_data["line"] else ""
+        print(f"  {status_str}{line_preview}")
+
+    if diagnostics:
+        print(f"\nDiagnostics ({len(diagnostics)}/{MAX_DIAGNOSTICS} max):")
+        for diag in diagnostics:
+            print(f"  - {diag}")
+
+    if extracted_keyframes:
+        print("\nKeyframes:")
+        for kf_name, kf_p in extracted_keyframes.items():
+            print(f"  - {kf_name}: {kf_p}")
+    print("============================================================\n")
+
+
+def _parse_flight_args() -> argparse.Namespace:
+    """Parses CLI arguments for the Vector 4 flight harness."""
     parser = argparse.ArgumentParser(
         prog="agyis flight",
         description="Vector 4 automated flight test runner and watchdog",
@@ -137,7 +359,7 @@ def main():
     parser.add_argument("--timeout", type=int, default=90, help="Max flight run duration in seconds (default: 90)")
     parser.add_argument(
         "--target",
-        choices=["menu", "invite", "gazebo", "map", "range"],
+        choices=list(FLIGHT_TARGET_MAP.keys()),
         default="map",
         help="Target milestone to reach (default: map)",
     )
@@ -154,19 +376,136 @@ def main():
         action="store_true",
         help="Disable automated input/click interaction on match invite",
     )
+    parser.add_argument(
+        "--post-hold",
+        type=float,
+        default=None,
+        help="Seconds to continue tailing logs after target milestone (default: 5.0 for world/actors/spawn, 0.5 otherwise)",
+    )
+    parser.add_argument(
+        "--force-rebuild",
+        action="store_true",
+        help="Force release rebuild of immortal-server before starting flight",
+    )
     parser.add_argument("--json", action="store_true", help="Output flight test results as JSON")
-    args = parser.parse_args()
+    return parser.parse_args()
 
+
+def _monitor_flight_logs(
+    target_key: str,
+    timeout_sec: int,
+    post_hold_sec: float,
+    manual: bool,
+    launch_log: str,
+    flight_server_log: Path,
+    server_proc: subprocess.Popen,
+    client_proc: Optional[subprocess.Popen],
+    milestones: Dict[str, Dict[str, Any]],
+    diagnostics: List[str],
+    flight_start_time: float,
+) -> None:
+    """Tails both client Launch.log and server flight_server.log until target/hold or exit."""
+    invite_handled = False
+    client_seen_running = False
+    target_reached_at: Optional[float] = None
+    client_tailer = LogTailer(launch_log, "client")
+    server_tailer = LogTailer(flight_server_log, "server")
+
+    def handle_milestone(m_name: str) -> None:
+        nonlocal invite_handled
+        if m_name == "MATCH_INVITE" and not manual and not invite_handled:
+            invite_handled = True
+            perform_flight_auto_accept()
+
+    print(f"[*] [FLIGHT] Monitoring Launch.log and {flight_server_log.name} (timeout: {timeout_sec}s)...")
+    try:
+        while (time.time() - flight_start_time < timeout_sec) or (
+            target_reached_at is not None and (time.time() - target_reached_at) < post_hold_sec
+        ):
+            process_log_lines(
+                client_tailer.read_new_lines(),
+                "client",
+                milestones,
+                diagnostics,
+                flight_start_time,
+                on_milestone=handle_milestone,
+            )
+            process_log_lines(
+                server_tailer.read_new_lines(),
+                "server",
+                milestones,
+                diagnostics,
+                flight_start_time,
+                on_milestone=handle_milestone,
+            )
+
+            if milestones[target_key]["detected"]:
+                if target_reached_at is None:
+                    target_reached_at = time.time()
+                    print(
+                        f"[+] [FLIGHT] Target milestone '{target_key}' reached! "
+                        f"Holding {post_hold_sec:.2f}s before concluding..."
+                    )
+                if (time.time() - target_reached_at) >= post_hold_sec:
+                    break
+
+            if server_proc.poll() is not None:
+                print(
+                    f"[!] [FLIGHT] immortal-server exited unexpectedly (code={server_proc.returncode}). Aborting flight.",
+                    file=sys.stderr,
+                )
+                break
+
+            running_procs = find_game_and_server_processes()
+            client_active = any("shippingpc-chaosgame" in m["cmdline"].lower() for m in running_procs)
+            if client_active:
+                client_seen_running = True
+            elif client_seen_running and (client_proc is None or client_proc.poll() is not None):
+                print(
+                    "[!] [FLIGHT] Paladins client process exited before concluding flight. Aborting flight.",
+                    file=sys.stderr,
+                )
+                break
+            elif (
+                not client_seen_running
+                and (time.time() - flight_start_time) > 10.0
+                and client_proc is not None
+                and client_proc.poll() is not None
+            ):
+                print(
+                    f"[!] [FLIGHT] Client launcher exited early (code={client_proc.returncode}) without game process. Aborting flight.",
+                    file=sys.stderr,
+                )
+                break
+
+            time.sleep(0.2)
+    finally:
+        client_tailer.close()
+        server_tailer.close()
+
+
+def main() -> int:
+    """Entrypoint for agyis flight."""
+    args = _parse_flight_args()
     target_key = FLIGHT_TARGET_MAP[args.target]
     timeout_sec = int(args.timeout)
+    post_hold_sec = compute_post_hold(target_key, args.post_hold)
+
     print("============================================================")
     print("            IMMORTAL AUTOMATED FLIGHT RUNNER                ")
     print("============================================================")
     print(f"[*] Target Milestone:  {target_key} (option: {args.target})")
-    print(f"[*] Timeout Limit:     {timeout_sec}s")
+    print(f"[*] Timeout Limit:     {timeout_sec}s (post-hold: {post_hold_sec:.2f}s)")
     print(f"[*] Screen Recording:  {'ENABLED (agent preset 480p 3fps)' if args.record else 'DISABLED'}")
     print(f"[*] Match Auto-Input:  {'DISABLED (manual mode)' if args.manual else 'ENABLED'}")
     print("============================================================")
+
+    if not args.manual and not is_ydotoold_running():
+        print(
+            "[!] Warning: ydotoold does not appear to be running; match invite auto-accept may fail. "
+            "Start ydotoold or pass --manual to disable automated input.",
+            file=sys.stderr,
+        )
 
     # 1. Pre-flight sanity & cleanup
     sdd_info = inspect_sdd_status()
@@ -187,7 +526,7 @@ def main():
         except OSError as e:
             print(f"[!] Warning: Could not stop leftover recording: {e}", file=sys.stderr)
 
-    server_bin = ensure_immortal_server_built()
+    server_bin = ensure_immortal_server_built(force_rebuild=args.force_rebuild)
     if not server_bin or not os.path.isfile(server_bin):
         print("[!] Error: immortal-server binary unavailable. Cannot start flight.", file=sys.stderr)
         return 1
@@ -227,7 +566,10 @@ def main():
     if args.record:
         rec_res = start_recording(agent_preset=True, window="screen")
         if rec_res != 0:
-            print(f"[!] Warning: Screen recording failed to start (code: {rec_res}); continuing without video.", file=sys.stderr)
+            print(
+                f"[!] Warning: Screen recording failed to start (code: {rec_res}); continuing without video.",
+                file=sys.stderr,
+            )
         elif os.path.exists(RECORD_PID_FILE):
             try:
                 with open(RECORD_PID_FILE, "r") as f:
@@ -241,95 +583,26 @@ def main():
     print("[*] [FLIGHT] Launching Paladins game client...")
     client_proc = launch_client()
 
-    # 5. Real-time log monitoring loop
-    milestones = {
-        m: {"detected": False, "timestamp": None, "elapsed": None, "line": None, "keyframe": None}
-        for m in ["LOBBY_MENU", "MATCH_INVITE", "GAZEBO", "MAP_CHANGE", "BROWSE_RANGE"]
-    }
+    # 5. Real-time dual-log monitoring loop
+    milestones = create_milestones()
+    diagnostics: List[str] = []
     flight_start_time = time.time()
     if rec_start_time is None:
         rec_start_time = flight_start_time
 
-    invite_handled = False
-    log_handle = None
-    current_ino = None
-    current_pos = 0
-    client_seen_running = False
-    log_read_warned = False
-
-    print(f"[*] [FLIGHT] Monitoring Launch.log for milestone progression (timeout: {timeout_sec}s)...")
-
-    try:
-        while time.time() - flight_start_time < timeout_sec:
-            if milestones[target_key]["detected"]:
-                print(f"[+] [FLIGHT] Target milestone '{target_key}' reached! Concluding flight.")
-                time.sleep(0.5)
-                break
-
-            if server_proc.poll() is not None:
-                print(
-                    f"[!] [FLIGHT] immortal-server exited unexpectedly (code={server_proc.returncode}). Aborting flight.",
-                    file=sys.stderr,
-                )
-                break
-
-            running_procs = find_game_and_server_processes()
-            client_active = any("shippingpc-chaosgame" in m["cmdline"].lower() for m in running_procs)
-            if client_active:
-                client_seen_running = True
-            elif client_seen_running and (client_proc is None or client_proc.poll() is not None):
-                print("[!] [FLIGHT] Paladins client process exited before reaching target milestone. Aborting flight.", file=sys.stderr)
-                break
-            elif not client_seen_running and (time.time() - flight_start_time) > 10.0 and client_proc is not None and client_proc.poll() is not None:
-                print(
-                    f"[!] [FLIGHT] Client launcher exited early (code={client_proc.returncode}) without game process. Aborting flight.",
-                    file=sys.stderr,
-                )
-                break
-
-            if os.path.exists(launch_log):
-                try:
-                    st = os.stat(launch_log)
-                    if log_handle is None or st.st_ino != current_ino or st.st_size < current_pos:
-                        if log_handle:
-                            log_handle.close()
-                        log_handle = open(launch_log, "r", encoding="utf-8", errors="replace")
-                        current_ino = st.st_ino
-                        current_pos = 0
-
-                    new_lines = log_handle.readlines()
-                    if new_lines:
-                        current_pos = log_handle.tell()
-                        for line in new_lines:
-                            clean_line = line.strip()
-                            for m_name, patterns in FLIGHT_PATTERNS.items():
-                                if not milestones[m_name]["detected"]:
-                                    for pat in patterns:
-                                        if pat in clean_line:
-                                            now = time.time()
-                                            elapsed = now - flight_start_time
-                                            milestones[m_name]["detected"] = True
-                                            milestones[m_name]["timestamp"] = now
-                                            milestones[m_name]["elapsed"] = round(elapsed, 2)
-                                            milestones[m_name]["line"] = clean_line
-                                            print(f"[+] [FLIGHT] Milestone REACHED: {m_name} (+{elapsed:.2f}s)")
-
-                                            if m_name == "MATCH_INVITE" and not args.manual and not invite_handled:
-                                                invite_handled = True
-                                                perform_flight_auto_accept()
-                                            break
-                except OSError as e:
-                    if not log_read_warned:
-                        print(f"[!] Warning: Error reading {launch_log}: {e}", file=sys.stderr)
-                        log_read_warned = True
-
-            time.sleep(0.2)
-    finally:
-        if log_handle:
-            try:
-                log_handle.close()
-            except OSError:
-                pass
+    _monitor_flight_logs(
+        target_key=target_key,
+        timeout_sec=timeout_sec,
+        post_hold_sec=post_hold_sec,
+        manual=args.manual,
+        launch_log=launch_log,
+        flight_server_log=flight_server_log,
+        server_proc=server_proc,
+        client_proc=client_proc,
+        milestones=milestones,
+        diagnostics=diagnostics,
+        flight_start_time=flight_start_time,
+    )
 
     total_flight_duration = round(time.time() - flight_start_time, 2)
     print("[*] [FLIGHT] Initiating post-flight shutdown and evidence extraction...")
@@ -344,7 +617,7 @@ def main():
     # Extract keyframes
     ts_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
     keyframes_dir = REPO_ROOT / "scratch" / "recordings" / f"keyframes_{ts_tag}"
-    extracted_keyframes = {}
+    extracted_keyframes: Dict[str, str] = {}
 
     if rec_file and os.path.exists(rec_file):
         print(f"[*] [FLIGHT] Extracting milestone keyframes from {rec_file}...")
@@ -363,26 +636,18 @@ def main():
     # Compile Telemetry Report
     passed = milestones[target_key]["detected"]
     summary_path = REPO_ROOT / "scratch" / "recordings" / f"flight_summary_{ts_tag}.md"
-    summary_lines = [
-        f"# Immortal Automated Flight Telemetry: {ts_tag}",
-        f"- **Target Milestone**: `{target_key}`",
-        f"- **Overall Result**: **{'PASS' if passed else 'FAIL / TIMEOUT'}**",
-        f"- **Total Duration**: {total_flight_duration}s (timeout: {timeout_sec}s)",
-        f"- **Video Recording**: `{rec_file or 'None'}` ({round(rec_size_bytes / 1024, 2)} KB)",
-        "",
-        "## Milestone Progression",
-        "| Milestone | Detected | Elapsed (s) | Keyframe | Sample Log Line |",
-        "| :--- | :---: | :---: | :--- | :--- |",
-    ]
-    for m_name in ["LOBBY_MENU", "MATCH_INVITE", "GAZEBO", "MAP_CHANGE", "BROWSE_RANGE"]:
-        m_data = milestones[m_name]
-        det = "✅ PASS" if m_data["detected"] else "❌"
-        el = f"+{m_data['elapsed']}s" if m_data["detected"] else "-"
-        kf = f"`{m_data['keyframe']}`" if m_data["keyframe"] else "-"
-        ln = f"`{m_data['line'][:60]}...`" if m_data["line"] else "-"
-        summary_lines.append(f"| **{m_name}** | {det} | {el} | {kf} | {ln} |")
-
-    summary_content = "\n".join(summary_lines)
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_content = build_summary_markdown(
+        ts_tag=ts_tag,
+        target_key=target_key,
+        passed=passed,
+        total_flight_duration=total_flight_duration,
+        timeout_sec=timeout_sec,
+        rec_file=rec_file,
+        rec_size_bytes=rec_size_bytes,
+        milestones=milestones,
+        diagnostics=diagnostics,
+    )
     with open(summary_path, "w", encoding="utf-8") as f:
         f.write(summary_content)
     print(f"[*] [FLIGHT] Flight telemetry summary saved to: {summary_path}")
@@ -392,35 +657,29 @@ def main():
             "target": target_key,
             "passed": passed,
             "duration": total_flight_duration,
+            "post_hold": post_hold_sec,
             "recording": rec_file,
             "recording_size_bytes": rec_size_bytes,
             "summary_file": str(summary_path),
             "milestones": milestones,
+            "diagnostics": diagnostics,
         }
         print(json.dumps(report_data, indent=2))
         return 0 if passed else 1
 
-    print("\n============================================================")
-    print("              IMMORTAL AUTOMATED FLIGHT REPORT              ")
-    print("============================================================")
-    print(f"  Flight Target:      {target_key} (target={args.target})")
-    print(f"  Overall Result:     {'PASS' if passed else 'FAIL / TIMEOUT'}")
-    print(f"  Total Duration:     {total_flight_duration}s / {timeout_sec}s max")
-    print(f"  Recording:          {rec_file or 'None'} ({round(rec_size_bytes / 1024, 2)} KB)")
-    print(f"  Telemetry Summary:  {summary_path}")
-    print("\nMilestones:")
-    for m_name in ["LOBBY_MENU", "MATCH_INVITE", "GAZEBO", "MAP_CHANGE", "BROWSE_RANGE"]:
-        m_data = milestones[m_name]
-        status_str = f"[PASS]  {m_name:<14} (+{m_data['elapsed']}s)" if m_data["detected"] else f"[----]  {m_name:<14} (not reached)"
-        line_preview = f"  {m_data['line'][:70]}" if m_data["line"] else ""
-        print(f"  {status_str}{line_preview}")
-
-    if extracted_keyframes:
-        print("\nKeyframes:")
-        for kf_name, kf_p in extracted_keyframes.items():
-            print(f"  - {kf_name}: {kf_p}")
-    print("============================================================\n")
-
+    print_flight_report(
+        args=args,
+        target_key=target_key,
+        passed=passed,
+        total_flight_duration=total_flight_duration,
+        timeout_sec=timeout_sec,
+        rec_file=rec_file,
+        rec_size_bytes=rec_size_bytes,
+        summary_path=summary_path,
+        milestones=milestones,
+        extracted_keyframes=extracted_keyframes,
+        diagnostics=diagnostics,
+    )
     return 0 if passed else 1
 
 

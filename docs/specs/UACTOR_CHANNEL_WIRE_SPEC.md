@@ -93,7 +93,7 @@ Bit Offset  Field                       Encoding / Condition
   - `PackageMap->List` stores `FPackageInfo` entries containing `PackageName` (`FName`), `Linker` (`ULinkerLoad*`), `Guid` (`FGuid`, 16 bytes), `ObjectBase` (`i32`, cumulative sum of preceding entries' `ObjectCount`), `ObjectCount` (`i32`, `min(Linker.Summary.Generations[LocalGen - 1].NetObjectCount, ...)`), `LocalGeneration` (`i32`), and `RemoteGeneration` (`i32`, forced to `1` for `0x2C`/`0x2D` per `0x140b31b70`).
   - Every `UObject` with `NetIndex >= 0` maps to `Info.ObjectBase + Obj.NetIndex`.
 
-### 2.2 `NMT_Uses` (`0x07`) / `NMT_UsesOpt` (`0x2C`) / `NMT_UsesOptEx` (`0x2D`) / `NMT_Have` (`0x08`)
+### 2.2 `NMT_Uses` (`0x07`) / `NMT_UsesOpt` (`0x2C`) / `NMT_UsesOptEx` (`0x2D`) / `NMT_Have` (`0x08`) / `NMT_DownloadMgr` (`0x0B`)
 
 | Opcode | Name | Authority VA | Wire Payload Fields (After 1-Byte Opcode) |
 | :---: | :--- | :--- | :--- |
@@ -101,6 +101,7 @@ Bit Offset  Field                       Encoding / Condition
 | `0x2C` | `NMT_UsesOpt` | `0x140b27810` | `FGuid (4×u32)`, `FString PackageName`, `u32 PackageFlags`, `i32 CachedExtIndex` (`-1` = none; else index into cached parent extension table populated by `0x2D`) |
 | `0x2D` | `NMT_UsesOptEx` | `0x140b27940` | `FGuid (4×u32)`, `FString PackageName`, `u32 PackageFlags`, `i32 GenOrFlags`, `FString ExtensionOrParent` (appended to extension table; maps forced-export subpackage `PackageName -> ExtensionOrParent` in `0x140b4deb0` via `0x140b57220` so `Linker` loads from the parent `.upk`) |
 | `0x08` | `NMT_Have` | `0x14058adb0` | `FGuid (4×u32)`, `i32 Generation` (`4B LE`) |
+| `0x0B` | `NMT_DownloadMgr` | `oracle_probe_trace.json` | `FString ClassName`, `FString Params`, `u32 bCompression` (4-byte LE UE3 `UBOOL`, verified empirically in `oracle_probe_trace.json`) |
 
 - **Empirical `NMT_Have` Gate**: Client emits `NMT_Have` per package received in `0x07`/`0x2C`/`0x2D`. Without client `NMT_Have`, retail server logs `Join succeeded` after `NMT_Join` but stalls emitting only keepalives.
 - **Package Ordering Before `NMT_Welcome` -> `0x2A` -> `NMT_Join`**:

@@ -181,16 +181,81 @@ def kill_game_and_server() -> None:
         time.sleep(0.3)
 
 
-def ensure_immortal_server_built() -> Optional[str]:
-    """Ensures target/release/immortal-server is compiled and available."""
+def _collect_server_build_inputs(repo_root: Path) -> List[Path]:
+    """Collects Cargo manifests and Rust sources that trigger an immortal-server rebuild."""
+    inputs: List[Path] = []
+    for top_file in ("Cargo.toml", "Cargo.lock"):
+        candidate = repo_root / top_file
+        if candidate.is_file():
+            inputs.append(candidate)
+    for pattern in ("crates/*/Cargo.toml", "crates/*/src/**/*.rs"):
+        for path in repo_root.glob(pattern):
+            if path.is_file():
+                inputs.append(path)
+    return inputs
+
+
+def ensure_immortal_server_built(force_rebuild: bool = False) -> Optional[str]:
+    """Ensures target/release/immortal-server is compiled and up to date."""
     server_bin = REPO_ROOT / "target" / "release" / "immortal-server"
-    if not server_bin.is_file():
-        print("[*] [FLIGHT] Building target/release/immortal-server...")
+    reason: Optional[str] = None
+    if force_rebuild:
+        reason = "Force-rebuilding target/release/immortal-server..."
+    elif not server_bin.is_file():
+        reason = "Building target/release/immortal-server..."
+    else:
+        try:
+            bin_mtime = server_bin.stat().st_mtime
+            for src_path in _collect_server_build_inputs(REPO_ROOT):
+                if src_path.stat().st_mtime > bin_mtime:
+                    reason = f"Stale target/release/immortal-server ({src_path.name} modified); rebuilding..."
+                    break
+        except OSError:
+            reason = "Unable to stat build inputs; rebuilding target/release/immortal-server..."
+
+    if reason is not None:
+        print(f"[*] [FLIGHT] {reason}")
         res = subprocess.run(["cargo", "build", "--release", "-p", "immortal-server"], cwd=REPO_ROOT)
         if res.returncode != 0:
             print("[!] Warning: cargo build --release -p immortal-server failed.", file=sys.stderr)
             return None
     return str(server_bin)
+
+
+def is_ydotoold_running() -> bool:
+    """Checks whether ydotoold is active via YDOTOOL_SOCKET, runtime socket, or ps."""
+    sock_env = os.environ.get("YDOTOOL_SOCKET")
+    sock_path = Path(sock_env) if sock_env else Path(f"/run/user/{os.getuid()}/.ydotool_socket")
+    try:
+        if sock_path.exists():
+            return True
+    except OSError:
+        pass
+
+    try:
+        proc = subprocess.run(
+            ["ps", "-eo", "args="],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except OSError:
+        return False
+
+    ignore_markers = ("pgrep", "pkill", "grep", "pytest")
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        low = stripped.lower()
+        if any(marker in low for marker in ignore_markers):
+            continue
+        tokens = stripped.split()
+        cmd_tok = tokens[1] if tokens[0].isdigit() and len(tokens) > 1 else tokens[0]
+        base = cmd_tok.strip("\"'").replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if base == "ydotoold":
+            return True
+    return False
 
 
 # --- Hardware Screen Recording Helpers (gpu-screen-recorder) ---
