@@ -225,6 +225,37 @@ impl<'a> BitReader<'a> {
         ]))
     }
 
+    /// Reads a 32-bit little-endian IEEE-754 float.
+    pub fn read_f32(&mut self) -> Result<f32, NetError> {
+        let bytes = self.read_bytes(4)?;
+        Ok(f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
+    /// Reads a UE3 `SerializeCompressedVector`:
+    /// `BitsMinus1 = read_int(20)`, `Bias = 1 << (BitsMinus1 + 1)`,
+    /// `Max = 1 << (BitsMinus1 + 2)`, followed by X/Y/Z as `read_int(Max) - Bias`.
+    pub fn read_compressed_vector(&mut self) -> Result<[f32; 3], NetError> {
+        let bits_minus1 = self.read_int(20)?;
+        let bias = 1i64 << (bits_minus1 + 1);
+        let max_val = 1u32 << (bits_minus1 + 2);
+        let x = (i64::from(self.read_int(max_val)?) - bias) as f32;
+        let y = (i64::from(self.read_int(max_val)?) - bias) as f32;
+        let z = (i64::from(self.read_int(max_val)?) - bias) as f32;
+        Ok([x, y, z])
+    }
+
+    /// Reads a UE3 `SerializeCompressedRotator` in `(Pitch, Yaw, Roll)` order:
+    /// per component, `1b bNonZero` + optional `u8` shifted left by `8`.
+    pub fn read_compressed_rotator(&mut self) -> Result<[i32; 3], NetError> {
+        let mut out = [0i32; 3];
+        for slot in &mut out {
+            if self.read_bit()? {
+                *slot = i32::from(self.read_u8()?) << 8;
+            }
+        }
+        Ok(out)
+    }
+
     /// Reads a UE3 `FString` (`i32` length prefix):
     /// - `0` -> empty string (0 trailing bytes)
     /// - `> 0` -> ASCII/UTF-8 bytes including trailing NUL (`<= MAX_FSTRING_LEN`)
@@ -417,6 +448,65 @@ impl BitWriter {
     /// Writes a 64-bit little-endian unsigned integer.
     pub fn write_u64(&mut self, val: u64) {
         self.write_bytes(&val.to_le_bytes());
+    }
+
+    /// Writes a 32-bit little-endian IEEE-754 float (preserving exact bit representation).
+    pub fn write_f32(&mut self, val: f32) {
+        self.write_bytes(&val.to_bits().to_le_bytes());
+    }
+
+    /// Writes a UE3 `SerializeCompressedVector`:
+    /// rounds finite components to `i64`, selects minimal `BitsMinus1` in `0..20`
+    /// where `-(1 << (BitsMinus1 + 1)) <= c < (1 << (BitsMinus1 + 1))`, writes
+    /// `BitsMinus1` via `write_int(bits_minus1, 20)`, and encodes X/Y/Z with `Bias` & `Max`.
+    pub fn write_compressed_vector(&mut self, value: [f32; 3]) -> Result<(), NetError> {
+        for &c in &value {
+            if !c.is_finite() {
+                return Err(NetError::BunchError(
+                    "BitWriter::write_compressed_vector received non-finite component".to_string(),
+                ));
+            }
+        }
+        let ix = value[0].round() as i64;
+        let iy = value[1].round() as i64;
+        let iz = value[2].round() as i64;
+
+        let mut bits_minus1: u32 = 0;
+        while bits_minus1 < 20 {
+            let bias = 1i64 << (bits_minus1 + 1);
+            if ix >= -bias && ix < bias && iy >= -bias && iy < bias && iz >= -bias && iz < bias {
+                break;
+            }
+            bits_minus1 += 1;
+        }
+        if bits_minus1 >= 20 {
+            return Err(NetError::BunchError(format!(
+                "BitWriter::write_compressed_vector ({}, {}, {}) exceeds 20-bit signed range",
+                ix, iy, iz
+            )));
+        }
+
+        self.write_int(bits_minus1, 20)?;
+        let bias = 1i64 << (bits_minus1 + 1);
+        let max_val = 1u32 << (bits_minus1 + 2);
+        self.write_int((ix + bias) as u32, max_val)?;
+        self.write_int((iy + bias) as u32, max_val)?;
+        self.write_int((iz + bias) as u32, max_val)?;
+        Ok(())
+    }
+
+    /// Writes a UE3 `SerializeCompressedRotator` in `(Pitch, Yaw, Roll)` order:
+    /// per component, `1b bNonZero` + optional `u8` (`(c >> 8) & 0xFF`).
+    pub fn write_compressed_rotator(&mut self, value: [i32; 3]) {
+        for &c in &value {
+            let byte = ((c >> 8) & 0xFF) as u8;
+            if byte != 0 {
+                self.write_bit(true);
+                self.write_u8(byte);
+            } else {
+                self.write_bit(false);
+            }
+        }
     }
 
     /// Writes a UE3 `FString`:
@@ -617,5 +707,95 @@ mod tests {
             ue3_handshake_crc(0xDEAD_BEEF),
             ue3_str_crc(&unsigned_deadbeef)
         );
+    }
+
+    #[test]
+    fn test_serialize_int_20_boundaries() {
+        // For Max = 20:
+        // - 0..=3 have (val & 0xF) < 4 so written + 16 < 20 -> 5 bits
+        // - 4..=15 have (val & 0xF) >= 4 so written + 16 >= 20 -> 4 bits
+        // - 16..=19 have (val & 0xF) < 4 so written + 16 < 20 -> 5 bits
+        for val in 0u32..20 {
+            let expected_bits = if (val & 0xF) < 4 { 5 } else { 4 };
+            let mut w = BitWriter::new();
+            w.write_int(val, 20).unwrap();
+            assert_eq!(
+                w.num_bits(),
+                expected_bits,
+                "Unexpected SerializeInt(20) bit width for {}",
+                val
+            );
+            let bytes = w.finish_with_stop_bit();
+            let stripped = strip_stop_bit(&bytes).unwrap();
+            assert_eq!(stripped, expected_bits);
+            let mut r = BitReader::new(&bytes, stripped).unwrap();
+            assert_eq!(r.read_int(20).unwrap(), val);
+            assert!(r.at_end());
+        }
+
+        let mut w = BitWriter::new();
+        assert!(w.write_int(20, 20).is_err());
+    }
+
+    #[test]
+    fn test_compressed_vector_roundtrip_and_oracle_vectors() {
+        let cases: &[([f32; 3], usize)] = &[
+            ([0.0, 0.0, 0.0], 11),
+            ([-2.0, 1.0, 0.0], 11),
+            ([2.0, 0.0, 0.0], 14),
+            ([-224.0, 0.0, 203.0], 31),
+            ([1890.0, 239.0, 259.0], 40),
+            ([-1_048_576.0, 1_048_575.0, 0.0], 68),
+        ];
+
+        for &(vec, expected_bits) in cases {
+            let mut w = BitWriter::new();
+            w.write_compressed_vector(vec).unwrap();
+            assert_eq!(
+                w.num_bits(),
+                expected_bits,
+                "Bit width mismatch for CompressedVector {:?}",
+                vec
+            );
+            let bits = w.num_bits();
+            let bytes = w.into_bytes();
+            let mut r = BitReader::new(&bytes, bits).unwrap();
+            let decoded = r.read_compressed_vector().unwrap();
+            assert_eq!(decoded, vec);
+            assert!(r.at_end());
+        }
+
+        let mut w = BitWriter::new();
+        assert!(w.write_compressed_vector([1_048_576.0, 0.0, 0.0]).is_err());
+        assert!(w.write_compressed_vector([f32::NAN, 0.0, 0.0]).is_err());
+    }
+
+    #[test]
+    fn test_compressed_rotator_roundtrip() {
+        let cases: &[([i32; 3], usize)] = &[
+            ([0, 0, 0], 3),
+            ([0, 64512, 0], 11),
+            ([256, 65280, 16384], 27),
+        ];
+
+        for &(rot, expected_bits) in cases {
+            let mut w = BitWriter::new();
+            w.write_compressed_rotator(rot);
+            assert_eq!(w.num_bits(), expected_bits);
+            let bits = w.num_bits();
+            let bytes = w.into_bytes();
+            let mut r = BitReader::new(&bytes, bits).unwrap();
+            assert_eq!(r.read_compressed_rotator().unwrap(), rot);
+            assert!(r.at_end());
+        }
+
+        // Low 8 bits are quantized away on wire (>> 8)
+        let mut w = BitWriter::new();
+        w.write_compressed_rotator([257, 64513, 127]);
+        assert_eq!(w.num_bits(), 19);
+        let bytes = w.into_bytes();
+        let mut r = BitReader::new(&bytes, 19).unwrap();
+        assert_eq!(r.read_compressed_rotator().unwrap(), [256, 64512, 0]);
+        assert!(r.at_end());
     }
 }
