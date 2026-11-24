@@ -92,11 +92,93 @@ def pid_is_running(pid: int) -> bool:
         return False
 
 
+def _is_game_or_server_cmdline(cmdline: str) -> bool:
+    """
+    Returns True only for actual Paladins client/server or immortal-server
+    processes, excluding RE/Ghidra/CLI/test tools whose arguments happen to
+    reference the binary filename.
+    """
+    low = cmdline.lower()
+    if not low.strip():
+        return False
+
+    # Exclude RE / Ghidra / agyis / shell / test tools that mention exe names as arguments
+    re_or_tool_markers = (
+        "ghidra",
+        "analyzeheadless",
+        "decompilefunc",
+        "exportghidradata",
+        "agyis",
+        "rea-mcp",
+        "pgrep",
+        "pkill",
+        "pytest",
+    )
+    if any(marker in low for marker in re_or_tool_markers):
+        return False
+
+    tokens = cmdline.split()
+    exe_names = ("shippingpc-chaosgame.exe", "shippingpc-chaosgame-server.exe")
+
+    for idx, tok in enumerate(tokens):
+        tok_low = tok.strip("\"'").lower()
+        base = tok_low.replace("\\", "/").rsplit("/", 1)[-1]
+        if base in exe_names:
+            # Must be arg 0 (Wine process) or launched by wine/proton
+            if idx == 0:
+                return True
+            prev_tokens = " ".join(t.lower() for t in tokens[:idx])
+            if "wine" in prev_tokens or "proton" in prev_tokens:
+                return True
+        if base == "immortal-server" and idx == 0:
+            return True
+
+    return False
+
+
+def find_game_and_server_processes() -> List[Dict[str, Any]]:
+    """
+    Lists active Paladins client/server and immortal-server processes without
+    matching agyis re / Ghidra headless processes.
+    """
+    try:
+        proc = subprocess.run(
+            ["ps", "-eo", "pid=,args="],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except OSError:
+        return []
+
+    matches: List[Dict[str, Any]] = []
+    my_pid = os.getpid()
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        parts = stripped.split(None, 1)
+        if len(parts) < 2 or not parts[0].isdigit():
+            continue
+        pid = int(parts[0])
+        if pid == my_pid:
+            continue
+        cmdline = parts[1]
+        if _is_game_or_server_cmdline(cmdline):
+            matches.append({"pid": pid, "cmdline": cmdline})
+    return matches
+
+
 def kill_game_and_server() -> None:
-    """Terminates lingering Paladins and Immortal server processes."""
-    subprocess.run(["pkill", "-9", "-f", "ShippingPC-ChaosGame.exe"], stderr=subprocess.DEVNULL)
-    subprocess.run(["pkill", "-9", "-f", "immortal-server"], stderr=subprocess.DEVNULL)
-    time.sleep(0.3)
+    """Terminates lingering Paladins and Immortal server processes safely."""
+    targets = find_game_and_server_processes()
+    for proc_info in targets:
+        try:
+            os.kill(proc_info["pid"], signal.SIGKILL)
+        except OSError:
+            pass
+    if targets:
+        time.sleep(0.3)
 
 
 def ensure_immortal_server_built() -> Optional[str]:

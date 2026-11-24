@@ -14,16 +14,17 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib.capture_core import inspect_sdd_status
 from lib.common import (
     DIRTYROOM_ROOT,
     RECORD_PID_FILE,
     REPO_ROOT,
     button_to_hex,
     ensure_immortal_server_built,
+    find_game_and_server_processes,
     get_launch_log_path,
     get_window_info,
     kill_game_and_server,
-    pid_is_running,
     run_ydotool,
     send_key,
     start_recording,
@@ -100,9 +101,10 @@ def launch_client():
     ]
     log_path = DIRTYROOM_ROOT / "logs" / "client.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_file = open(log_path, "w")
-    subprocess.Popen(cmd_args, env=env, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
-    print(f"[*] Paladins client process dispatched (logging to {log_path}).")
+    with open(log_path, "w") as log_file:
+        proc = subprocess.Popen(cmd_args, env=env, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
+    print(f"[*] Paladins client process dispatched (PID: {proc.pid}, logging to {log_path}).")
+    return proc
 
 
 def extract_keyframe(rec_file, timestamp_offset, output_img):
@@ -167,13 +169,23 @@ def main():
     print("============================================================")
 
     # 1. Pre-flight sanity & cleanup
+    sdd_info = inspect_sdd_status()
+    if sdd_info.get("current_mode") == "retail":
+        print(
+            "[!] Error: Service Discovery (.sdd) is in RETAIL mode; "
+            "restore to IMMORTAL mode ('agyis capture restore --mode immortal') before flight.",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"[*] [FLIGHT] Service Discovery mode: {sdd_info.get('current_mode', 'unknown').upper()}")
+
     print("[*] [FLIGHT] Pre-flight cleanup: terminating lingering game & server processes...")
     kill_game_and_server()
     if os.path.exists(RECORD_PID_FILE):
         try:
             stop_recording()
-        except Exception:
-            pass
+        except OSError as e:
+            print(f"[!] Warning: Could not stop leftover recording: {e}", file=sys.stderr)
 
     server_bin = ensure_immortal_server_built()
     if not server_bin or not os.path.isfile(server_bin):
@@ -186,26 +198,26 @@ def main():
             with open(launch_log, "w") as f:
                 f.truncate(0)
             print(f"[*] [FLIGHT] Truncated client log: {launch_log}")
-        except Exception as e:
+        except OSError as e:
             print(f"[!] Warning: Could not truncate {launch_log}: {e}", file=sys.stderr)
     else:
         os.makedirs(os.path.dirname(launch_log), exist_ok=True)
         try:
             open(launch_log, "w").close()
             print(f"[*] [FLIGHT] Initialized client log file: {launch_log}")
-        except Exception as e:
+        except OSError as e:
             print(f"[!] Warning: Could not initialize {launch_log}: {e}", file=sys.stderr)
 
     # 2. Start release server daemon in background
     scratch_dir = REPO_ROOT / "scratch"
     scratch_dir.mkdir(parents=True, exist_ok=True)
     flight_server_log = scratch_dir / "flight_server.log"
-    slog = open(flight_server_log, "w")
     senv = os.environ.copy()
     senv["RUST_LOG"] = "info,immortal_net=debug,immortal_server=debug"
-    server_proc = subprocess.Popen(
-        [server_bin], env=senv, stdout=slog, stderr=subprocess.STDOUT, start_new_session=True
-    )
+    with open(flight_server_log, "w") as slog:
+        server_proc = subprocess.Popen(
+            [server_bin], env=senv, stdout=slog, stderr=subprocess.STDOUT, start_new_session=True
+        )
     print(f"[*] [FLIGHT] immortal-server daemon started (PID: {server_proc.pid}, logging to {flight_server_log}).")
     time.sleep(0.5)
 
@@ -214,18 +226,20 @@ def main():
     rec_start_time = None
     if args.record:
         rec_res = start_recording(agent_preset=True, window="screen")
-        if rec_res == 0 and os.path.exists(RECORD_PID_FILE):
+        if rec_res != 0:
+            print(f"[!] Warning: Screen recording failed to start (code: {rec_res}); continuing without video.", file=sys.stderr)
+        elif os.path.exists(RECORD_PID_FILE):
             try:
                 with open(RECORD_PID_FILE, "r") as f:
                     rec_state = json.load(f)
                     rec_file = rec_state.get("output_file")
                     rec_start_time = rec_state.get("start_time", time.time())
-            except Exception:
-                pass
+            except (OSError, json.JSONDecodeError) as e:
+                print(f"[!] Warning: Failed to read recording state {RECORD_PID_FILE}: {e}", file=sys.stderr)
 
     # 4. Launch Paladins client
     print("[*] [FLIGHT] Launching Paladins game client...")
-    launch_client()
+    client_proc = launch_client()
 
     # 5. Real-time log monitoring loop
     milestones = {
@@ -240,6 +254,8 @@ def main():
     log_handle = None
     current_ino = None
     current_pos = 0
+    client_seen_running = False
+    log_read_warned = False
 
     print(f"[*] [FLIGHT] Monitoring Launch.log for milestone progression (timeout: {timeout_sec}s)...")
 
@@ -248,6 +264,27 @@ def main():
             if milestones[target_key]["detected"]:
                 print(f"[+] [FLIGHT] Target milestone '{target_key}' reached! Concluding flight.")
                 time.sleep(0.5)
+                break
+
+            if server_proc.poll() is not None:
+                print(
+                    f"[!] [FLIGHT] immortal-server exited unexpectedly (code={server_proc.returncode}). Aborting flight.",
+                    file=sys.stderr,
+                )
+                break
+
+            running_procs = find_game_and_server_processes()
+            client_active = any("shippingpc-chaosgame" in m["cmdline"].lower() for m in running_procs)
+            if client_active:
+                client_seen_running = True
+            elif client_seen_running and (client_proc is None or client_proc.poll() is not None):
+                print("[!] [FLIGHT] Paladins client process exited before reaching target milestone. Aborting flight.", file=sys.stderr)
+                break
+            elif not client_seen_running and (time.time() - flight_start_time) > 10.0 and client_proc is not None and client_proc.poll() is not None:
+                print(
+                    f"[!] [FLIGHT] Client launcher exited early (code={client_proc.returncode}) without game process. Aborting flight.",
+                    file=sys.stderr,
+                )
                 break
 
             if os.path.exists(launch_log):
@@ -281,15 +318,17 @@ def main():
                                                 invite_handled = True
                                                 perform_flight_auto_accept()
                                             break
-                except Exception:
-                    pass
+                except OSError as e:
+                    if not log_read_warned:
+                        print(f"[!] Warning: Error reading {launch_log}: {e}", file=sys.stderr)
+                        log_read_warned = True
 
             time.sleep(0.2)
     finally:
         if log_handle:
             try:
                 log_handle.close()
-            except Exception:
+            except OSError:
                 pass
 
     total_flight_duration = round(time.time() - flight_start_time, 2)

@@ -12,7 +12,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ORACLE_DIR="$REPO_ROOT/.dirtyroom/oracle"
+DIRTYROOM_ROOT="${IMMORTAL_DIRTYROOM:-$REPO_ROOT/.dirtyroom}"
+if [[ ! -d "$DIRTYROOM_ROOT" ]]; then
+    DIRTYROOM_ROOT="/mnt/fast_data/re_dirtyroom/paladins_8.1.5839.0"
+fi
+ORACLE_DIR="$DIRTYROOM_ROOT/oracle"
 PID_FILE="$ORACLE_DIR/retail_server.pid"
 LOG_FILE="$ORACLE_DIR/retail_server.log"
 WINE_PREFIX="$ORACLE_DIR/prefix"
@@ -27,10 +31,13 @@ MULTIHOME="$DEFAULT_MULTIHOME"
 MODE="foreground" # foreground | daemon | stop | status | logs
 TAIL_LINES=50
 
-# Candidate binaries in priority order
+# Candidate binaries in priority order (isolated patched dedicated server first)
 CANDIDATE_BINS=(
+    "$ORACLE_DIR/runtime/Binaries/Win64/ShippingPC-ChaosGame-Server.exe"
+    "$DIRTYROOM_ROOT/binaries/ShippingPC-ChaosGame-Server.exe"
+    "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/Binaries/Win64/ShippingPC-ChaosGame-Server.exe"
+    "$DIRTYROOM_ROOT/binaries/ShippingPC-ChaosGame.exe"
     "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/Binaries/Win64/ShippingPC-ChaosGame.exe"
-    "$REPO_ROOT/.dirtyroom/binaries/ShippingPC-ChaosGame.exe"
 )
 
 usage() {
@@ -171,19 +178,11 @@ do_status() {
         mem=$(ps -o rss= -p "$pid" 2>/dev/null | awk '{printf "%.1f MB", $1/1024}' || echo "N/A")
         echo "Memory RSS:       $mem"
 
-        # Check UDP listener on configured port and standard UE3 listen ports
-        local bound_port=""
-        for p in "$PORT" 7777 7778; do
-            if ss -ulnp 2>/dev/null | grep -q ":$p "; then
-                bound_port="$p"
-                break
-            fi
-        done
-
-        if [[ -n "$bound_port" ]]; then
-            echo "UDP Port $bound_port:     LISTENING (bound to network)"
+        # Check UDP listener on configured port specifically
+        if ss -ulnp 2>/dev/null | grep -Eq ":${PORT}([[:space:]]|$)"; then
+            echo "UDP Port $PORT:     LISTENING (bound to network)"
         else
-            echo "UDP Port $PORT (7777/7778): INITIALIZING (UE3 engine load phase)"
+            echo "UDP Port $PORT:     INITIALIZING (UE3 engine load phase)"
         fi
         return 0
     else
@@ -306,27 +305,48 @@ do_start() {
     export WINEDLLOVERRIDES="mscoree,mshtml="
     export WINEDEBUG="-all"
     export OPENSSL_ia32cap="~0x20000000"
-    # Display configuration for D3D viewport initialization
-    if [[ -z "${DISPLAY:-}" ]]; then
-        if [[ -S /tmp/.X11-unix/X0 ]]; then
-            export DISPLAY=":0"
-        elif [[ -S /tmp/.X11-unix/X1 ]]; then
-            export DISPLAY=":1"
-        fi
+
+    local is_server_bin=false
+    if [[ "$(basename "$target_bin")" == *"Server"* ]]; then
+        is_server_bin=true
     fi
 
-    # Assemble server arguments per ADOPT-09 specification
-    local map_query="${MAP}?listen?game=TgGame.TgGame_Paladins?maxplayers=2"
-    local server_args=(
-        "$map_query"
-        "-port=$PORT"
-        "-multihome=$MULTIHOME"
-        "-seekfreeloadingpcconsole"
-        "-pid=402"
-        "-eac-nop-loaded"
-        "-homedir=Tempest"
-        "-log"
-    )
+    local server_args=()
+    if [[ "$is_server_bin" == "true" ]]; then
+        unset DISPLAY WAYLAND_DISPLAY || true
+        local map_query="${MAP}?game=TgGame.TgGame_Paladins?maxplayers=2"
+        server_args=(
+            "server"
+            "$map_query"
+            "-port=$PORT"
+            "-multihome=$MULTIHOME"
+            "-seekfreeloadingpcconsole"
+            "-pid=402"
+            "-eac-nop-loaded"
+            "-homedir=Tempest"
+            "-log"
+        )
+    else
+        # Display configuration for D3D viewport initialization in client fallback mode
+        if [[ -z "${DISPLAY:-}" ]]; then
+            if [[ -S /tmp/.X11-unix/X0 ]]; then
+                export DISPLAY=":0"
+            elif [[ -S /tmp/.X11-unix/X1 ]]; then
+                export DISPLAY=":1"
+            fi
+        fi
+        local map_query="${MAP}?listen?game=TgGame.TgGame_Paladins?maxplayers=2"
+        server_args=(
+            "$map_query"
+            "-port=$PORT"
+            "-multihome=$MULTIHOME"
+            "-seekfreeloadingpcconsole"
+            "-pid=402"
+            "-eac-nop-loaded"
+            "-homedir=Tempest"
+            "-log"
+        )
+    fi
 
     echo "=== Launching Headless Wine Retail Dedicated Server Oracle ==="
     echo "Binary:        $target_bin"

@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.common import (
     DIRTYROOM_ROOT,
+    find_game_and_server_processes,
     get_launch_log_path,
     kill_game_and_server,
     pid_is_running,
@@ -141,15 +142,10 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     # 5. Lingering Processes
     print("\nLingering Game & Server Processes:")
-    pgrep_res = subprocess.run(
-        ["pgrep", "-a", "-f", "ShippingPC-ChaosGame.exe|immortal-server"],
-        stdout=subprocess.PIPE,
-        text=True,
-    )
-    lines = [l for l in pgrep_res.stdout.splitlines() if "pgrep" not in l]
-    if lines:
-        for l in lines:
-            print(f"  [!] {l}")
+    matches = find_game_and_server_processes()
+    if matches:
+        for m in matches:
+            print(f"  [!] {m['pid']} {m['cmdline']}")
     else:
         print("  [✓] Zero lingering game/server processes.")
 
@@ -419,8 +415,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             print("[*] Watching for Paladins client lifecycle (waiting up to 120s for Proton launch)...")
             appeared = False
             for _ in range(120):
-                proc = subprocess.run(["pgrep", "-f", "ShippingPC-ChaosGame.exe|Paladins.exe"], stdout=subprocess.PIPE, text=True)
-                if proc.stdout.strip():
+                if any("shippingpc-chaosgame.exe" in m["cmdline"].lower() for m in find_game_and_server_processes()):
                     appeared = True
                     break
                 time.sleep(1.0)
@@ -428,8 +423,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             if appeared:
                 print("[*] Paladins process detected. Capturing until client exits...")
                 while True:
-                    proc = subprocess.run(["pgrep", "-f", "ShippingPC-ChaosGame.exe|Paladins.exe"], stdout=subprocess.PIPE, text=True)
-                    if not proc.stdout.strip():
+                    if not any("shippingpc-chaosgame.exe" in m["cmdline"].lower() for m in find_game_and_server_processes()):
                         print("[*] Paladins client exited cleanly.")
                         break
                     time.sleep(1.0)
