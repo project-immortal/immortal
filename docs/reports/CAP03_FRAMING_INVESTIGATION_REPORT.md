@@ -23,13 +23,11 @@
        - **Handshake Finalization (46 bytes)**: Frames 14607–14610 in CAP-03. Flag drops `0x05` (from `0x5d` -> `0x58`, or `0x8d` -> `0x88`), completing the mutual exchange.
      - **Layer B: Sequenced Gameplay Datagrams (`subflags = 0x0001`)**: Packets begin with `[0x01, 0x00, 0x00, 0x00]`, a 4-byte little-endian monotonic sequence counter (independently maintained per-direction: C->S and S->C starting at 1), and a 2-byte subflag `[0x00, 0x01]`.
 
-2. **Session Token Invariant & Falsification of Static Session Token Hypothesis**:
-   - **Hypothesis Tested**: Is the 6-byte sequence following the 10-byte prefix (`78 7e 10 7b 9a 8f` in CAP-03, `0d 6f c0 44 3a 58` in CAP-01) a static session token symmetrically present on all sequenced packets?
-   - **Empirical Falsification**: **FALSE**. Exhaustive packet search across all 53,008 packets in CAP-03 and 46,252 packets in CAP-01 proves that this 6-byte token appears **EXACTLY TWICE** per session:
-     - In CAP-03: Frame 14612 (C->S Seq 1) and Frame 14613 (S->C Seq 1).
-     - In CAP-01: Frame 9789 (C->S Seq 1) and Frame 9801 (S->C Seq 1).
-   - On Seq 2+, the 6 bytes at offset 10..16 are completely distinct on every packet.
-   - **Root Cause & Architectural Purpose**: The 6-byte token on Seq 1 is the initial synchronized handshake connection cookie established during the 46-byte unsequenced exchange. It acts as an initial synchronization barrier verifying that both client and server are bound to the identical session before transitioning to sequenced datagrams.
+2. **Retraction (`PSL-INV-012`) — Falsification of `"Seq 1 6-Byte Session Token Synchronization Barrier"` Claim**:
+   - **Prior Hypothesis (Retracted)**: An earlier draft of this report claimed that the identical 6-byte prefix at bytes `10..16` on Seq 1 in both directions (`78 7e 10 7b 9a 8f` in `CAP-03` Frames 14612/14613; `0d 6f c0 44 3a 58` in `CAP-01` Frames 9789/9801) was a `"Seq 1 6-byte session token synchronization barrier"` established during the `0x0010` handshake.
+   - **Empirical & Binary Falsification (`#42`, `exudp2_crypto_re_report.md`)**: **FALSE — RETRACTED.** Binary reverse engineering of `ShippingPC-ChaosGame.exe` (`0c51d381...`) proves `CCryptopp::GenSession` (`0x1400dcac0`) initializes **both** TX (`+0x200`) and RX (`+0x208`) `CryptoPP::Salsa20` instances with the **identical 32-byte key and 8-byte base IV**, seeking to `(seq == 0 ? 1 : seq) * payload_len`. Because `CAP-03` `Frame 14612` (`C->S`, `seq=1`, `44B` total, `18B` encrypted payload) and `Frame 14613` (`S->C`, `seq=1`, `44B` total, `18B` encrypted payload) share identical `(seq, payload_len)`, XORing their encrypted payloads yields:
+     - `Frame 14612[10:28] ^ Frame 14613[10:28] = 000000000000 05800450401161ae7e2b63bb`
+     - The leading 6 bytes cancel completely to `000000000000` because both directions prepend a 6-byte zero `PComNetConn` prefix (`00 00 00 00 00 00`) prior to Salsa20 encryption. Thus `78 7e 10 7b 9a 8f` is **NOT** a plaintext session token synchronization barrier, but `000000000000 ^ Salsa20(K, IV).Seek(1 * 18)[0:6]` arising from bidirectional TX/RX Salsa20 keystream reuse. On `Seq 2+`, `(seq * payload_len)` and differing payload lengths yield distinct keystream slices on every packet.
 
 3. **Transport De-framing & Socket Architecture (REA Reverse Engineering)**:
    - Decompilation of `UPComNetDriver::TickDispatch` (`0x140bd48e0`), `FSocketWin64::RecvFrom` (`0x140bc87c0`), and `UPComNetConn::ReceivedRawPacket` (`0x140bc8770`) proves:
@@ -62,37 +60,28 @@
 
 ### 2.2 Unsequenced Control Frame Typology (`subflags = 0x0010`)
 
-1. **Client Hello (570 Bytes)**:
-   - `0..10`: Prefix `00 00 00 00 00 00 00 00 00 10`
-   - `10..16`: Connection nonce `00 00 00 00 00 01`
-   - `16..22`: Sub-version `00 00 01 00 00 00`
-   - `22..24`: Descriptor Length = `72` (`0x0048`)
-   - `24..96`: 72-byte client platform and ticket payload
-   - `96..534`: Zero padding (`0x00` x 438)
-   - `534..538`: HMAC length = `32` (`0x00000020`)
-   - `538..570`: 32-byte SHA-256 HMAC
-2. **Server Challenge / Cookie Reply (46 Bytes)**:
-   - `0..10`: Prefix `01 00 00 00 00 00 00 00 00 10`
-   - `10`: Handshake Flag `0x5d` (CAP-03) or `0x8d` (CAP-01). Top bits session-specific; lower bits `0x05` denote Challenge phase.
-   - `11..16`: 5-byte Client Cookie Echo.
-   - `16..22`: 6-byte Server Session Cookie.
-   - `22..46`: 24-byte Nonce & Cryptographic Challenge.
-3. **PMTU Discovery Probes (1440 Bytes)**:
-   - `0..10`: Prefix `01 00 00 00 00 00 00 00 00 10`
-   - `10..16`: Symmetrical probe token (`25 3e 4e ed a3 7c` / `22 3e 4e ed a3 7c`)
-   - `16..22`: Static probe marker `fb 73 09 f1 45 49`
-   - `22..1440`: Synthetic padding payload validating Ethernet MTU without fragmentation.
-4. **Handshake Completion (46 Bytes)**:
-   - `0..10`: Prefix `01 00 00 00 00 00 00 00 00 10`
-   - `10`: Handshake Flag `0x58` (CAP-03) or `0x88` (CAP-01), clearing phase bits `0x05`.
-   - `11..22`: Confirmed session tokens.
-   - `22..46`: 24-byte confirmation and key derivation verification.
+1. **Client Hello (570 Bytes, `0x23a`)** *(corrected per `#42` / `exudp2_crypto_re_report.md`)*:
+   - `0..10`: Prefix `00 00 00 00 00 00 00 00 00 10` (`conn_id=0, seq=0, flags=0x0010`)
+   - `10..14`: Function `00 00 00 00` (`0`)
+   - `14..18`: DH public key size `00 01 00 00` (`0x100 = 256` bytes)
+   - `18..22`: Local connection handle `01 00 00 00` (`1`)
+   - `22..24`: Plaintext session secret length = `72` (`0x0048`)
+   - `24..120` (`0x18..0x78`, 96 B): Rijndael (AES-256) encrypted 72-byte ephemeral session secret (padded to `0x60`) under RFC 5114 2048-bit DH shared secret
+   - `120..376` (`0x78..0x178`, 256 B): Client's ephemeral 2048-bit DH public key
+   - `376..392` (`0x178..0x188`, 16 B): AES-MAC tag over `0x16..0x178` (`354` bytes)
+   - `392..534` (`0x188..0x216`, 142 B): Zero padding *(corrects earlier draft which misstated zeros began at byte 96)*
+   - `534..538` (`0x216..0x21a`, 4 B): SHA-256 length = `32` (`0x00000020`)
+   - `538..570` (`0x21a..0x23a`, 32 B): `GenUserSHA256` digest over `0x00a..0x216` (`524` bytes)
+2. **Server Challenge / Finish & PMTU (`46` Bytes / `1440` Bytes)**:
+   - `[0..10]`: Outer prefix `01 00 00 00 00 00 00 00 00 10` (`seq=0, flags=0x0010`).
+   - `[10..len-16]`: Salsa20-encrypted payload at seek offset `1 * payload_len` (`20` B for 46B Challenge/Finish; `1414` B for 1440B PMTU probe).
+   - `[len-16..len]`: 16-byte AES-MAC tag over `[10B outer header || encrypted payload]` using `session_mac_iv ^ 1`.
 
 ### 2.3 Sequenced Gameplay Datagram Typology (`subflags = 0x0001`)
 
-- **Header**: 10 bytes `[01 00 00 00] [seq: 4B] [00 01]`.
-- **Seq 1 Special Invariant**: Exactly on Seq 1 (`seq == 1`), both C->S and S->C packets prefix the payload with the 6-byte session token (`78 7e 10 7b 9a 8f` in CAP-03; `0d 6f c0 44 3a 58` in CAP-01).
-- **Seq 2+ Invariant**: Beginning at Seq 2, packets carry the standard sequenced bitstream. Max packet size is governed by `MaxPacket = 0x1F0` (496 bytes, yielding datagram lengths up to ~518 bytes including headers).
+- **Header**: 10 bytes `[conn_id: 4B LE] [seq: 4B LE] [00 01]`.
+- **Encrypted Payload (`[10..len-16]`)**: Salsa20-encrypted `[6B PComNetConn prefix || UE3 bitstream]` at seek offset `seq * payload_len`, followed by a **16-byte AES-MAC** tag (`[len-16..len]`).
+- **Retraction on Seq 1 (`PSL-INV-012`, `#42`)**: The earlier claim that Seq 1 prepends a plaintext 6-byte `"session token synchronization barrier"` is **retracted**. `78 7e 10 7b 9a 8f` (`CAP-03` Frames 14612/14613) and `0d 6f c0 44 3a 58` (`CAP-01` Frames 9789/9801) are Salsa20 keystream output XORed with 6 zero bytes (`00 00 00 00 00 00`) of `PComNetConn` due to identical TX/RX Salsa20 key+IV initialization (`CCryptopp::GenSession` `0x1400dcac0`). Because `UNK-CRYPTO-001` uses an ephemeral 2048-bit DH handshake (`ShippingPC-ChaosGame.exe` holds only the server's public key, not the private key), historical `?exudp=2` `0x0001` captures cannot be decrypted offline. Max unencrypted inner packet size remains `MaxPacket = 0x1F0` (496 bytes) for `?exudp>=1`.
 
 ---
 
@@ -121,26 +110,23 @@ Cross-referencing Server Seq 1..58 with `CAP-03_custom_baseline_20261119_Launch.
 
 ---
 
-## 4. Actionable Cleanroom Specifications for Downstream Subagents
+## 4. Historical Actionable Specifications & Subsequent Supersedence (`PSL-INV-012`)
 
-### 4.1 Specification for `agyis_builder` (Phase 2: Codec Extension)
+> [!IMPORTANT]
+> **Supersedence Notice (`#42` & `#43` / `UACTOR_CHANNEL_WIRE_SPEC.md`)**: Section 4 below is retained as historical record of the Milestone 5 Phase 1 handoff. Subsequent cleanroom verification (`#42`) retracted the Seq 1 `"session token"` strip (`decode_with_max_bits` `&datagram[16..]` was a misinterpretation of TX/RX Salsa20 keystream reuse over 6 zero bytes of `PComNetConn`) and proved `?exudp=2` historical pcaps cannot be decrypted offline (`UNK-CRYPTO-001` **Mathematically Bounded / Archived**). Active actor-channel implementation (`UNK-UDP-003` / `UNK-UDP-004`) now proceeds directly via unencrypted `?exudp=0` against the headless Wine Retail Oracle (`ADOPT-09`) under [`docs/specs/UACTOR_CHANNEL_WIRE_SPEC.md`](../specs/UACTOR_CHANNEL_WIRE_SPEC.md).
+
+### 4.1 Historical Specification for `agyis_builder` (Phase 2: Codec Extension)
 - **File**: `crates/immortal-net/src/bunch.rs`
-- **Updates Required**:
-  1. Update `PcomPrefix` enum and `Ue3Packet::decode_with_max_bits` to distinguish between:
-     - Standalone UDP 7777 (6-byte prefix).
-     - Dedicated Sequenced Gameplay `0x0001` (10-byte prefix: `[01 00 00 00] [seq: 4B] [00 01]`).
-     - Dedicated Unsequenced Control `0x0010` (10-byte prefix: `[01 00 00 00] [00 00 00 00] [00 10]` or client hello `00 00 00 00...`).
-  2. In `decode_with_max_bits`: For dedicated `0x0001` packets where sequence `seq == 1`, strip the 6-byte session token (`&datagram[16..]`) before decoding UE3 bitstream. For `seq > 1`, preserve `&datagram[10..]`.
-  3. Max Packet Bits: Set default for dedicated transport to `EXUDP_MAX_PACKET_BITS` (`0x1F0 * 8 = 3968` bits = 496 bytes).
-- **Unit Verification Test**:
-  - Add `test_dedicated_sequenced_seq1_session_token_and_seq2_roundtrip` in `crates/immortal-net/tests/`.
+- **Historical Notes (Retracted on Seq 1 Strip)**:
+  1. Distinguish between Standalone UDP 7777 (6-byte prefix) and Dedicated `?exudp=2` 10-byte outer header (`0x0001` / `0x0010`).
+  2. *(Retracted)* Stripping a 6-byte Seq 1 `"session token"` (`&datagram[16..]`) is invalid because `0x0001` payloads in `CAP-01`/`CAP-03` are Salsa20-encrypted + 16B AES-MAC (`UNK-CRYPTO-001`).
+  3. Max Packet Bits for `?exudp>=1`: `EXUDP_MAX_PACKET_BITS` (`0x1F0 * 8 = 3968` bits = 496 bytes).
 
-### 4.2 Specification for `agyis_custodian` (Phase 3: Spec & Ledger Updates)
+### 4.2 Historical Specification for `agyis_custodian` (Phase 3: Spec & Ledger Updates)
 - **File**: `docs/specs/CLEANROOM_LEDGER.md`
-- **Updates Required**:
-  1. Update Claim 17 (`OBL-UDP-003`): Document the exact 10-byte unsequenced (`0x0010`) handshake sequence (570B Hello -> 46B Challenge -> 1440B PMTU Probes -> 46B Finish) and the Seq 1 6-byte session token invariant.
-  2. Update `UNK-UDP-004`: Note empirical observation of `TgPlayerController_1` (Server Seq 51, Packet #524) and `TgPawn_Fernando_0` (Server Seq 52-53, Packets #529-530) in `CAP-03` at timestamp `[0195.74]`.
-- **Verification Gate**: `agyis verify --spec`.
+- **Updated Status**:
+  1. Claim 17 (`OBL-UDP-003`): Retracted the Seq 1 6-byte session token barrier claim (`#42`), documented `?exudp=2` 10-byte outer framing & `0x0010` sizes, and verified `NMT_Uses*` / `0x2A` / `UMarshalChannel` wire layouts against `?exudp=0` Retail Oracle (`UACTOR_CHANNEL_WIRE_SPEC.md`).
+  2. `UNK-UDP-004`: Reached bit-exact wire spec verification against Retail Oracle (`ch=3,4,5,12,13,80,81`); Rust integration & Live Flight 036 in progress.
 
 ### 4.3 Specification for `agyis_builder` (Phase 4: Server Integration & Golden Replay)
 - **File**: `crates/immortal-server/src/game_server.rs` & `replication.rs`

@@ -65,9 +65,9 @@ To foster widespread archival tool adoption while preventing proprietary rogue s
 - **[G1] Complete Asset Preservation Automation**:
   - Cleanroom extractor (`crates/immortal-extract`) for CookedPCConsole Unreal Packages (`.upk`, UE3 `v893`), Texture File Caches (`.tfc`), and Audiokinetic Wwise containers (`.pck` / `.bnk` / `.wem`).
   - Converts cooked structures and geometry to open standards (`.gltf`, `.dds`, `.wav`). *(UPK `FPropertyTag` / `USkeletalMesh` / `UTexture2D` / `UBrushComponent` parsers are actively being expanded; see [`docs/specs/ROADMAP.md`](docs/specs/ROADMAP.md)).*
-- **[G2] MVP Server Protocol & Offline Range (M0–M4 Complete; M5 Partial)**:
+- **[G2] MVP Server Protocol & Offline Range (M0–M4 Complete; M5 In Progress)**:
   - MCTS TCP 9000 auth gateway and UE3 UDP 7777 handshake (`NMT_Hello` -> `NMT_Welcome` -> `LoadMap`) are verified live on `Shootingrange_P`.
-  - Dedicated `?exudp=2` cipher (`UNK-CRYPTO-001`) and bit-packed `UActorChannel` pawn replication (`UNK-UDP-004`) remain open targets blocking full 3D `Shootingrange_P` possession.
+  - `?exudp=2` cipher (`UNK-CRYPTO-001`) is **Mathematically Bounded / Archived** (RFC 5114 2048-bit ephemeral DH + Salsa20/AES-MAC; superseded by plaintext `?exudp=0` + `ADOPT-09` local Retail Oracle). `UNK-UDP-003` & `UNK-UDP-004` (`UActorChannel`) are **Wire Spec Verified Bit-Exact Against Retail Oracle (`ch=3,4,5,12,13,80,81`)** ([`docs/specs/UACTOR_CHANNEL_WIRE_SPEC.md`](docs/specs/UACTOR_CHANNEL_WIRE_SPEC.md)); Rust integration and Live Flight 036 verification are in progress.
 - **[G3] Baseline E2E Multiplayer Game (M6 Active)**:
   - Headless Wine retail server oracle (`ADOPT-09`), pure-Rust SAT level collision (`ADOPT-01`), dual-stage hitboxes (`ADOPT-02`), rooftop/heavy-wall physics (`ADOPT-03`), health/shield tracking, and round state machines for Siege mode.
 - **[G4] Community Store & Ecosystem Runtime**:

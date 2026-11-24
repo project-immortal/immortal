@@ -96,5 +96,19 @@
     "provider": "host_sha256_upk",
     "digest": "8da88b0e6956b20de7f874fce3aab5373b36f3e8473f9dbbf6f66db630914376",
     "source_path": "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole/SG_StoneKeep_P.upk"
+  },
+  {
+    "evidence_id": "EV-UPK-006",
+    "subject": "Engine.upk",
+    "provider": "host_sha256_upk",
+    "digest": "c8541aa0ab647d1952da0cbd0c7c36e236fcc1b6f12f48b6fc047bae19e91e48",
+    "source_path": "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole/Engine.upk"
+  },
+  {
+    "evidence_id": "EV-UPK-007",
+    "subject": "TgGame.upk",
+    "provider": "host_sha256_upk",
+    "digest": "dd1fa76a3583c64305a305f7d7177c441356463f31a2531bb25d1bf0921bdbf8",
+    "source_path": "/mnt/fast_data/games/SteamLibrary/steamapps/common/Paladins/ChaosGame/CookedPCConsole/TgGame.upk"
   }
 ]
